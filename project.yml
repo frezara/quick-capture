@@ -1,0 +1,41 @@
+name: QuickCapture
+options:
+  bundleIdPrefix: com.quickcapture
+  deploymentTarget:
+    macOS: "14.0"
+  developmentLanguage: en
+  createIntermediateGroups: true
+
+settings:
+  base:
+    SWIFT_VERSION: "5.9"
+    MACOSX_DEPLOYMENT_TARGET: "14.0"
+    MARKETING_VERSION: "0.1.0"
+    CURRENT_PROJECT_VERSION: "1"
+    CODE_SIGN_STYLE: Automatic
+    ENABLE_HARDENED_RUNTIME: YES
+    DEAD_CODE_STRIPPING: YES
+
+packages:
+  HotKey:
+    url: https://github.com/soffes/HotKey
+    from: 0.2.0
+
+targets:
+  QuickCapture:
+    type: application
+    platform: macOS
+    sources:
+      - path: Sources/QuickCapture
+    dependencies:
+      - package: HotKey
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quickcapture.app
+        PRODUCT_NAME: "Quick Capture"
+        GENERATE_INFOPLIST_FILE: YES
+        INFOPLIST_KEY_LSUIElement: YES
+        INFOPLIST_KEY_CFBundleDisplayName: "Quick Capture"
+        INFOPLIST_KEY_NSHumanReadableCopyright: "© 2026 Quick Capture"
+        ENABLE_PREVIEWS: YES
+        COMBINE_HIDPI_IMAGES: YES

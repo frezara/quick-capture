@@ -1,0 +1,77 @@
+import SwiftUI
+import UniformTypeIdentifiers
+
+struct SettingsView: View {
+    @EnvironmentObject var appState: AppState
+
+    var body: some View {
+        Form {
+            Section {
+                HStack {
+                    TextField("Path", text: $appState.captureFilePath)
+                        .textFieldStyle(.roundedBorder)
+                        .font(.system(.body, design: .monospaced))
+                    Button("Choose…") { chooseFile() }
+                }
+                Text("Captured items are appended as `- [ ] …` lines.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Capture File")
+            }
+
+            Section {
+                HStack {
+                    Text("Hotkey")
+                    Spacer()
+                    KeyRecorderView(hotKey: $appState.hotKey)
+                }
+                Text("Click the field, then press your combo. Esc cancels. Requires at least one modifier (⌃⌥⇧⌘).")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Shortcut")
+            }
+
+            Section {
+                Toggle("Append timestamp to each capture", isOn: $appState.includeTimestamp)
+                if appState.includeTimestamp {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text("Preview")
+                            .foregroundStyle(.secondary)
+                        Spacer()
+                        Text("- [ ] buy milk \(FileWriter.createdMarker) \(FileWriter.timestampString(for: Date()))")
+                            .font(.system(.caption, design: .monospaced))
+                            .foregroundStyle(.secondary)
+                            .textSelection(.enabled)
+                    }
+                }
+                Text("Uses the Obsidian Tasks plugin's `\(FileWriter.createdMarker)` (created) marker with `YYYY-MM-DD HH:MM`.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Timestamp")
+            }
+        }
+        .formStyle(.grouped)
+        .frame(width: 480)
+        .padding()
+    }
+
+    private func chooseFile() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = false
+        panel.allowedContentTypes = [
+            UTType(filenameExtension: "md") ?? .plainText,
+            .plainText
+        ]
+        panel.canCreateDirectories = true
+        panel.message = "Choose a markdown file to append captures to"
+
+        if panel.runModal() == .OK, let url = panel.url {
+            appState.captureFilePath = url.path
+        }
+    }
+}
