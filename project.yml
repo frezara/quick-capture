@@ -41,6 +41,7 @@ targets:
         ENABLE_PREVIEWS: YES
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        CODE_SIGN_ENTITLEMENTS: QuickCapture.entitlements
 
   QuickCaptureTests:
     type: bundle.unit-test
