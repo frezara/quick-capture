@@ -1,0 +1,83 @@
+name: Release
+
+# Fires on a version tag push (recommended flow: `git tag v0.1.0 && git push --tags`)
+# or via manual dispatch from the Actions tab.
+on:
+  push:
+    tags:
+      - "v*"
+  workflow_dispatch:
+
+permissions:
+  contents: write   # needed by softprops/action-gh-release to create/attach to a Release
+
+jobs:
+  build:
+    runs-on: macos-14
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install XcodeGen
+        run: brew install xcodegen
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (Release, ad-hoc signed)
+        run: |
+          xcodebuild \
+            -project QuickCapture.xcodeproj \
+            -scheme QuickCapture \
+            -configuration Release \
+            -derivedDataPath build/ \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Run tests
+        run: |
+          xcodebuild \
+            -project QuickCapture.xcodeproj \
+            -scheme QuickCapture \
+            -derivedDataPath build/ \
+            test
+
+      - name: Package DMG
+        run: |
+          set -euo pipefail
+          APP_PATH=$(find build/Build/Products/Release -maxdepth 2 -name "Quick Capture.app" -type d | head -1)
+          if [ -z "$APP_PATH" ]; then
+            echo "Could not find built .app"; exit 1
+          fi
+          mkdir -p dist/stage
+          cp -R "$APP_PATH" dist/stage/
+          # Add an /Applications symlink so the DMG's drag-to-install workflow is obvious.
+          ln -s /Applications dist/stage/Applications
+          VERSION="${GITHUB_REF_NAME#v}"
+          if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="dev-$(date +%Y%m%d-%H%M%S)"; fi
+          DMG="dist/QuickCapture-${VERSION}.dmg"
+          hdiutil create -volname "Quick Capture" \
+            -srcfolder dist/stage \
+            -ov -format UDZO \
+            "$DMG"
+          echo "DMG=$DMG" >> "$GITHUB_ENV"
+
+      - name: Upload DMG as workflow artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: QuickCapture-dmg
+          path: dist/*.dmg
+
+      - name: Attach DMG to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
+          fail_on_unmatched_files: true
+          generate_release_notes: true

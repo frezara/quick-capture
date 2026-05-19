@@ -64,7 +64,6 @@ fastlane/test_output
 # Local prototypes / scratch (not part of the app)
 idea.md
 demo.html
-index.html
 tag-input.html
 themes.html
 themes-paper.html
