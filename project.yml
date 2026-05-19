@@ -33,6 +33,7 @@ targets:
       base:
         PRODUCT_BUNDLE_IDENTIFIER: com.quickcapture.app
         PRODUCT_NAME: "Quick Capture"
+        PRODUCT_MODULE_NAME: QuickCapture
         GENERATE_INFOPLIST_FILE: YES
         INFOPLIST_KEY_LSUIElement: YES
         INFOPLIST_KEY_CFBundleDisplayName: "Quick Capture"
@@ -40,3 +41,28 @@ targets:
         ENABLE_PREVIEWS: YES
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+
+  QuickCaptureTests:
+    type: bundle.unit-test
+    platform: macOS
+    sources:
+      - path: Tests/QuickCaptureTests
+    dependencies:
+      - target: QuickCapture
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.quickcapture.app.tests
+        GENERATE_INFOPLIST_FILE: YES
+        TEST_HOST: "$(BUILT_PRODUCTS_DIR)/Quick Capture.app/Contents/MacOS/Quick Capture"
+        BUNDLE_LOADER: "$(TEST_HOST)"
+
+schemes:
+  QuickCapture:
+    build:
+      targets:
+        QuickCapture: all
+        QuickCaptureTests: [test]
+    test:
+      targets:
+        - QuickCaptureTests
+      gatherCoverageData: true
