@@ -25,13 +25,20 @@ struct CaptureView: View {
             header
             Divider().background(borderColor)
             inputsRow
-            if focused == .tag {
+            if shouldShowExtras {
                 Divider().background(borderColor)
-                footer
-                    .transition(.move(edge: .top).combined(with: .opacity))
+                Group {
+                    if isCalendarMode {
+                        calendarPreview
+                    } else {
+                        footer
+                    }
+                }
+                .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: focused == .tag)
+        .animation(.easeInOut(duration: 0.22), value: shouldShowExtras)
+        .animation(.easeInOut(duration: 0.18), value: isCalendarMode)
         // Report intrinsic content size up to CapturePanel so it can resize
         // the window to fit. background+GeometryReader is the standard SwiftUI
         // recipe for measuring without affecting layout.
@@ -178,6 +185,86 @@ struct CaptureView: View {
     /// The matched one is signalled via the tag field's tint colors instead.
     private var displayedTags: [String] {
         Array(allKnownTags.prefix(7))
+    }
+
+    // MARK: - Calendar preview
+
+    /// True when the user has committed to the `#cal` tag — drives the calendar
+    /// preview chip and routes Enter through `EventParser` instead of FileWriter.
+    private var isCalendarMode: Bool {
+        tagText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cal"
+    }
+
+    /// The accessory section below the inputs is shown when the user is either
+    /// browsing tag suggestions OR composing a calendar event.
+    private var shouldShowExtras: Bool {
+        focused == .tag || isCalendarMode
+    }
+
+    /// Parses the current todo text into a CalendarEvent. Returns nil when the
+    /// text is blank or the parser couldn't find a date.
+    private var parsedCalendarEvent: CalendarEvent? {
+        guard !todoText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        if case .success(let event) = EventParser.parse(todoText) {
+            return event
+        }
+        return nil
+    }
+
+    private var calendarPreview: some View {
+        let palette = TagPalette.entry(for: "cal")
+        return HStack(spacing: 8) {
+            Image(systemName: "calendar")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(palette.fg)
+            if let event = parsedCalendarEvent {
+                Text(formatCalendarPreview(event))
+                    .font(.system(size: 12, design: .monospaced))
+                    .foregroundStyle(palette.fg)
+            } else {
+                Text(todoText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                     ? "Type the event, e.g. \"call Seb tomorrow at 2pm\""
+                     : "No date found — add a time like \"tomorrow at 2pm\"")
+                    .font(.system(size: 12))
+                    .foregroundStyle(tertiaryText)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 10)
+    }
+
+    /// Human-readable preview: "Today at 14:00 · 30 min" / "Tomorrow at 09:00 · 1 hr".
+    private func formatCalendarPreview(_ event: CalendarEvent) -> String {
+        let cal = Calendar.current
+        let datePart: String
+        if cal.isDateInToday(event.start) {
+            datePart = "Today"
+        } else if cal.isDateInTomorrow(event.start) {
+            datePart = "Tomorrow"
+        } else if cal.isDate(event.start, equalTo: Date(), toGranularity: .weekOfYear) {
+            datePart = posixFormatted(event.start, "EEEE")
+        } else {
+            datePart = posixFormatted(event.start, "EEE, MMM d")
+        }
+        let timePart = posixFormatted(event.start, "HH:mm")
+        return "\(datePart) at \(timePart) · \(formatDuration(event.duration))"
+    }
+
+    private func posixFormatted(_ date: Date, _ format: String) -> String {
+        let f = DateFormatter()
+        f.locale = Locale(identifier: "en_US_POSIX")
+        f.dateFormat = format
+        return f.string(from: date)
+    }
+
+    private func formatDuration(_ seconds: TimeInterval) -> String {
+        let mins = max(1, Int(seconds.rounded() / 60))
+        if mins < 60 { return "\(mins) min" }
+        let hours = mins / 60
+        let remainder = mins % 60
+        if remainder == 0 { return hours == 1 ? "1 hr" : "\(hours) hr" }
+        return "\(hours) hr \(remainder) min"
     }
 
     // MARK: - Footer (tag pills left, hints right)

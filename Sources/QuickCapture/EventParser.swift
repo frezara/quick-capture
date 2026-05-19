@@ -43,6 +43,11 @@ enum EventParser {
         let detectorBaseline = Date()
         let adjustedStart = date.addingTimeInterval(now.timeIntervalSince(detectorBaseline))
 
+        // Round to the nearest whole minute. NSDataDetector hands back times
+        // with sub-minute precision that's effectively noise — "10am" can come
+        // back as 09:59:32, which then displays as "09:59" and confuses users.
+        let roundedStart = roundToMinute(adjustedStart)
+
         let duration = match.duration > 0 ? match.duration : defaultDuration
 
         // Strip the matched date span from the input to recover the title.
@@ -54,6 +59,12 @@ enum EventParser {
 
         guard !title.isEmpty else { return .failure(.emptyTitle) }
 
-        return .success(CalendarEvent(title: title, start: adjustedStart, duration: duration))
+        return .success(CalendarEvent(title: title, start: roundedStart, duration: duration))
+    }
+
+    private static func roundToMinute(_ date: Date) -> Date {
+        let secs = date.timeIntervalSinceReferenceDate
+        let rounded = (secs / 60).rounded() * 60
+        return Date(timeIntervalSinceReferenceDate: rounded)
     }
 }
