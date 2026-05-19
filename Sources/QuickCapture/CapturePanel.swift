@@ -39,12 +39,33 @@ final class CapturePanel: NSPanel {
         let root = CaptureView(
             appState: appState,
             onSubmit: { [weak self] text, tag in self?.onSubmit(text, tag) },
-            onDismiss: { [weak self] in self?.onDismiss() }
+            onDismiss: { [weak self] in self?.onDismiss() },
+            onContentSizeChange: { [weak self] size in self?.adjustToContentSize(size) }
         )
 
         let hosting = NSHostingView(rootView: root)
         hosting.autoresizingMask = [.width, .height]
         contentView = hosting
+    }
+
+    /// Resize the panel to match the SwiftUI content's intrinsic height while
+    /// keeping the top edge anchored (panel grows/shrinks downward). Done
+    /// manually instead of via NSHostingController.sizingOptions because the
+    /// controller's auto-resize path infinite-loops on this borderless
+    /// nonactivatingPanel config.
+    private func adjustToContentSize(_ size: CGSize) {
+        guard size.width > 0, size.height > 0 else { return }
+        let panelWidth: CGFloat = 600
+        let topY = frame.maxY
+        let newFrame = NSRect(
+            x: frame.minX,
+            y: topY - size.height,
+            width: panelWidth,
+            height: size.height
+        )
+        // Skip if effectively unchanged — avoids redundant relayout work.
+        guard abs(newFrame.height - frame.height) > 0.5 else { return }
+        setFrame(newFrame, display: true, animate: false)
     }
 
     override var canBecomeKey: Bool { true }

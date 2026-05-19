@@ -4,6 +4,7 @@ struct CaptureView: View {
     @ObservedObject var appState: AppState
     let onSubmit: (String, String?) -> Void
     let onDismiss: () -> Void
+    let onContentSizeChange: (CGSize) -> Void
 
     @State private var todoText = ""
     @State private var tagText = ""
@@ -24,8 +25,24 @@ struct CaptureView: View {
             header
             Divider().background(borderColor)
             inputsRow
-            Divider().background(borderColor)
-            footer
+            if focused == .tag {
+                Divider().background(borderColor)
+                footer
+                    .transition(.move(edge: .top).combined(with: .opacity))
+            }
+        }
+        .animation(.easeInOut(duration: 0.22), value: focused == .tag)
+        // Report intrinsic content size up to CapturePanel so it can resize
+        // the window to fit. background+GeometryReader is the standard SwiftUI
+        // recipe for measuring without affecting layout.
+        .background(
+            GeometryReader { proxy in
+                Color.clear
+                    .preference(key: ContentSizeKey.self, value: proxy.size)
+            }
+        )
+        .onPreferenceChange(ContentSizeKey.self) { size in
+            onContentSizeChange(size)
         }
         .background(surface)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
@@ -238,6 +255,16 @@ struct TagChip: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
+    }
+}
+
+/// Carries the SwiftUI root's intrinsic size up to `CapturePanel` so the
+/// NSPanel can resize its window to match. Last-write-wins is fine — there's
+/// only one reporter.
+struct ContentSizeKey: PreferenceKey {
+    static var defaultValue: CGSize = .zero
+    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
+        value = nextValue()
     }
 }
 
