@@ -26,9 +26,6 @@ struct CaptureView: View {
             header
             Divider().background(borderColor)
             inputsRow
-            if !displayedTags.isEmpty {
-                suggestionsRow
-            }
             Divider().background(borderColor)
             footer
         }
@@ -60,19 +57,19 @@ struct CaptureView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 8) {
+        HStack(spacing: 10) {
             AppIconBadge(size: 18)
             Text("QUICK CAPTURE")
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(0.5)
                 .foregroundStyle(Color(hex: 0x4A4A52))
             Spacer()
-            Text("saving to \(displayPath)")
-                .font(.system(size: 11, design: .monospaced))
-                .foregroundStyle(secondaryText)
+            HintLabel(key: "⏎", text: "save",  bg: kbdBackground, kbdText: kbdText, label: secondaryText)
+            HintLabel(key: "⇥", text: "tag",   bg: kbdBackground, kbdText: kbdText, label: secondaryText)
+            HintLabel(key: "⎋", text: "close", bg: kbdBackground, kbdText: kbdText, label: secondaryText)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+        .padding(.vertical, 10)
     }
 
     // MARK: - Inputs row (todo + tag inline)
@@ -136,12 +133,27 @@ struct CaptureView: View {
         .padding(.vertical, 10)
     }
 
-    /// First recent tag whose name starts with the current input. Drives the
+    /// Tags that are always present in the suggestions and Tab autocomplete,
+    /// even before the user has used them. `cal` is the calendar-routing tag —
+    /// captures with `#cal` get parsed into a .ics event instead of a todo.
+    private static let pinnedTags = ["cal"]
+
+    /// Full searchable tag list: pinned tags first, then anything discovered
+    /// in the capture file. Deduped case-insensitively so a pinned tag never
+    /// double-renders if it also appears as a `## heading`.
+    private var allKnownTags: [String] {
+        let recent = appState.recentTags.filter { tag in
+            !Self.pinnedTags.contains { $0.caseInsensitiveCompare(tag) == .orderedSame }
+        }
+        return Self.pinnedTags + recent
+    }
+
+    /// First known tag whose name starts with the current input. Drives the
     /// tag field's tint colors and what Tab autocompletes to.
     private var matchedTag: String? {
         let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
         guard !query.isEmpty else { return nil }
-        return appState.recentTags.first(where: { $0.lowercased().hasPrefix(query) })
+        return allKnownTags.first(where: { $0.lowercased().hasPrefix(query) })
     }
 
     private var matchedPalette: TagPalette.Entry? {
@@ -150,37 +162,37 @@ struct CaptureView: View {
 
     // MARK: - Suggestions
 
-    /// All recent tags stay visible — they don't filter as the user types.
+    /// All known tags stay visible — they don't filter as the user types.
     /// The matched one is signalled via the tag field's tint colors instead.
     private var displayedTags: [String] {
-        Array(appState.recentTags.prefix(7))
+        Array(allKnownTags.prefix(7))
     }
 
-    private var suggestionsRow: some View {
-        HStack(spacing: 6) {
-            ForEach(displayedTags, id: \.self) { tag in
-                TagChip(tag: tag) { chipTapped(tag) }
-            }
-            Spacer(minLength: 0)
-        }
-        .padding(.horizontal, 18)
-        .padding(.bottom, 10)
-    }
-
-    // MARK: - Footer
+    // MARK: - Footer (tag pills left, hints right)
 
     private var footer: some View {
-        HStack(spacing: 10) {
-            HintLabel(key: "⏎", text: "save",  bg: kbdBackground, kbdText: kbdText, label: secondaryText)
-            HintLabel(key: "⇥", text: "tag",   bg: kbdBackground, kbdText: kbdText, label: secondaryText)
-            HintLabel(key: "⎋", text: "close", bg: kbdBackground, kbdText: kbdText, label: secondaryText)
-            Spacer()
-            Text("\(todoText.count) chars")
-                .font(.system(size: 10))
-                .foregroundStyle(tertiaryText)
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: 6) {
+                ForEach(displayedTags, id: \.self) { tag in
+                    TagChip(tag: tag) { chipTapped(tag) }
+                }
+            }
+            .padding(.vertical, 1)   // breathing room so chip shadows/borders don't clip
+        }
+        // Fade chips into the panel background at the right edge, hinting
+        // that more content scrolls beyond. allowsHitTesting(false) keeps
+        // chips under the gradient still tappable.
+        .overlay(alignment: .trailing) {
+            LinearGradient(
+                colors: [.clear, surface],
+                startPoint: .leading,
+                endPoint: .trailing
+            )
+            .frame(width: 20)
+            .allowsHitTesting(false)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 7)
+        .padding(.vertical, 8)
     }
 
     // MARK: - Actions
@@ -207,9 +219,6 @@ struct CaptureView: View {
         submit()
     }
 
-    private var displayPath: String {
-        appState.captureFileURL.path.replacingOccurrences(of: NSHomeDirectory(), with: "~")
-    }
 }
 
 // MARK: - Reusable subviews
@@ -247,9 +256,9 @@ struct HintLabel: View {
     var body: some View {
         HStack(spacing: 4) {
             Text(key)
-                .font(.system(size: 14, design: .monospaced))
+                .font(.system(size: 16, design: .monospaced))
                 .foregroundStyle(kbdText)
-                .padding(.horizontal, 6)
+                .padding(.horizontal, 7)
                 .padding(.vertical, 2)
                 .background(bg)
                 .cornerRadius(4)
