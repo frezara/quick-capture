@@ -21,10 +21,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
 
         if let button = statusItem.button {
-            button.image = NSImage(
-                systemSymbolName: "checkmark.square",
-                accessibilityDescription: "Quick Capture"
-            )
+            let image = NSImage(named: "MenuBarIcon")
+            image?.isTemplate = true   // honors the asset's template intent on all paths
+            image?.accessibilityDescription = "Quick Capture"
+            button.image = image
             button.imagePosition = .imageOnly
         }
 
@@ -105,6 +105,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
+        if tag?.lowercased() == "cal" {
+            handleCalendarCapture(trimmed)
+            return
+        }
+
         do {
             try FileWriter.appendTodo(
                 trimmed,
@@ -120,6 +125,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.alertStyle = .warning
             alert.runModal()
         }
+    }
+
+    /// `#cal` branch: parse the text as a calendar event, hand the resulting
+    /// `.ics` to the default handler (Calendar.app shows its own confirmation
+    /// sheet). The markdown todo file is NOT touched for these captures.
+    private func handleCalendarCapture(_ text: String) {
+        switch EventParser.parse(text) {
+        case .success(let event):
+            do {
+                let url = try ICSWriter.writeTempFile(for: event)
+                NSWorkspace.shared.open(url)
+                hideCapture()
+            } catch {
+                showCalendarError(message: "Couldn't create calendar event",
+                                  detail: error.localizedDescription)
+            }
+        case .failure(let error):
+            showCalendarError(message: "Couldn't create calendar event",
+                              detail: error.localizedDescription)
+        }
+    }
+
+    private func showCalendarError(message: String, detail: String) {
+        let alert = NSAlert()
+        alert.messageText = message
+        alert.informativeText = detail
+        alert.alertStyle = .warning
+        alert.runModal()
     }
 
     // MARK: - Settings
