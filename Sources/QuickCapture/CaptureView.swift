@@ -18,8 +18,6 @@ struct CaptureView: View {
     private let secondaryText   = Color(hex: 0x6E6E72)
     private let tertiaryText    = Color(hex: 0x8A8A8E)
     private let inputBackground = Color(hex: 0xF4F4F7)
-    private let kbdBackground   = Color(hex: 0xF0F0F3)
-    private let kbdText         = Color(hex: 0x3A3A3E)
 
     var body: some View {
         VStack(spacing: 0) {
@@ -57,19 +55,16 @@ struct CaptureView: View {
     // MARK: - Header
 
     private var header: some View {
-        HStack(spacing: 10) {
+        HStack(spacing: 8) {
             AppIconBadge(size: 18)
             Text("QUICK CAPTURE")
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(0.5)
                 .foregroundStyle(Color(hex: 0x4A4A52))
             Spacer()
-            HintLabel(key: "⏎", text: "save",  bg: kbdBackground, kbdText: kbdText, label: secondaryText)
-            HintLabel(key: "⇥", text: "tag",   bg: kbdBackground, kbdText: kbdText, label: secondaryText)
-            HintLabel(key: "⎋", text: "close", bg: kbdBackground, kbdText: kbdText, label: secondaryText)
         }
         .padding(.horizontal, 14)
-        .padding(.vertical, 10)
+        .padding(.vertical, 11)
     }
 
     // MARK: - Inputs row (todo + tag inline)
@@ -246,25 +241,3 @@ struct TagChip: View {
     }
 }
 
-struct HintLabel: View {
-    let key: String
-    let text: String
-    let bg: Color
-    let kbdText: Color
-    let label: Color
-
-    var body: some View {
-        HStack(spacing: 4) {
-            Text(key)
-                .font(.system(size: 16, design: .monospaced))
-                .foregroundStyle(kbdText)
-                .padding(.horizontal, 7)
-                .padding(.vertical, 2)
-                .background(bg)
-                .cornerRadius(4)
-            Text(text)
-                .font(.system(size: 12))
-                .foregroundStyle(label)
-        }
-    }
-}
