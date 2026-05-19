@@ -245,16 +245,16 @@ struct HintLabel: View {
     let label: Color
 
     var body: some View {
-        HStack(spacing: 3) {
+        HStack(spacing: 4) {
             Text(key)
-                .font(.system(size: 10, design: .monospaced))
+                .font(.system(size: 14, design: .monospaced))
                 .foregroundStyle(kbdText)
-                .padding(.horizontal, 5)
-                .padding(.vertical, 1)
+                .padding(.horizontal, 6)
+                .padding(.vertical, 2)
                 .background(bg)
-                .cornerRadius(3)
+                .cornerRadius(4)
             Text(text)
-                .font(.system(size: 10))
+                .font(.system(size: 12))
                 .foregroundStyle(label)
         }
     }
