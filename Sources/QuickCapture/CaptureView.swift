@@ -61,7 +61,7 @@ struct CaptureView: View {
 
     private var header: some View {
         HStack(spacing: 8) {
-            CheckmarkLogo(size: 14)
+            AppIconBadge(size: 18)
             Text("QUICK CAPTURE")
                 .font(.system(size: 11, weight: .semibold))
                 .tracking(0.5)

@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 extension Color {
@@ -44,19 +45,17 @@ enum TagPalette {
     }
 }
 
-/// Indigo circle with a white checkmark — the panel's identity mark.
-/// Indigo (#5E6AD2) is the first color in the tag palette, so it sits on-brand.
-struct CheckmarkLogo: View {
+/// The app's own AppIcon rendered as a small badge — the panel's identity mark.
+/// Sources from `NSApp.applicationIconImage` so it always matches the icon
+/// shipped in the asset catalog, no separate copy to keep in sync.
+struct AppIconBadge: View {
     var size: CGFloat = 16
 
     var body: some View {
-        Circle()
-            .fill(Color(hex: 0x5E6AD2))
-            .overlay(
-                Image(systemName: "checkmark")
-                    .font(.system(size: size * 0.58, weight: .bold))
-                    .foregroundStyle(.white)
-            )
+        Image(nsImage: NSApp.applicationIconImage)
+            .resizable()
+            .interpolation(.high)
+            .aspectRatio(contentMode: .fit)
             .frame(width: size, height: size)
     }
 }
