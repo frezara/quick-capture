@@ -97,7 +97,7 @@ struct CaptureView: View {
         HStack(alignment: .center, spacing: 10) {
             TextField("What needs doing?", text: $todoText, axis: .vertical)
                 .textFieldStyle(.plain)
-                .font(.system(size: 17))
+                .font(.system(size: 17, design: appState.captureFontDesign.design))
                 .foregroundStyle(primaryText)
                 .focused($focused, equals: .todo)
                 .lineLimit(1...4)

@@ -6,11 +6,39 @@ extension Notification.Name {
     static let capturePanelDidHide  = Notification.Name("QuickCapture.capturePanelDidHide")
 }
 
+/// Font design applied to the capture panel's todo input. Maps directly onto
+/// SwiftUI's `Font.Design` cases — kept as a typed enum so it can round-trip
+/// through UserDefaults and drive a Picker in Settings.
+enum CaptureFontDesign: String, CaseIterable, Identifiable {
+    case system, rounded, serif, monospaced
+
+    var id: String { rawValue }
+
+    var label: String {
+        switch self {
+        case .system:     return "System"
+        case .rounded:    return "Rounded"
+        case .serif:      return "Serif (New York)"
+        case .monospaced: return "Monospaced (SF Mono)"
+        }
+    }
+
+    var design: Font.Design {
+        switch self {
+        case .system:     return .default
+        case .rounded:    return .rounded
+        case .serif:      return .serif
+        case .monospaced: return .monospaced
+        }
+    }
+}
+
 final class AppState: ObservableObject {
     private enum Keys {
-        static let captureFilePath  = "captureFilePath"
-        static let hotKey           = "hotKey"
-        static let includeTimestamp = "includeTimestamp"
+        static let captureFilePath    = "captureFilePath"
+        static let hotKey             = "hotKey"
+        static let includeTimestamp   = "includeTimestamp"
+        static let captureFontDesign  = "captureFontDesign"
     }
 
     @Published var captureFilePath: String {
@@ -32,6 +60,12 @@ final class AppState: ObservableObject {
     @Published var includeTimestamp: Bool {
         didSet {
             UserDefaults.standard.set(includeTimestamp, forKey: Keys.includeTimestamp)
+        }
+    }
+
+    @Published var captureFontDesign: CaptureFontDesign {
+        didSet {
+            UserDefaults.standard.set(captureFontDesign.rawValue, forKey: Keys.captureFontDesign)
         }
     }
 
@@ -101,5 +135,12 @@ final class AppState: ObservableObject {
         }
 
         self.includeTimestamp = UserDefaults.standard.bool(forKey: Keys.includeTimestamp)
+
+        if let raw = UserDefaults.standard.string(forKey: Keys.captureFontDesign),
+           let decoded = CaptureFontDesign(rawValue: raw) {
+            self.captureFontDesign = decoded
+        } else {
+            self.captureFontDesign = .monospaced
+        }
     }
 }

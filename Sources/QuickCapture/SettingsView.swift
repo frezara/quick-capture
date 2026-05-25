@@ -34,6 +34,25 @@ struct SettingsView: View {
             }
 
             Section {
+                Picker("Input font", selection: $appState.captureFontDesign) {
+                    ForEach(CaptureFontDesign.allCases) { design in
+                        Text(design.label)
+                            .font(.system(size: 13, design: design.design))
+                            .tag(design)
+                    }
+                }
+                HStack(alignment: .firstTextBaseline) {
+                    Text("Preview")
+                        .foregroundStyle(.secondary)
+                    Spacer()
+                    Text("What needs doing?")
+                        .font(.system(size: 17, design: appState.captureFontDesign.design))
+                }
+            } header: {
+                Text("Appearance")
+            }
+
+            Section {
                 Toggle("Append timestamp to each capture", isOn: $appState.includeTimestamp)
                 if appState.includeTimestamp {
                     HStack(alignment: .firstTextBaseline) {
