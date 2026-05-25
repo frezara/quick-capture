@@ -12,6 +12,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var settingsController = SettingsWindowController(appState: appState)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Single-instance guard. Macs can end up with a stale Quick Capture
+        // alongside a freshly-launched one (login-item restore racing with a
+        // user double-click, dev builds opened while the installed copy is
+        // running, etc.). If another instance is already up, hand off to it
+        // and quit ourselves so the menu bar never grows two icons.
+        let myBundleID = Bundle.main.bundleIdentifier ?? "com.quickcapture.app"
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let others = NSRunningApplication.runningApplications(withBundleIdentifier: myBundleID)
+            .filter { $0.processIdentifier != myPID }
+        if let existing = others.first {
+            existing.activate()
+            NSApp.terminate(nil)
+            return
+        }
+
         setupStatusItem()
         setupHotKey()
     }
