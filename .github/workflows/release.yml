@@ -22,8 +22,8 @@ jobs:
       - name: Select Xcode
         run: sudo xcode-select -s /Applications/Xcode.app
 
-      - name: Install XcodeGen
-        run: brew install xcodegen
+      - name: Install build tools
+        run: brew install xcodegen create-dmg
 
       - name: Generate Xcode project
         run: xcodegen generate
@@ -57,15 +57,23 @@ jobs:
           fi
           mkdir -p dist/stage
           cp -R "$APP_PATH" dist/stage/
-          # Add an /Applications symlink so the DMG's drag-to-install workflow is obvious.
-          ln -s /Applications dist/stage/Applications
           VERSION="${GITHUB_REF_NAME#v}"
           if [ "$VERSION" = "$GITHUB_REF_NAME" ]; then VERSION="dev-$(date +%Y%m%d-%H%M%S)"; fi
           DMG="dist/QuickCapture-${VERSION}.dmg"
-          hdiutil create -volname "Quick Capture" \
-            -srcfolder dist/stage \
-            -ov -format UDZO \
-            "$DMG"
+          # create-dmg gives us a sized window with the app on the left and a
+          # drag-to-/Applications target on the right. Falls back gracefully
+          # if the AppleScript layout step fails on the headless CI runner.
+          create-dmg \
+            --volname "Quick Capture" \
+            --window-pos 200 120 \
+            --window-size 540 380 \
+            --icon-size 100 \
+            --icon "Quick Capture.app" 140 190 \
+            --hide-extension "Quick Capture.app" \
+            --app-drop-link 400 190 \
+            --no-internet-enable \
+            "$DMG" \
+            "dist/stage/"
           echo "DMG=$DMG" >> "$GITHUB_ENV"
 
       - name: Upload DMG as workflow artifact
