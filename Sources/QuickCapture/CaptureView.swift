@@ -95,6 +95,13 @@ struct CaptureView: View {
             .buttonStyle(.plain)
             .keyboardShortcut("f", modifiers: .command)
             .help("Open capture file (⌘F)")
+            .onHover { hovering in
+                if hovering {
+                    NSCursor.pointingHand.push()
+                } else {
+                    NSCursor.pop()
+                }
+            }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
