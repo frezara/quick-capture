@@ -1,3 +1,4 @@
+import AppKit
 import SwiftUI
 
 struct CaptureView: View {
@@ -86,9 +87,59 @@ struct CaptureView: View {
                 .tracking(0.5)
                 .foregroundStyle(Color(hex: 0x4A4A52))
             Spacer()
+            Button(action: openCaptureFile) {
+                Image(systemName: "doc.text")
+                    .font(.system(size: 13, weight: .medium))
+                    .foregroundStyle(secondaryText)
+            }
+            .buttonStyle(.plain)
+            .keyboardShortcut("f", modifiers: .command)
+            .help("Open capture file (⌘F)")
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
+    }
+
+    /// Opens the capture file and dismisses the panel — the user is moving to
+    /// the editor, so leaving the panel floating would be in the way. Prefers
+    /// Obsidian (via the `obsidian://open?path=…` URL scheme) since the file
+    /// typically lives in an Obsidian vault; falls back to the system default
+    /// handler if Obsidian isn't installed. Shows an alert when the file is
+    /// missing rather than silently creating it — the path may be a typo and
+    /// we don't want to scatter empty files.
+    private func openCaptureFile() {
+        let url = appState.captureFileURL
+        guard FileManager.default.fileExists(atPath: url.path) else {
+            let alert = NSAlert()
+            alert.messageText = "Capture file not found"
+            alert.informativeText = """
+            \(url.path)
+
+            Check the path in Settings, or capture something first to create the file.
+            """
+            alert.alertStyle = .warning
+            alert.runModal()
+            return
+        }
+        if !openInObsidian(fileURL: url) {
+            NSWorkspace.shared.open(url)
+        }
+        onDismiss()
+    }
+
+    /// Returns true when Obsidian is installed AND handed off the URL
+    /// successfully. The bundle-id check avoids `open`'s "no handler"
+    /// dialog when Obsidian isn't installed.
+    private func openInObsidian(fileURL: URL) -> Bool {
+        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "md.obsidian") != nil else {
+            return false
+        }
+        var components = URLComponents()
+        components.scheme = "obsidian"
+        components.host = "open"
+        components.queryItems = [URLQueryItem(name: "path", value: fileURL.path)]
+        guard let obsidianURL = components.url else { return false }
+        return NSWorkspace.shared.open(obsidianURL)
     }
 
     // MARK: - Inputs row (todo + tag inline)
