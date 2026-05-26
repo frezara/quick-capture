@@ -46,10 +46,19 @@ Press **⌥T** (or whatever you've configured) to summon the capture panel anywh
 
 ## Roadmap
 
+### Pre-1.0 polish
+
+- [ ] Sync `MARKETING_VERSION` from the git tag in CI (currently pinned at 0.1.0, so the About dialog lies)
+- [ ] "Reveal in Finder" complement to the open-file button in the panel header
+- [ ] Dark-mode pass on the capture panel (palette is currently hardcoded light)
+- [ ] Inline warning in Settings when the chosen hotkey conflicts with a known macOS shortcut (⌘Space, ⌘Q, etc.)
+- [ ] Standard "About Quick Capture" panel (version, license, GitHub link)
+
+### Beyond
+
 - [ ] Per-tag default file destinations (e.g. `#work` writes to `work.md`)
 - [ ] Configurable line format (`- [ ]`, `* TODO`, etc.)
 - [ ] Double-tap-Option as an opt-in hotkey (requires Accessibility access)
-- [ ] Launch at login
 - [ ] Code signing + notarization in CI
 - [ ] Homebrew cask
 - [ ] Sparkle auto-updates
