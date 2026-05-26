@@ -10,7 +10,7 @@ final class FileWriterTests: XCTestCase {
         XCTAssertEqual(result, "## home\n- [ ] buy milk\n")
     }
 
-    func testInsertAppendsUnderExistingHeading() {
+    func testInsertPrependsAboveExistingItemsUnderHeading() {
         let content = """
         # Inbox
 
@@ -18,8 +18,8 @@ final class FileWriterTests: XCTestCase {
         - [ ] mow lawn
         """
         let result = FileWriter.insert(item: "- [ ] buy milk", underHeading: "home", in: content)
-        XCTAssertTrue(result.contains("- [ ] mow lawn\n- [ ] buy milk"),
-                      "new item should be appended below existing items under the heading; got:\n\(result)")
+        XCTAssertTrue(result.contains("- [ ] buy milk\n- [ ] mow lawn"),
+                      "new item should be inserted above existing items under the heading; got:\n\(result)")
     }
 
     func testInsertMatchesHeadingCaseInsensitively() {
@@ -31,8 +31,8 @@ final class FileWriterTests: XCTestCase {
         """
         let result = FileWriter.insert(item: "- [ ] buy milk", underHeading: "home", in: content)
         XCTAssertTrue(result.contains("## Home"),  "original heading casing preserved")
-        XCTAssertTrue(result.contains("- [ ] mow lawn\n- [ ] buy milk"),
-                      "new item should land under the existing ## Home section")
+        XCTAssertTrue(result.contains("- [ ] buy milk\n- [ ] mow lawn"),
+                      "new item should land at the top of the existing ## Home section")
     }
 
     func testInsertAppendsNewSectionWhenHeadingMissing() {

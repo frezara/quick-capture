@@ -95,17 +95,13 @@ enum FileWriter {
         }
 
         if let h = headingIndex {
-            var insertIndex = lines.count
-            for i in (h + 1)..<lines.count {
-                let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
-                if trimmed.hasPrefix("# ") || trimmed.hasPrefix("## ") || trimmed.hasPrefix("### ") {
-                    insertIndex = i
-                    break
-                }
-            }
-            while insertIndex > h + 1,
-                  lines[insertIndex - 1].trimmingCharacters(in: .whitespaces).isEmpty {
-                insertIndex -= 1
+            // Insert at the top of the section — newest first. Skip any blank
+            // lines immediately after the heading so the item attaches cleanly
+            // to the existing block rather than landing in the gap.
+            var insertIndex = h + 1
+            while insertIndex < lines.count,
+                  lines[insertIndex].trimmingCharacters(in: .whitespaces).isEmpty {
+                insertIndex += 1
             }
             lines.insert(item, at: insertIndex)
             return lines.joined(separator: "\n")
