@@ -40,6 +40,10 @@ struct CaptureView: View {
         }
         .animation(.easeInOut(duration: 0.22), value: shouldShowExtras)
         .animation(.easeInOut(duration: 0.18), value: isCalendarMode)
+        // Pin the root to its intrinsic height — otherwise NSHostingView's fixed
+        // frame can squash the VStack when the todo field grows mid-resize,
+        // clipping the header.
+        .fixedSize(horizontal: false, vertical: true)
         // Report intrinsic content size up to CapturePanel so it can resize
         // the window to fit. background+GeometryReader is the standard SwiftUI
         // recipe for measuring without affecting layout.
@@ -152,24 +156,33 @@ struct CaptureView: View {
     // MARK: - Inputs row (todo + tag inline)
 
     private var inputsRow: some View {
-        HStack(alignment: .center, spacing: 10) {
-            TextField("What needs doing?", text: $todoText, axis: .vertical)
-                .textFieldStyle(.plain)
-                .font(.system(size: 17, design: appState.captureFontDesign.design))
-                .foregroundStyle(primaryText)
-                .focused($focused, equals: .todo)
-                .lineLimit(1...4)
-                .onSubmit { submit() }
-                .onKeyPress(.tab) {
-                    focused = .tag
-                    return .handled
+        HStack(alignment: .top, spacing: 10) {
+            ZStack(alignment: .topLeading) {
+                if todoText.isEmpty {
+                    Text("What needs doing?")
+                        .font(.system(size: 17, design: appState.captureFontDesign.design))
+                        .foregroundStyle(tertiaryText)
+                        .allowsHitTesting(false)
                 }
-                .padding(.horizontal, 12)
-                .padding(.vertical, 8)
-                .background(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
-                        .fill(inputBackground)
+                TodoTextEditor(
+                    text: $todoText,
+                    font: appState.captureFontDesign.nsFont(size: 17),
+                    textColor: NSColor(primaryText),
+                    maxLines: 4,
+                    isFocused: Binding(
+                        get: { focused == .todo },
+                        set: { if $0 { focused = .todo } }
+                    ),
+                    onSubmit: { submit() },
+                    onTab: { focused = .tag }
                 )
+            }
+            .padding(.horizontal, 12)
+            .padding(.vertical, 8)
+            .background(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .fill(inputBackground)
+            )
 
             HStack(spacing: 4) {
                 Text("#")
@@ -410,6 +423,137 @@ struct ContentSizeKey: PreferenceKey {
     static var defaultValue: CGSize = .zero
     static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
         value = nextValue()
+    }
+}
+
+extension CaptureFontDesign {
+    func nsFont(size: CGFloat) -> NSFont {
+        let design: NSFontDescriptor.SystemDesign
+        switch self {
+        case .system:     design = .default
+        case .rounded:    design = .rounded
+        case .serif:      design = .serif
+        case .monospaced: design = .monospaced
+        }
+        let base = NSFont.systemFont(ofSize: size).fontDescriptor
+        return base.withDesign(design)
+            .flatMap { NSFont(descriptor: $0, size: size) }
+            ?? .systemFont(ofSize: size)
+    }
+}
+
+/// Multi-line input that grows to `maxLines` then scrolls. Drops down to
+/// AppKit because SwiftUI's `TextField(axis:.vertical)` doesn't auto-scroll
+/// to keep the cursor visible past its line limit.
+struct TodoTextEditor: NSViewRepresentable {
+    @Binding var text: String
+    let font: NSFont
+    let textColor: NSColor
+    let maxLines: Int
+    @Binding var isFocused: Bool
+    let onSubmit: () -> Void
+    let onTab: () -> Void
+
+    func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
+
+    func makeNSView(context: Context) -> NSScrollView {
+        let tv = NSTextView()
+        tv.delegate = context.coordinator
+        tv.font = font
+        tv.textColor = textColor
+        tv.insertionPointColor = textColor
+        tv.drawsBackground = false
+        tv.isRichText = false
+        tv.allowsUndo = true
+        tv.isAutomaticQuoteSubstitutionEnabled = false
+        tv.isAutomaticDashSubstitutionEnabled = false
+        tv.isAutomaticSpellingCorrectionEnabled = false
+        tv.isAutomaticTextReplacementEnabled = false
+        tv.textContainerInset = .zero
+        tv.textContainer?.lineFragmentPadding = 0
+        tv.textContainer?.widthTracksTextView = true
+        tv.isHorizontallyResizable = false
+        tv.isVerticallyResizable = true
+        tv.minSize = .zero
+        tv.maxSize = NSSize(width: CGFloat.greatestFiniteMagnitude,
+                            height: CGFloat.greatestFiniteMagnitude)
+        // Width tracks the scroll view's clip view — without this the document
+        // view stays at its initial (zero) width and text wraps mid-field.
+        tv.autoresizingMask = [.width]
+
+        let sv = NSScrollView()
+        sv.documentView = tv
+        sv.drawsBackground = false
+        sv.borderType = .noBorder
+        sv.hasVerticalScroller = true
+        sv.scrollerStyle = .overlay
+        sv.autohidesScrollers = true
+        sv.contentView.drawsBackground = false
+        sv.verticalScrollElasticity = .none
+        return sv
+    }
+
+    func updateNSView(_ sv: NSScrollView, context: Context) {
+        guard let tv = sv.documentView as? NSTextView else { return }
+        context.coordinator.parent = self
+        if tv.string != text {
+            tv.string = text
+            tv.scrollRangeToVisible(NSRange(location: text.utf16.count, length: 0))
+        }
+        tv.font = font
+        tv.textColor = textColor
+        tv.insertionPointColor = textColor
+        if isFocused, tv.window?.firstResponder !== tv {
+            DispatchQueue.main.async { [weak tv] in
+                tv?.window?.makeFirstResponder(tv)
+            }
+        }
+    }
+
+    func sizeThatFits(_ proposal: ProposedViewSize, nsView: NSScrollView, context: Context) -> CGSize? {
+        let width = proposal.width ?? 200
+        let lineH = NSLayoutManager().defaultLineHeight(for: font)
+        let attributed = NSAttributedString(
+            string: text.isEmpty ? " " : text,
+            attributes: [.font: font]
+        )
+        let bounding = attributed.boundingRect(
+            with: NSSize(width: width, height: .greatestFiniteMagnitude),
+            options: [.usesLineFragmentOrigin]
+        )
+        let used = max(lineH, bounding.height)
+        return CGSize(width: width, height: ceil(min(used, lineH * CGFloat(maxLines))))
+    }
+
+    final class Coordinator: NSObject, NSTextViewDelegate {
+        var parent: TodoTextEditor
+        init(parent: TodoTextEditor) { self.parent = parent }
+
+        func textDidChange(_ note: Notification) {
+            guard let tv = note.object as? NSTextView else { return }
+            parent.text = tv.string
+            tv.scrollRangeToVisible(tv.selectedRange())
+        }
+
+        func textViewDidChangeSelection(_ note: Notification) {
+            guard let tv = note.object as? NSTextView else { return }
+            tv.scrollRangeToVisible(tv.selectedRange())
+        }
+
+        func textView(_ tv: NSTextView, doCommandBy selector: Selector) -> Bool {
+            switch selector {
+            case #selector(NSResponder.insertNewline(_:)):
+                // Shift+Return → newline; bare Return → submit.
+                if NSApp.currentEvent?.modifierFlags.contains(.shift) == true { return false }
+                parent.onSubmit()
+                return true
+            case #selector(NSResponder.insertTab(_:)):
+                parent.onTab()
+                return true
+            default:
+                return false
+            }
+        }
     }
 }
 
