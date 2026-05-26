@@ -9,6 +9,8 @@ struct CaptureView: View {
 
     @State private var todoText = ""
     @State private var tagText = ""
+    @State private var shakeTrigger = 0
+    @State private var isShaking = false
     @FocusState private var focused: Field?
 
     enum Field: Hashable { case todo, tag }
@@ -183,6 +185,19 @@ struct CaptureView: View {
                 RoundedRectangle(cornerRadius: 10, style: .continuous)
                     .fill(inputBackground)
             )
+            .overlay(
+                RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    .strokeBorder(isShaking ? Color.red.opacity(0.75) : Color.clear,
+                                  lineWidth: 1)
+                    .animation(.easeOut(duration: 0.2), value: isShaking)
+            )
+            // Shakes when the user tries to submit with no text — signals
+            // that the todo field is required.
+            .phaseAnimator([0.0, -7, 7, -5, 5, -3, 3, 0], trigger: shakeTrigger) { content, phase in
+                content.offset(x: phase)
+            } animation: { _ in
+                .easeInOut(duration: 0.04)
+            }
 
             HStack(spacing: 4) {
                 Text("#")
@@ -370,10 +385,15 @@ struct CaptureView: View {
     private func submit() {
         let trimmedText = todoText.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else {
-            // No-op: nothing to save. Bounce focus back to the todo input so
-            // the user knows it's required (also satisfies the rule that you
-            // can't log from the tag field if the todo is empty).
+            // Nothing to save. Bounce focus to the todo input and shake/border-flash
+            // it so the user sees that text is required.
             focused = .todo
+            shakeTrigger += 1
+            isShaking = true
+            Task { @MainActor in
+                try? await Task.sleep(for: .milliseconds(600))
+                isShaking = false
+            }
             return
         }
         let trimmedTag = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
