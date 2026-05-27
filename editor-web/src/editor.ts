@@ -8,6 +8,7 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxTree } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
+import { vim, getCM } from "@replit/codemirror-vim";
 
 // Paper palette — keep visually cohesive with Quick Capture's capture panel.
 const palette = {
@@ -294,6 +295,29 @@ const theme = EditorView.theme({
         color: "#ffffff",
         borderColor: palette.text,
     },
+    // Vim mode tints — keeps the badge identifiable at a glance without
+    // shouting. Normal = neutral, Insert = green, Visual = amber,
+    // Replace = red. Mirrors the conventional terminal-vim color cues.
+    ".cm-mode-badge--normal": {
+        backgroundColor: "#EEF1F4",
+        color: "#3A3A3F",
+        borderColor: "#D5D9DD",
+    },
+    ".cm-mode-badge--insert": {
+        backgroundColor: "#E6F4EA",
+        color: "#1B7340",
+        borderColor: "#C2E4CE",
+    },
+    ".cm-mode-badge--visual": {
+        backgroundColor: "#FCEFD4",
+        color: "#8A5A00",
+        borderColor: "#EFD9A1",
+    },
+    ".cm-mode-badge--replace": {
+        backgroundColor: "#FBE7E5",
+        color: "#A52218",
+        borderColor: "#F3C4C0",
+    },
     // Transient "Saved" badge — appears under the mode badge on ⌘S, fades out
     // after a moment. Subtle Apple-like green so it reads as success without
     // shouting.
@@ -465,6 +489,12 @@ let suppressNextSave = false;
 // extensions in/out without rebuilding the entire EditorState.
 const readModeComp = new Compartment();
 let readMode = false;
+
+// Vim is always on for now; the Compartment is here so a future settings
+// toggle can swap it in/out without rebuilding the editor.
+const vimComp = new Compartment();
+let vimEnabled = true;
+let vimMode: "normal" | "insert" | "visual" | "replace" = "normal";
 
 function setReadMode(v: EditorView, on: boolean) {
     readMode = on;
@@ -655,8 +685,33 @@ function updateBadge(v: EditorView) {
         badge.className = "cm-mode-badge";
         v.dom.appendChild(badge);
     }
-    badge.textContent = readMode ? "Reading" : "Editing";
-    badge.classList.toggle("cm-mode-badge--read", readMode);
+    badge.classList.remove(
+        "cm-mode-badge--read",
+        "cm-mode-badge--normal",
+        "cm-mode-badge--insert",
+        "cm-mode-badge--visual",
+        "cm-mode-badge--replace",
+    );
+
+    // Read mode takes precedence — the file is uneditable so vim mode is moot.
+    if (readMode) {
+        badge.textContent = "Reading";
+        badge.classList.add("cm-mode-badge--read");
+        return;
+    }
+
+    if (!vimEnabled) {
+        badge.textContent = "Editing";
+        return;
+    }
+
+    const label =
+        vimMode === "insert" ? "Insert" :
+        vimMode === "visual" ? "Visual" :
+        vimMode === "replace" ? "Replace" :
+        "Normal";
+    badge.textContent = label;
+    badge.classList.add(`cm-mode-badge--${vimMode}`);
 }
 
 function sendToSwift(message: Record<string, unknown>) {
@@ -721,6 +776,9 @@ function mount(content: string) {
     const state = EditorState.create({
         doc: content,
         extensions: [
+            // Vim has to be loaded BEFORE other keymaps so its normal-mode
+            // bindings win over defaultKeymap's Insert-mode-only assumptions.
+            vimComp.of(vimEnabled ? vim() : []),
             history(),
             drawSelection(),
             bracketMatching(),
@@ -775,9 +833,21 @@ function mount(content: string) {
     });
 
     view = new EditorView({ state, parent });
+    attachVimModeListener(view);
     updateBadge(view);
     ensureSidebar(view);
     view.focus();
+}
+
+function attachVimModeListener(v: EditorView) {
+    if (!vimEnabled) return;
+    const cm = getCM(v);
+    if (!cm) return;
+    cm.on("vim-mode-change", (e: { mode: string }) => {
+        // The lib reports mode as "normal" | "insert" | "visual" | "replace".
+        vimMode = (e.mode as typeof vimMode) ?? "normal";
+        updateBadge(v);
+    });
 }
 
 window.qcEditor = {
