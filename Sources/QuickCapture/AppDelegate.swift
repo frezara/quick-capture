@@ -28,7 +28,104 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         }
 
         setupStatusItem()
+        setupMainMenu()
         setupHotKey()
+    }
+
+    // MARK: - Main menu
+    //
+    // LSUIElement apps don't get a standard application menu by default, so
+    // shortcuts like ⌘H / ⌘Q / ⌘W and the standard Edit-menu actions don't
+    // work in the editor windows. Building the minimal main menu here wires
+    // those up — AppKit handles the actions automatically via selectors
+    // sent through the responder chain.
+
+    private func setupMainMenu() {
+        let mainMenu = NSMenu()
+        let appName = "Quick Capture"
+
+        // App menu
+        let appMenuItem = NSMenuItem()
+        mainMenu.addItem(appMenuItem)
+        let appMenu = NSMenu()
+        appMenuItem.submenu = appMenu
+
+        appMenu.addItem(NSMenuItem(title: "About \(appName)",
+                                   action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)),
+                                   keyEquivalent: ""))
+        appMenu.addItem(.separator())
+
+        let settingsItem = NSMenuItem(title: "Settings…",
+                                      action: #selector(showSettings),
+                                      keyEquivalent: ",")
+        settingsItem.target = self
+        appMenu.addItem(settingsItem)
+        appMenu.addItem(.separator())
+
+        appMenu.addItem(NSMenuItem(title: "Hide \(appName)",
+                                   action: #selector(NSApplication.hide(_:)),
+                                   keyEquivalent: "h"))
+        let hideOthers = NSMenuItem(title: "Hide Others",
+                                    action: #selector(NSApplication.hideOtherApplications(_:)),
+                                    keyEquivalent: "h")
+        hideOthers.keyEquivalentModifierMask = [.command, .option]
+        appMenu.addItem(hideOthers)
+        appMenu.addItem(NSMenuItem(title: "Show All",
+                                   action: #selector(NSApplication.unhideAllApplications(_:)),
+                                   keyEquivalent: ""))
+        appMenu.addItem(.separator())
+        appMenu.addItem(NSMenuItem(title: "Quit \(appName)",
+                                   action: #selector(NSApplication.terminate(_:)),
+                                   keyEquivalent: "q"))
+
+        // Edit menu — Cut / Copy / Paste / Select All / Undo / Redo land on
+        // the focused text view via the responder chain.
+        let editMenuItem = NSMenuItem()
+        mainMenu.addItem(editMenuItem)
+        let editMenu = NSMenu(title: "Edit")
+        editMenuItem.submenu = editMenu
+
+        editMenu.addItem(NSMenuItem(title: "Undo",
+                                    action: Selector(("undo:")),
+                                    keyEquivalent: "z"))
+        let redo = NSMenuItem(title: "Redo",
+                              action: Selector(("redo:")),
+                              keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        editMenu.addItem(redo)
+        editMenu.addItem(.separator())
+        editMenu.addItem(NSMenuItem(title: "Cut",
+                                    action: #selector(NSText.cut(_:)),
+                                    keyEquivalent: "x"))
+        editMenu.addItem(NSMenuItem(title: "Copy",
+                                    action: #selector(NSText.copy(_:)),
+                                    keyEquivalent: "c"))
+        editMenu.addItem(NSMenuItem(title: "Paste",
+                                    action: #selector(NSText.paste(_:)),
+                                    keyEquivalent: "v"))
+        editMenu.addItem(NSMenuItem(title: "Select All",
+                                    action: #selector(NSText.selectAll(_:)),
+                                    keyEquivalent: "a"))
+
+        // Window menu
+        let windowMenuItem = NSMenuItem()
+        mainMenu.addItem(windowMenuItem)
+        let windowMenu = NSMenu(title: "Window")
+        windowMenuItem.submenu = windowMenu
+
+        windowMenu.addItem(NSMenuItem(title: "Minimize",
+                                      action: #selector(NSWindow.performMiniaturize(_:)),
+                                      keyEquivalent: "m"))
+        windowMenu.addItem(NSMenuItem(title: "Zoom",
+                                      action: #selector(NSWindow.performZoom(_:)),
+                                      keyEquivalent: ""))
+        windowMenu.addItem(.separator())
+        windowMenu.addItem(NSMenuItem(title: "Close",
+                                      action: #selector(NSWindow.performClose(_:)),
+                                      keyEquivalent: "w"))
+
+        NSApp.mainMenu = mainMenu
+        NSApp.windowsMenu = windowMenu
     }
 
     // MARK: - Status item

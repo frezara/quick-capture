@@ -730,13 +730,31 @@ function isListLike(text: string): boolean {
     return /^\s*([-*+]|\d+\.)\s/.test(text);
 }
 
-/// Cmd+L toggles `- [ ]` ↔ `- [x]` on the cursor's line. No-op (and lets
-/// the keymap fall through) when the line isn't a task.
+/// Cmd+L on the cursor's line:
+///   - a task line (`- [ ] foo` / `- [x] foo`)  → toggle the checkbox
+///   - a bullet line (`- foo` / `* foo`)        → insert `[ ] ` after the bullet
+///   - anything else (plain text, empty, indented) → prepend `- [ ] ` (indent kept)
 function toggleTaskOnCurrentLine(view: EditorView): boolean {
     const line = view.state.doc.lineAt(view.state.selection.main.head);
-    const match = line.text.match(/^(\s*[-*+]\s+)(\[[\sxX]\])/);
-    if (!match) return false;
-    toggleTaskAtMarker(view, line.from + match[1].length);
+
+    const taskMatch = line.text.match(/^(\s*[-*+]\s+)(\[[\sxX]\])/);
+    if (taskMatch) {
+        toggleTaskAtMarker(view, line.from + taskMatch[1].length);
+        return true;
+    }
+
+    const bulletMatch = line.text.match(/^(\s*[-*+]\s+)/);
+    if (bulletMatch) {
+        view.dispatch({
+            changes: { from: line.from + bulletMatch[1].length, insert: "[ ] " },
+        });
+        return true;
+    }
+
+    const indent = line.text.match(/^(\s*)/)?.[1] ?? "";
+    view.dispatch({
+        changes: { from: line.from + indent.length, insert: "- [ ] " },
+    });
     return true;
 }
 
@@ -864,6 +882,12 @@ function mount(content: string) {
                     key: "Mod-s",
                     // Return true so AppKit doesn't beep ("unhandled key").
                     run: (v) => { saveNow(v); return true; },
+                },
+                {
+                    // Cmd+' — sweep completed tasks to the bottom of each
+                    // section (same as the sidebar button).
+                    key: "Mod-'",
+                    run: (v) => { moveCompletedToBottom(v); return true; },
                 },
                 // Obsidian-style Tab / Shift-Tab: indent or outdent a list/task
                 // line when the cursor is on one; otherwise fall back to a real
