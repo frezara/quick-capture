@@ -116,4 +116,71 @@ enum FileWriter {
         result += "\(headingLine)\n\(item)\n"
         return result
     }
+
+    // MARK: - Archive
+
+    /// Moves every `- [x]` line from `sourceURL` into a sibling `_archive`
+    /// file, inserting each item under the same `## section` heading it had
+    /// in the source. The archive file mirrors the source's `# Inbox` + H2
+    /// structure; missing sections are created. Indented checked tasks are
+    /// unindented so the archive reads as a flat list of completed items.
+    static func archiveCompleted(at sourceURL: URL) throws {
+        let sourceText = (try? String(contentsOf: sourceURL, encoding: .utf8)) ?? ""
+        let (remaining, archived) = extractCompletedItems(from: sourceText)
+        guard !archived.isEmpty else { return }
+
+        let archiveURL = archiveURL(for: sourceURL)
+        let archiveExisting = (try? String(contentsOf: archiveURL, encoding: .utf8)) ?? ""
+        var archiveText = ensureDocumentHeading(in: archiveExisting)
+        for item in archived {
+            archiveText = insert(item: item.text, underHeading: item.section ?? untaggedSection, in: archiveText)
+        }
+
+        guard let archiveData = archiveText.data(using: .utf8),
+              let remainingData = remaining.data(using: .utf8) else {
+            throw WriteError.encodingFailed
+        }
+        try archiveData.write(to: archiveURL, options: .atomic)
+        try remainingData.write(to: sourceURL, options: .atomic)
+    }
+
+    struct ArchivedItem: Equatable {
+        let text: String      // the task line, with indentation stripped
+        let section: String?  // the `## section` it lived under (nil → untagged)
+    }
+
+    /// Splits `content` into the file body with every `- [x]` line removed,
+    /// plus a list of those removed items with their containing section name.
+    static func extractCompletedItems(from content: String) -> (remaining: String, items: [ArchivedItem]) {
+        var lines = content.components(separatedBy: "\n")
+        var items: [ArchivedItem] = []
+        var keepIndices: [Int] = []
+        var currentSection: String? = nil
+
+        for (i, line) in lines.enumerated() {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if trimmed.hasPrefix("## ") {
+                currentSection = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
+                keepIndices.append(i)
+            } else if line.range(of: #"^\s*[-*+]\s+\[[xX]\]"#, options: .regularExpression) != nil {
+                let unindented = line.replacingOccurrences(of: #"^\s+"#, with: "", options: .regularExpression)
+                items.append(ArchivedItem(text: unindented, section: currentSection))
+            } else {
+                keepIndices.append(i)
+            }
+        }
+
+        lines = keepIndices.map { lines[$0] }
+        return (lines.joined(separator: "\n"), items)
+    }
+
+    /// Sibling URL with `_archive` inserted before the extension.
+    /// e.g. `inbox.md` → `inbox_archive.md`, `notes` → `notes_archive`.
+    static func archiveURL(for source: URL) -> URL {
+        let dir = source.deletingLastPathComponent()
+        let base = source.deletingPathExtension().lastPathComponent
+        let ext = source.pathExtension
+        let name = ext.isEmpty ? "\(base)_archive" : "\(base)_archive.\(ext)"
+        return dir.appendingPathComponent(name)
+    }
 }

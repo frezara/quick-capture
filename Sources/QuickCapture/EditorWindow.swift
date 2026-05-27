@@ -79,6 +79,18 @@ final class EditorWindow: NSWindow {
         }
     }
 
+    /// Called by the JS side when the user clicks the archive sidebar button.
+    /// Moves every completed (`- [x]`) item from the source file into a
+    /// sibling `<name>_archive.<ext>` file. The file watcher will pick up the
+    /// resulting change to the source and reload the editor.
+    fileprivate func archive() {
+        do {
+            try FileWriter.archiveCompleted(at: fileURL)
+        } catch {
+            NSLog("Editor archive failed for \(fileURL.path): \(error)")
+        }
+    }
+
     private func pushContent(_ text: String) {
         lastSyncedContent = text
         guard let encoded = String(data: try! JSONEncoder().encode(text), encoding: .utf8) else { return }
@@ -162,6 +174,8 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
             if let content = dict["content"] as? String {
                 window?.write(content)
             }
+        case "archive":
+            window?.archive()
         default:
             break
         }

@@ -687,26 +687,51 @@ function moveCompletedToBottom(view: EditorView): void {
     });
 }
 
-/// Floating vertical toolbar on the left edge of the editor. One button for
-/// now — sweep completed tasks to the bottom of each section. Built once and
-/// reused; click handler captures `view`.
+/// Floating vertical toolbar on the left edge of the editor. Built once and
+/// reused; each button's click handler captures `view`.
 function ensureSidebar(view: EditorView) {
     if (view.dom.querySelector(".cm-sidebar")) return;
     const sidebar = document.createElement("div");
     sidebar.className = "cm-sidebar";
 
+    sidebar.appendChild(makeSidebarButton(view, {
+        title: "Move completed items to the bottom of each section (⌘')",
+        svg: `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+                <path d="M12 4v12"/>
+                <path d="M6 12l6 6 6-6"/>
+                <path d="M4 21h16"/>
+            </svg>`,
+        action: (v) => moveCompletedToBottom(v),
+    }));
+
+    sidebar.appendChild(makeSidebarButton(view, {
+        title: "Archive completed items to <name>_archive.md",
+        svg: `
+            <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="2"
+                 stroke-linecap="round" stroke-linejoin="round">
+                <rect x="3" y="4" width="18" height="4" rx="1"/>
+                <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/>
+                <line x1="10" y1="13" x2="14" y2="13"/>
+            </svg>`,
+        action: () => sendToSwift({ type: "archive" }),
+    }));
+
+    view.dom.appendChild(sidebar);
+}
+
+function makeSidebarButton(
+    view: EditorView,
+    opts: { title: string; svg: string; action: (v: EditorView) => void },
+): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "cm-sidebar-btn";
-    btn.title = "Move completed items to the bottom of each section";
-    btn.innerHTML = `
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
-             stroke="currentColor" stroke-width="2"
-             stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 4v12"/>
-            <path d="M6 12l6 6 6-6"/>
-            <path d="M4 21h16"/>
-        </svg>`;
+    btn.title = opts.title;
+    btn.innerHTML = opts.svg;
     // Stop mousedown from bubbling to CodeMirror, which would otherwise treat
     // the button press as the start of a drag-select — and complete the
     // selection when the user next clicks in the editor.
@@ -717,11 +742,9 @@ function ensureSidebar(view: EditorView) {
     btn.addEventListener("click", (e) => {
         e.preventDefault();
         e.stopPropagation();
-        moveCompletedToBottom(view);
+        opts.action(view);
     });
-
-    sidebar.appendChild(btn);
-    view.dom.appendChild(sidebar);
+    return btn;
 }
 
 /// True for bulleted (`-`, `*`, `+`) or ordered (`1.`) list lines, including
