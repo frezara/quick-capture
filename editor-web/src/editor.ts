@@ -511,17 +511,25 @@ function moveCompletedToBottom(view: EditorView): void {
     }
     sections.push(current);
 
-    const taskRegex = /^\s*[-*+]\s+\[[xX]\]/;
+    // Every `- [x]` line (any indentation) moves to the end of its section,
+    // unindented so it reads as a flat list of completed items rather than
+    // a nested item dangling without a parent. Order within both groups is
+    // preserved.
+    const checked = /^\s*[-*+]\s+\[[xX]\]/;
     const processed = sections.map(section => {
-        const checked: string[] = [];
+        const done: string[] = [];
         const rest: string[] = [];
         for (const line of section) {
-            (taskRegex.test(line) ? checked : rest).push(line);
+            if (checked.test(line)) {
+                done.push(line.replace(/^\s+/, ""));
+            } else {
+                rest.push(line);
+            }
         }
-        if (checked.length === 0) return section;
+        if (done.length === 0) return section;
         const hadTrailingBlank = rest[rest.length - 1] === "";
         while (rest.length > 0 && rest[rest.length - 1] === "") rest.pop();
-        const result = [...rest, ...checked];
+        const result = [...rest, ...done];
         if (hadTrailingBlank) result.push("");
         return result;
     });
