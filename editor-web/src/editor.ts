@@ -3,10 +3,10 @@ import {
     EditorView, keymap, drawSelection, highlightActiveLine,
     WidgetType, Decoration, DecorationSet, ViewPlugin, ViewUpdate,
 } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertTab } from "@codemirror/commands";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
-import { syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput, syntaxTree } from "@codemirror/language";
+import { syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxTree } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
 
 // Paper palette — keep visually cohesive with Quick Capture's capture panel.
@@ -133,41 +133,9 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     return;
                 }
 
-                if (node.name === "TaskMarker") {
-                    // Bundle the leading list marker (`- ` / `* ` / `+ ` with
-                    // optional indentation), the `[ ]`, and the trailing space
-                    // into one replacement so the checkbox sits tight against
-                    // the task text.
-                    const text = view.state.doc.sliceString(node.from, node.to);
-                    const checked = /[xX]/.test(text);
-                    const before = view.state.doc.sliceString(line.from, node.from);
-                    const indentMatch = before.match(/^(\s*)([-*+]\s+)$/);
-                    const start = indentMatch
-                        ? line.from + indentMatch[1].length
-                        : node.from;
-                    let end = node.to;
-                    if (view.state.doc.sliceString(end, end + 1) === " ") end += 1;
-
-                    // Reveal the raw `- [ ] ` only when the cursor/selection
-                    // is actually inside (or touching) that syntax range. Clicking
-                    // on the task body leaves the checkbox in place — no reveal,
-                    // no horizontal shift. Read mode never reveals.
-                    if (!readMode && selectionOverlaps(view.state, start, end)) return;
-
-                    const widthInChars = end - start;
-                    const taskOffset = node.from - start;
-                    ranges.push({
-                        from: start, to: end,
-                        deco: Decoration.replace({
-                            widget: new CheckboxWidget(checked, widthInChars, taskOffset),
-                        }),
-                    });
-                    return;
-                }
-
-                // ListMark is intentionally not decorated here — on task lines
-                // it's swallowed by the TaskMarker widget above; on plain lists
-                // we want the bullet to remain visible.
+                // TaskMarker is handled outside the tree iteration via a
+                // line scan — the parser drops it for indented tasks that
+                // lack a parent list item (treats them as code blocks).
 
                 if (node.name === "HeaderMark") {
                     let end = node.to;
@@ -199,6 +167,46 @@ function buildLivePreview(view: EditorView): DecorationSet {
             },
         });
     }
+    // Line-based scan for task widgets and indent guides. Independent of the
+    // syntax tree so indented tasks render with the checkbox even when the
+    // parser saw an indented code block.
+    for (const range of view.visibleRanges) {
+        const fromLine = view.state.doc.lineAt(range.from).number;
+        const toLine = view.state.doc.lineAt(range.to).number;
+        for (let n = fromLine; n <= toLine; n++) {
+            const line = view.state.doc.line(n);
+
+            // Indent guide: thin vertical line for each indent level on
+            // list/task lines, signalling that the item is nested under
+            // something above.
+            const listIndent = line.text.match(/^(\s*)([-*+]|\d+\.)\s/);
+            if (listIndent && listIndent[1].length >= 4) {
+                const level = Math.min(Math.floor(listIndent[1].length / 4), 4);
+                ranges.push({
+                    from: line.from, to: line.from,
+                    deco: Decoration.line({ class: `cm-indented cm-indent-${level}` }),
+                });
+            }
+
+            const match = line.text.match(/^(\s*)([-*+]\s+)(\[[\sxX]\])/);
+            if (!match) continue;
+            const startPos = line.from + match[1].length;
+            const taskMarkerFrom = startPos + match[2].length;
+            let endPos = taskMarkerFrom + 3;
+            if (view.state.doc.sliceString(endPos, endPos + 1) === " ") endPos += 1;
+            if (!readMode && selectionOverlaps(view.state, startPos, endPos)) continue;
+            const checked = /[xX]/.test(match[3]);
+            const widthInChars = endPos - startPos;
+            const taskOffset = taskMarkerFrom - startPos;
+            ranges.push({
+                from: startPos, to: endPos,
+                deco: Decoration.replace({
+                    widget: new CheckboxWidget(checked, widthInChars, taskOffset),
+                }),
+            });
+        }
+    }
+
     return Decoration.set(ranges.map(r => r.deco.range(r.from, r.to)), true);
 }
 
@@ -286,6 +294,36 @@ const theme = EditorView.theme({
         color: "#ffffff",
         borderColor: palette.text,
     },
+    // Transient "Saved" badge — appears under the mode badge on ⌘S, fades out
+    // after a moment. Subtle Apple-like green so it reads as success without
+    // shouting.
+    ".cm-saved-badge": {
+        position: "absolute",
+        top: "44px",
+        right: "16px",
+        display: "flex",
+        alignItems: "center",
+        gap: "4px",
+        padding: "3px 10px 3px 8px",
+        borderRadius: "10px",
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+        fontSize: "10.5px",
+        fontWeight: "600",
+        letterSpacing: "0.4px",
+        textTransform: "uppercase",
+        backgroundColor: "#E6F4EA",
+        color: "#1B7340",
+        border: "1px solid #C2E4CE",
+        opacity: "0",
+        transform: "translateY(-4px)",
+        transition: "opacity 0.18s ease, transform 0.18s ease",
+        pointerEvents: "none",
+        zIndex: "10",
+    },
+    ".cm-saved-badge--visible": {
+        opacity: "1",
+        transform: "translateY(0)",
+    },
     // Floating vertical toolbar on the left edge. Sits over the editor's
     // padding so it doesn't disrupt the centered content column.
     ".cm-sidebar": {
@@ -338,6 +376,34 @@ const theme = EditorView.theme({
     // them on the active line doesn't shift surrounding text horizontally.
     ".cm-md-hidden": {
         color: "transparent",
+    },
+    // Indent guides — thin vertical lines under each indent level on nested
+    // list/task lines. Drawn via ::before + box-shadow so a single pseudo
+    // element can render multiple lines (one per level) without extra DOM.
+    ".cm-line.cm-indented": {
+        position: "relative",
+    },
+    ".cm-line.cm-indented::before": {
+        content: '""',
+        position: "absolute",
+        left: "1.5ch",
+        top: "0",
+        // Match the editor's line-height (1.7 × 15px). Bounding the height
+        // means the guide only spans the FIRST visual line — when the logical
+        // line wraps, the guide doesn't bleed down across the wrapped text.
+        height: "1.7em",
+        width: "1px",
+        backgroundColor: palette.borderSoft,
+        pointerEvents: "none",
+    },
+    ".cm-line.cm-indent-2::before": {
+        boxShadow: `4ch 0 0 0 ${palette.borderSoft}`,
+    },
+    ".cm-line.cm-indent-3::before": {
+        boxShadow: `4ch 0 0 0 ${palette.borderSoft}, 8ch 0 0 0 ${palette.borderSoft}`,
+    },
+    ".cm-line.cm-indent-4::before": {
+        boxShadow: `4ch 0 0 0 ${palette.borderSoft}, 8ch 0 0 0 ${palette.borderSoft}, 12ch 0 0 0 ${palette.borderSoft}`,
     },
     ".cm-task-checkbox": {
         // Custom-styled square checkbox to match the target design: light
@@ -558,6 +624,12 @@ function ensureSidebar(view: EditorView) {
     view.dom.appendChild(sidebar);
 }
 
+/// True for bulleted (`-`, `*`, `+`) or ordered (`1.`) list lines, including
+/// task items. Used by the Tab handler to decide indent-vs-insert-tab.
+function isListLike(text: string): boolean {
+    return /^\s*([-*+]|\d+\.)\s/.test(text);
+}
+
 /// Cmd+L toggles `- [ ]` ↔ `- [x]` on the cursor's line. No-op (and lets
 /// the keymap fall through) when the line isn't a task.
 function toggleTaskOnCurrentLine(view: EditorView): boolean {
@@ -595,6 +667,40 @@ function scheduleSave() {
     }, 400);
 }
 
+/// Cmd+S handler: cancel any pending debounce, flush the current content to
+/// Swift, and flash a "Saved" badge so the user gets explicit feedback.
+function saveNow(v: EditorView) {
+    if (saveTimer !== null) {
+        window.clearTimeout(saveTimer);
+        saveTimer = null;
+    }
+    sendToSwift({ type: "save", content: v.state.doc.toString() });
+    showSavedBadge(v);
+}
+
+function showSavedBadge(v: EditorView) {
+    let badge = v.dom.querySelector(".cm-saved-badge") as HTMLDivElement | null;
+    if (!badge) {
+        badge = document.createElement("div");
+        badge.className = "cm-saved-badge";
+        badge.innerHTML = `
+            <svg width="11" height="11" viewBox="0 0 24 24" fill="none"
+                 stroke="currentColor" stroke-width="3.5"
+                 stroke-linecap="round" stroke-linejoin="round">
+                <polyline points="20 6 9 17 4 12"/>
+            </svg>
+            <span>Saved</span>`;
+        v.dom.appendChild(badge);
+    }
+    badge.classList.add("cm-saved-badge--visible");
+    // Reset hide timer so rapid Cmd+S presses don't blink the badge off mid-fade.
+    const existing = (badge as unknown as { _qcTimer?: number })._qcTimer;
+    if (existing) window.clearTimeout(existing);
+    (badge as unknown as { _qcTimer?: number })._qcTimer = window.setTimeout(() => {
+        badge!.classList.remove("cm-saved-badge--visible");
+    }, 1400);
+}
+
 function mount(content: string) {
     const parent = document.getElementById("editor")!;
     suppressNextSave = true;
@@ -613,6 +719,7 @@ function mount(content: string) {
             indentOnInput(),
             EditorView.lineWrapping,
             markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
+            indentUnit.of("    "),   // 4-space indent matches Obsidian's defaults
             syntaxHighlighting(highlight),
             livePreview,
             readModeComp.of([]),
@@ -624,6 +731,30 @@ function mount(content: string) {
                 {
                     key: "Mod-l",
                     run: toggleTaskOnCurrentLine,
+                },
+                {
+                    key: "Mod-s",
+                    // Return true so AppKit doesn't beep ("unhandled key").
+                    run: (v) => { saveNow(v); return true; },
+                },
+                // Obsidian-style Tab / Shift-Tab: indent or outdent a list/task
+                // line when the cursor is on one; otherwise fall back to a real
+                // tab character so prose lines aren't intercepted.
+                {
+                    key: "Tab",
+                    run: (v) => {
+                        const line = v.state.doc.lineAt(v.state.selection.main.head);
+                        if (isListLike(line.text)) return indentMore(v);
+                        return insertTab(v);
+                    },
+                },
+                {
+                    key: "Shift-Tab",
+                    run: (v) => {
+                        const line = v.state.doc.lineAt(v.state.selection.main.head);
+                        if (isListLike(line.text)) return indentLess(v);
+                        return false;
+                    },
                 },
                 ...defaultKeymap,
                 ...historyKeymap,
