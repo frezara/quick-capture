@@ -46,7 +46,11 @@ const highlight = HighlightStyle.define([
     { tag: tags.link, color: palette.accent, textDecoration: "underline" },
     { tag: tags.url, color: palette.accent },
 
-    { tag: tags.monospace, fontFamily: "ui-monospace, SF Mono, Menlo, monospace", color: palette.text },
+    { tag: tags.monospace,
+      fontFamily: "ui-monospace, SF Mono, Menlo, monospace",
+      color: palette.text,
+      fontSize: "0.92em",
+    },
     { tag: tags.list, color: palette.text },
     { tag: tags.quote, color: palette.soft, fontStyle: "italic" },
 
@@ -172,6 +176,24 @@ function buildLivePreview(view: EditorView): DecorationSet {
                         from: node.from, to: node.to,
                         deco: Decoration.replace({}),
                     });
+                    return;
+                }
+
+                // Inline `code` gets a pink pill background — but only when
+                // the cursor isn't on the line. With the cursor on the line
+                // the backticks reveal (above) and the pill drops so editing
+                // feels direct.
+                if (node.name === "InlineCode") {
+                    if (!readMode && selectionOverlaps(view.state, line.from, line.to)) return;
+                    // Inner content range — skip the leading/trailing backticks.
+                    const innerFrom = node.from + 1;
+                    const innerTo = node.to - 1;
+                    if (innerTo > innerFrom) {
+                        ranges.push({
+                            from: innerFrom, to: innerTo,
+                            deco: Decoration.mark({ class: "cm-inline-code-pill" }),
+                        });
+                    }
                     return;
                 }
             },
@@ -423,6 +445,15 @@ const theme = EditorView.theme({
     // them on the active line doesn't shift surrounding text horizontally.
     ".cm-md-hidden": {
         color: "transparent",
+    },
+    // Pink pill behind inline `code`. Applied via decoration only when the
+    // cursor isn't on the line, so editing the raw markdown drops the pill.
+    ".cm-inline-code-pill": {
+        backgroundColor: "#FFE9EF",
+        border: "1px solid #F5BBD0",
+        borderRadius: "4px",
+        padding: "1px 5px",
+        margin: "0 1px",
     },
     // Indent guides — thin vertical lines under each indent level on nested
     // list/task lines. Drawn via ::before + box-shadow so a single pseudo
