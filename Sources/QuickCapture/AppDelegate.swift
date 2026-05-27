@@ -52,6 +52,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureItem.target = self
         menu.addItem(captureItem)
 
+        let openEditorItem = NSMenuItem(title: "Open Editor…",
+                                        action: #selector(openEditor),
+                                        keyEquivalent: "o")
+        openEditorItem.target = self
+        menu.addItem(openEditorItem)
+
         menu.addItem(.separator())
 
         let settingsItem = NSMenuItem(title: "Settings…",
@@ -181,6 +187,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         settingsController.show()
+    }
+
+    // MARK: - Editor
+
+    @objc func openEditor() {
+        EditorWindowController.shared.openWithPanel()
     }
 
     // MARK: - Launch at login

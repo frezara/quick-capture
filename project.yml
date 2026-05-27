@@ -27,6 +27,13 @@ targets:
     platform: macOS
     sources:
       - path: Sources/QuickCapture
+      # CodeMirror-based markdown editor — bundled as a folder reference so
+      # editor.html and editor.js stay co-located inside `EditorWeb/` in the
+      # built .app, where `Bundle.main.url(forResource:..., subdirectory:)`
+      # can find them.
+      - path: editor-web/dist
+        buildPhase: resources
+        type: folder
     dependencies:
       - package: HotKey
     settings:

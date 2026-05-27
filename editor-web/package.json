@@ -1,0 +1,23 @@
+{
+  "name": "quick-capture-editor",
+  "version": "0.1.0",
+  "private": true,
+  "description": "CodeMirror-based markdown editor embedded in Quick Capture via WKWebView.",
+  "scripts": {
+    "build": "esbuild src/editor.ts --bundle --outfile=dist/editor.js --format=iife --target=safari16 --minify --log-level=warning",
+    "dev": "esbuild src/editor.ts --bundle --outfile=dist/editor.js --format=iife --target=safari16 --watch --sourcemap"
+  },
+  "devDependencies": {
+    "esbuild": "^0.21.5",
+    "typescript": "^5.4.5"
+  },
+  "dependencies": {
+    "@codemirror/commands": "^6.5.0",
+    "@codemirror/lang-markdown": "^6.2.5",
+    "@codemirror/language": "^6.10.1",
+    "@codemirror/language-data": "^6.5.1",
+    "@codemirror/state": "^6.4.1",
+    "@codemirror/view": "^6.26.3",
+    "@lezer/highlight": "^1.2.0"
+  }
+}
