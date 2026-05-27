@@ -1,4 +1,4 @@
-import { EditorState, RangeSetBuilder } from "@codemirror/state";
+import { EditorState, RangeSetBuilder, Compartment } from "@codemirror/state";
 import {
     EditorView, keymap, drawSelection, highlightActiveLine,
     WidgetType, Decoration, DecorationSet, ViewPlugin, ViewUpdate,
@@ -112,6 +112,9 @@ function selectionOverlaps(state: EditorState, from: number, to: number): boolea
 }
 
 function buildLivePreview(view: EditorView): DecorationSet {
+    // In read mode (Cmd+E) all syntax stays hidden regardless of cursor
+    // position — the cursor is invisible anyway and reveal would be confusing.
+    const readMode = view.state.readOnly;
     // Line decorations and inline marks share a sorted list so we can emit in
     // any tree-iteration order. Decoration.set(_, true) sorts before applying.
     const ranges: { from: number; to: number; deco: Decoration }[] = [];
@@ -151,8 +154,8 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     // Reveal the raw `- [ ] ` only when the cursor/selection
                     // is actually inside (or touching) that syntax range. Clicking
                     // on the task body leaves the checkbox in place — no reveal,
-                    // no horizontal shift.
-                    if (selectionOverlaps(view.state, start, end)) return;
+                    // no horizontal shift. Read mode never reveals.
+                    if (!readMode && selectionOverlaps(view.state, start, end)) return;
 
                     const widthInChars = end - start;
                     const taskOffset = node.from - start;
@@ -172,10 +175,27 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 if (node.name === "HeaderMark") {
                     let end = node.to;
                     if (view.state.doc.sliceString(end, end + 1) === " ") end += 1;
-                    if (selectionOverlaps(view.state, node.from, end)) return;
+                    // Reveal when the cursor is anywhere on the heading line.
+                    if (!readMode && selectionOverlaps(view.state, line.from, line.to)) return;
+                    // Replace (zero-width) rather than mark — the latter leaves
+                    // a transparent-but-visible-width gap before the heading.
                     ranges.push({
                         from: node.from, to: end,
-                        deco: Decoration.mark({ class: "cm-md-hidden" }),
+                        deco: Decoration.replace({}),
+                    });
+                    return;
+                }
+
+                // Inline emphasis (`*` / `_` for italic, `**` / `__` for bold),
+                // inline code backticks, and strikethrough `~~`. Hide on
+                // non-cursor lines; the surrounding text keeps its bold/italic/
+                // monospace styling because the highlight rules style the
+                // content nodes (Strong, Emphasis, etc.) directly.
+                if (node.name === "EmphasisMark" || node.name === "CodeMark" || node.name === "StrikethroughMark") {
+                    if (!readMode && selectionOverlaps(view.state, line.from, line.to)) return;
+                    ranges.push({
+                        from: node.from, to: node.to,
+                        deco: Decoration.replace({}),
                     });
                     return;
                 }
@@ -232,6 +252,42 @@ const theme = EditorView.theme({
         borderLeftColor: palette.text,
         borderLeftWidth: "2.5px",
         marginLeft: "-1px",   // re-center the thicker stem on the insertion point
+    },
+    // Read mode (Cmd+E): no cursor. drawSelection wraps the caret in
+    // .cm-cursorLayer with its own animations, so hide the entire layer.
+    // !important defeats the animation/inline-style chain CodeMirror sets.
+    "&.cm-read-mode .cm-cursorLayer": {
+        display: "none !important",
+    },
+    "&.cm-read-mode .cm-cursor, &.cm-read-mode .cm-cursor-primary, &.cm-read-mode .cm-dropCursor": {
+        display: "none !important",
+    },
+    "&.cm-read-mode .cm-content": {
+        caretColor: "transparent !important",
+    },
+    // Mode badge — floats over the top-right corner of the editor.
+    ".cm-mode-badge": {
+        position: "absolute",
+        top: "12px",
+        right: "16px",
+        padding: "3px 10px",
+        borderRadius: "10px",
+        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+        fontSize: "10.5px",
+        fontWeight: "600",
+        letterSpacing: "0.4px",
+        textTransform: "uppercase",
+        backgroundColor: palette.codeBg,
+        color: palette.soft,
+        border: `1px solid ${palette.borderSoft}`,
+        userSelect: "none",
+        pointerEvents: "none",
+        zIndex: "10",
+    },
+    ".cm-mode-badge--read": {
+        backgroundColor: palette.text,
+        color: "#ffffff",
+        borderColor: palette.text,
     },
     "&.cm-focused .cm-selectionBackground, ::selection": {
         backgroundColor: palette.selection,
@@ -303,6 +359,38 @@ let view: EditorView | null = null;
 let saveTimer: number | null = null;
 let suppressNextSave = false;
 
+// Compartment for the read-mode extensions so Cmd+E can toggle them at runtime.
+// Reconfiguring a Compartment is the supported way to swap a group of
+// extensions in/out without rebuilding the entire EditorState.
+const readModeComp = new Compartment();
+let readMode = false;
+
+function setReadMode(v: EditorView, on: boolean) {
+    readMode = on;
+    v.dispatch({
+        // Only `readOnly`, not `editable.of(false)` — the latter strips the
+        // content's contenteditable attribute, which blocks the Cmd+E keydown
+        // from reaching the keymap so you can't toggle back. We hide the
+        // cursor visually via CSS instead.
+        effects: readModeComp.reconfigure(on ? [
+            EditorState.readOnly.of(true),
+        ] : []),
+    });
+    v.dom.classList.toggle("cm-read-mode", on);
+    updateBadge(v);
+}
+
+function updateBadge(v: EditorView) {
+    let badge = v.dom.querySelector(".cm-mode-badge") as HTMLDivElement | null;
+    if (!badge) {
+        badge = document.createElement("div");
+        badge.className = "cm-mode-badge";
+        v.dom.appendChild(badge);
+    }
+    badge.textContent = readMode ? "Reading" : "Editing";
+    badge.classList.toggle("cm-mode-badge--read", readMode);
+}
+
 function sendToSwift(message: Record<string, unknown>) {
     window.webkit?.messageHandlers?.editorBridge?.postMessage(message);
 }
@@ -339,7 +427,15 @@ function mount(content: string) {
             markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
             syntaxHighlighting(highlight),
             livePreview,
-            keymap.of([...defaultKeymap, ...historyKeymap]),
+            readModeComp.of([]),
+            keymap.of([
+                {
+                    key: "Mod-e",
+                    run: (v) => { setReadMode(v, !readMode); return true; },
+                },
+                ...defaultKeymap,
+                ...historyKeymap,
+            ]),
             theme,
             EditorView.updateListener.of((update) => {
                 if (update.docChanged) scheduleSave();
@@ -348,6 +444,7 @@ function mount(content: string) {
     });
 
     view = new EditorView({ state, parent });
+    updateBadge(view);
     view.focus();
 }
 
