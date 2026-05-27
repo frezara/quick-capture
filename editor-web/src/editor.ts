@@ -221,21 +221,61 @@ function buildLivePreview(view: EditorView): DecorationSet {
             }
 
             const match = line.text.match(/^(\s*)([-*+]\s+)(\[[\sxX]\])/);
-            if (!match) continue;
-            const startPos = line.from + match[1].length;
-            const taskMarkerFrom = startPos + match[2].length;
-            let endPos = taskMarkerFrom + 3;
-            if (view.state.doc.sliceString(endPos, endPos + 1) === " ") endPos += 1;
-            if (!readMode && selectionOverlaps(view.state, startPos, endPos)) continue;
-            const checked = /[xX]/.test(match[3]);
-            const widthInChars = endPos - startPos;
-            const taskOffset = taskMarkerFrom - startPos;
-            ranges.push({
-                from: startPos, to: endPos,
-                deco: Decoration.replace({
-                    widget: new CheckboxWidget(checked, widthInChars, taskOffset),
-                }),
-            });
+            if (match) {
+                const startPos = line.from + match[1].length;
+                const taskMarkerFrom = startPos + match[2].length;
+                let endPos = taskMarkerFrom + 3;
+                if (view.state.doc.sliceString(endPos, endPos + 1) === " ") endPos += 1;
+                const onLine = !readMode && selectionOverlaps(view.state, line.from, line.to);
+
+                // Checkbox widget — only render when the cursor isn't in the
+                // syntax range (same condition as before).
+                if (readMode || !selectionOverlaps(view.state, startPos, endPos)) {
+                    const checked = /[xX]/.test(match[3]);
+                    const widthInChars = endPos - startPos;
+                    const taskOffset = taskMarkerFrom - startPos;
+                    ranges.push({
+                        from: startPos, to: endPos,
+                        deco: Decoration.replace({
+                            widget: new CheckboxWidget(checked, widthInChars, taskOffset),
+                        }),
+                    });
+                }
+
+                // Priority suffix: trailing ` !`/` !!`/` !!!` colors the task
+                // text and, for medium/high, washes the whole line with a
+                // tinted background + thick left bar so it really pops.
+                // Off-cursor the raw `!`s hide.
+                const priority = line.text.match(/(\s+)(!{1,3})\s*$/);
+                if (priority && priority.index !== undefined) {
+                    const level = priority[2].length;
+                    const textCls =
+                        level === 3 ? "cm-priority-high"
+                        : level === 2 ? "cm-priority-medium"
+                        : "cm-priority-low";
+                    const lineCls =
+                        level === 3 ? "cm-priority-line cm-priority-line-high"
+                        : level === 2 ? "cm-priority-line cm-priority-line-medium"
+                        : "cm-priority-line cm-priority-line-low";
+                    ranges.push({
+                        from: line.from, to: line.from,
+                        deco: Decoration.line({ class: lineCls }),
+                    });
+                    const suffixStart = line.from + priority.index;
+                    if (suffixStart > endPos) {
+                        ranges.push({
+                            from: endPos, to: suffixStart,
+                            deco: Decoration.mark({ class: textCls }),
+                        });
+                    }
+                    if (!onLine) {
+                        ranges.push({
+                            from: suffixStart, to: line.from + line.text.length,
+                            deco: Decoration.replace({}),
+                        });
+                    }
+                }
+            }
         }
     }
 
@@ -455,6 +495,38 @@ const theme = EditorView.theme({
         padding: "1px 5px",
         margin: "0 1px",
     },
+    // Priority styling. `cm-priority-*` colors the task text;
+    // `cm-priority-line-*` paints a tinted background + thick left bar across
+    // the whole logical line so it pops at a glance. The left bar is drawn
+    // via box-shadow inset so it doesn't shift text layout.
+    ".cm-priority-high": {
+        color: "#B71C1C",
+        fontWeight: "700",
+    },
+    ".cm-priority-medium": {
+        color: "#E65100",
+        fontWeight: "600",
+    },
+    ".cm-priority-low": {
+        color: "#1976D2",
+    },
+    // Common shape for both priority levels — rounded card with a little
+    // breathing room and a small vertical margin so adjacent priority items
+    // visually separate.
+    ".cm-priority-line": {
+        borderRadius: "6px",
+        padding: "2px 10px",
+        margin: "3px 0",
+    },
+    ".cm-priority-line-high": {
+        backgroundColor: "rgba(211, 47, 47, 0.10)",
+    },
+    ".cm-priority-line-medium": {
+        backgroundColor: "rgba(245, 124, 0, 0.08)",
+    },
+    ".cm-priority-line-low": {
+        backgroundColor: "rgba(25, 118, 210, 0.07)",
+    },
     // Indent guides — thin vertical lines under each indent level on nested
     // list/task lines. Drawn via ::before + box-shadow so a single pseudo
     // element can render multiple lines (one per level) without extra DOM.
@@ -595,25 +667,57 @@ function moveCompletedToBottom(view: EditorView): void {
     }
     sections.push(current);
 
-    // Every `- [x]` line (any indentation) moves to the end of its section,
-    // unindented so it reads as a flat list of completed items rather than
-    // a nested item dangling without a parent. Order within both groups is
-    // preserved.
-    const checked = /^\s*[-*+]\s+\[[xX]\]/;
+    // Sort each section's tasks by priority + state:
+    //   1. unchecked  !!!
+    //   2. unchecked  !!
+    //   3. unchecked  !
+    //   4. unchecked  (no priority)
+    //   5. checked    (priority stripped, indentation stripped)
+    // A task line and any immediately-following INDENTED lines (sub-bullets,
+    // notes, sub-tasks) move together as one group so children don't get
+    // orphaned at the top. Order within each bucket is preserved (stable sort).
+    // Non-task top-level lines (headings, paragraphs) stay above the tasks.
+    interface TaskGroup { bucket: number; lines: string[] }
     const processed = sections.map(section => {
-        const done: string[] = [];
+        const groups: TaskGroup[] = [];
         const rest: string[] = [];
-        for (const line of section) {
-            if (checked.test(line)) {
-                done.push(line.replace(/^\s+/, ""));
-            } else {
+        let touched = false;
+        let i = 0;
+        while (i < section.length) {
+            const line = section[i];
+            const taskMatch = line.match(/^(\s*)([-*+]\s+)\[([\sxX])\]/);
+            if (!taskMatch) {
                 rest.push(line);
+                i++;
+                continue;
+            }
+            touched = true;
+            // Collect consecutive indented children.
+            const groupLines = [line];
+            i++;
+            while (i < section.length && /^\s+\S/.test(section[i])) {
+                groupLines.push(section[i]);
+                i++;
+            }
+            const isChecked = /[xX]/.test(taskMatch[3]);
+            if (isChecked) {
+                groupLines[0] = groupLines[0]
+                    .replace(/^\s+/, "")
+                    .replace(/\s+!{1,3}\s*$/, "");
+                groups.push({ bucket: 4, lines: groupLines });
+            } else {
+                const priority = line.match(/\s+(!{1,3})\s*$/);
+                const level = priority ? priority[1].length : 0;
+                const bucket = level === 0 ? 3 : 3 - level;
+                groups.push({ bucket, lines: groupLines });
             }
         }
-        if (done.length === 0) return section;
+        if (!touched) return section;
+        const sorted = [...groups].sort((a, b) => a.bucket - b.bucket);
+        const allTasks = sorted.flatMap(g => g.lines);
         const hadTrailingBlank = rest[rest.length - 1] === "";
         while (rest.length > 0 && rest[rest.length - 1] === "") rest.pop();
-        const result = [...rest, ...done];
+        const result = [...rest, ...allTasks];
         if (hadTrailingBlank) result.push("");
         return result;
     });
