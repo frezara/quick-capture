@@ -84,10 +84,7 @@ class CheckboxWidget extends WidgetType {
             e.preventDefault();
             e.stopPropagation();
             const widgetPos = view.posAtDOM(wrap);
-            const markerPos = widgetPos + this.taskOffset;
-            const current = view.state.doc.sliceString(markerPos, markerPos + 3);
-            const next = /\[[xX]\]/.test(current) ? "[ ]" : "[x]";
-            view.dispatch({ changes: { from: markerPos, to: markerPos + 3, insert: next } });
+            toggleTaskAtMarker(view, widgetPos + this.taskOffset);
         });
 
         wrap.appendChild(box);
@@ -289,6 +286,44 @@ const theme = EditorView.theme({
         color: "#ffffff",
         borderColor: palette.text,
     },
+    // Floating vertical toolbar on the left edge. Sits over the editor's
+    // padding so it doesn't disrupt the centered content column.
+    ".cm-sidebar": {
+        position: "absolute",
+        top: "50%",
+        left: "12px",
+        transform: "translateY(-50%)",
+        display: "flex",
+        flexDirection: "column",
+        gap: "4px",
+        padding: "4px",
+        borderRadius: "10px",
+        backgroundColor: "rgba(255, 255, 255, 0.95)",
+        border: `1px solid ${palette.borderSoft}`,
+        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
+        zIndex: "5",
+    },
+    ".cm-sidebar-btn": {
+        width: "32px",
+        height: "32px",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        border: "none",
+        backgroundColor: "transparent",
+        color: palette.soft,
+        borderRadius: "6px",
+        cursor: "pointer",
+        padding: "0",
+        transition: "background-color 0.12s ease, color 0.12s ease",
+    },
+    ".cm-sidebar-btn:hover": {
+        backgroundColor: palette.codeBg,
+        color: palette.text,
+    },
+    ".cm-sidebar-btn:active": {
+        backgroundColor: palette.borderSoft,
+    },
     "&.cm-focused .cm-selectionBackground, ::selection": {
         backgroundColor: palette.selection,
     },
@@ -380,15 +415,156 @@ function setReadMode(v: EditorView, on: boolean) {
     updateBadge(v);
 }
 
+/// Toggles `[ ]` ↔ `[x]` at the given position. Toggle in place — no reorder.
+function toggleTaskAtMarker(view: EditorView, markerPos: number): void {
+    const current = view.state.doc.sliceString(markerPos, markerPos + 3);
+    if (!/\[[\sxX]\]/.test(current)) return;
+    const next = /\[[xX]\]/.test(current) ? "[ ]" : "[x]";
+    view.dispatch({ changes: { from: markerPos, to: markerPos + 3, insert: next } });
+}
+
+/// Pulls every completed (`- [x]`) line in each `##` section to the end of
+/// that section, preserving the order of both checked and unchecked items
+/// within the section. Trailing blank lines (section separators) are kept
+/// where they were. Cursor stays at its (line, column) position so focus
+/// doesn't drift, and moved lines slide into their new spots via a FLIP
+/// (first/last/invert/play) animation.
+function moveCompletedToBottom(view: EditorView): void {
+    const original = view.state.doc.toString();
+    const lines = original.split("\n");
+
+    // Group lines into sections.
+    const sections: string[][] = [];
+    let current: string[] = [];
+    for (const line of lines) {
+        if (/^#+\s/.test(line) && current.length > 0) {
+            sections.push(current);
+            current = [];
+        }
+        current.push(line);
+    }
+    sections.push(current);
+
+    const taskRegex = /^\s*[-*+]\s+\[[xX]\]/;
+    const processed = sections.map(section => {
+        const checked: string[] = [];
+        const rest: string[] = [];
+        for (const line of section) {
+            (taskRegex.test(line) ? checked : rest).push(line);
+        }
+        if (checked.length === 0) return section;
+        const hadTrailingBlank = rest[rest.length - 1] === "";
+        while (rest.length > 0 && rest[rest.length - 1] === "") rest.pop();
+        const result = [...rest, ...checked];
+        if (hadTrailingBlank) result.push("");
+        return result;
+    });
+
+    const next = processed.map(s => s.join("\n")).join("\n");
+    if (next === original) return;
+
+    // Preserve cursor at (line, column) — without this CodeMirror remaps the
+    // absolute position through the whole-doc replace, which puts the cursor
+    // wherever the moved text ended up. Anchoring by line keeps the focus
+    // visually in place.
+    const sel = view.state.selection.main;
+    const oldLine = view.state.doc.lineAt(sel.head);
+    const lineNum = oldLine.number;
+    const col = sel.head - oldLine.from;
+
+    const nextLines = next.split("\n");
+    const targetLineIdx = Math.min(lineNum - 1, nextLines.length - 1);
+    let lineStart = 0;
+    for (let i = 0; i < targetLineIdx; i++) lineStart += nextLines[i].length + 1;
+    const targetLineLength = nextLines[targetLineIdx]?.length ?? 0;
+    const newAnchor = lineStart + Math.min(col, targetLineLength);
+
+    // FLIP animation: capture each line's vertical position before the change.
+    const content = view.dom.querySelector(".cm-content") as HTMLElement | null;
+    const startPositions = new Map<string, number>();
+    if (content) {
+        for (const el of content.querySelectorAll<HTMLElement>(".cm-line")) {
+            startPositions.set(el.textContent ?? "", el.offsetTop);
+        }
+    }
+
+    view.dispatch({
+        changes: { from: 0, to: view.state.doc.length, insert: next },
+        selection: { anchor: newAnchor },
+        scrollIntoView: false,
+    });
+
+    if (!content) return;
+
+    requestAnimationFrame(() => {
+        const moved: { el: HTMLElement; delta: number }[] = [];
+        for (const el of content.querySelectorAll<HTMLElement>(".cm-line")) {
+            const oldTop = startPositions.get(el.textContent ?? "");
+            if (oldTop === undefined) continue;
+            const delta = oldTop - el.offsetTop;
+            if (Math.abs(delta) < 1) continue;
+            moved.push({ el, delta });
+        }
+        // Invert: place each line back at its starting Y with no transition.
+        for (const { el, delta } of moved) {
+            el.style.transition = "none";
+            el.style.transform = `translateY(${delta}px)`;
+        }
+        // Force a reflow so the browser sees the inverted position before we
+        // animate back to identity.
+        void content.offsetHeight;
+        // Play: animate transforms to zero — lines slide into final spots.
+        requestAnimationFrame(() => {
+            for (const { el } of moved) {
+                el.style.transition = "transform 0.32s cubic-bezier(0.2, 0.9, 0.3, 1)";
+                el.style.transform = "translateY(0)";
+            }
+            window.setTimeout(() => {
+                for (const { el } of moved) {
+                    el.style.transition = "";
+                    el.style.transform = "";
+                }
+            }, 360);
+        });
+    });
+}
+
+/// Floating vertical toolbar on the left edge of the editor. One button for
+/// now — sweep completed tasks to the bottom of each section. Built once and
+/// reused; click handler captures `view`.
+function ensureSidebar(view: EditorView) {
+    if (view.dom.querySelector(".cm-sidebar")) return;
+    const sidebar = document.createElement("div");
+    sidebar.className = "cm-sidebar";
+
+    const btn = document.createElement("button");
+    btn.type = "button";
+    btn.className = "cm-sidebar-btn";
+    btn.title = "Move completed items to the bottom of each section";
+    btn.innerHTML = `
+        <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
+             stroke="currentColor" stroke-width="2"
+             stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 4v12"/>
+            <path d="M6 12l6 6 6-6"/>
+            <path d="M4 21h16"/>
+        </svg>`;
+    btn.addEventListener("click", (e) => {
+        e.preventDefault();
+        moveCompletedToBottom(view);
+    });
+
+    sidebar.appendChild(btn);
+    view.dom.appendChild(sidebar);
+}
+
 /// Cmd+L toggles `- [ ]` ↔ `- [x]` on the cursor's line. No-op (and lets
 /// the keymap fall through) when the line isn't a task.
 function toggleTaskOnCurrentLine(view: EditorView): boolean {
     const line = view.state.doc.lineAt(view.state.selection.main.head);
-    const match = line.text.match(/^(\s*[-*+]\s+\[)([\sxX])(\])/);
+    const match = line.text.match(/^(\s*[-*+]\s+)(\[[\sxX]\])/);
     if (!match) return false;
-    const markerPos = line.from + match[1].length;
-    const next = /[xX]/.test(match[2]) ? " " : "x";
-    view.dispatch({ changes: { from: markerPos, to: markerPos + 1, insert: next } });
+    toggleTaskAtMarker(view, line.from + match[1].length);
     return true;
 }
 
@@ -461,6 +637,7 @@ function mount(content: string) {
 
     view = new EditorView({ state, parent });
     updateBadge(view);
+    ensureSidebar(view);
     view.focus();
 }
 

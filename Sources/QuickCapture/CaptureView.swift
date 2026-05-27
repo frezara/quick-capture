@@ -113,13 +113,11 @@ struct CaptureView: View {
         .padding(.vertical, 11)
     }
 
-    /// Opens the capture file and dismisses the panel — the user is moving to
-    /// the editor, so leaving the panel floating would be in the way. Prefers
-    /// Obsidian (via the `obsidian://open?path=…` URL scheme) since the file
-    /// typically lives in an Obsidian vault; falls back to the system default
-    /// handler if Obsidian isn't installed. Shows an alert when the file is
-    /// missing rather than silently creating it — the path may be a typo and
-    /// we don't want to scatter empty files.
+    /// Opens the capture file in Quick Capture's built-in editor and dismisses
+    /// the panel — the user is moving to the editor, so leaving the panel
+    /// floating would be in the way. Shows an alert when the file is missing
+    /// rather than silently creating it — the path may be a typo and we don't
+    /// want to scatter empty files.
     private func openCaptureFile() {
         let url = appState.captureFileURL
         guard FileManager.default.fileExists(atPath: url.path) else {
@@ -134,25 +132,8 @@ struct CaptureView: View {
             alert.runModal()
             return
         }
-        if !openInObsidian(fileURL: url) {
-            NSWorkspace.shared.open(url)
-        }
+        EditorWindowController.shared.open(url)
         onDismiss()
-    }
-
-    /// Returns true when Obsidian is installed AND handed off the URL
-    /// successfully. The bundle-id check avoids `open`'s "no handler"
-    /// dialog when Obsidian isn't installed.
-    private func openInObsidian(fileURL: URL) -> Bool {
-        guard NSWorkspace.shared.urlForApplication(withBundleIdentifier: "md.obsidian") != nil else {
-            return false
-        }
-        var components = URLComponents()
-        components.scheme = "obsidian"
-        components.host = "open"
-        components.queryItems = [URLQueryItem(name: "path", value: fileURL.path)]
-        guard let obsidianURL = components.url else { return false }
-        return NSWorkspace.shared.open(obsidianURL)
     }
 
     // MARK: - Inputs row (todo + tag inline)
