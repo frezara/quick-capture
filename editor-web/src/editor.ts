@@ -380,6 +380,18 @@ function setReadMode(v: EditorView, on: boolean) {
     updateBadge(v);
 }
 
+/// Cmd+L toggles `- [ ]` ↔ `- [x]` on the cursor's line. No-op (and lets
+/// the keymap fall through) when the line isn't a task.
+function toggleTaskOnCurrentLine(view: EditorView): boolean {
+    const line = view.state.doc.lineAt(view.state.selection.main.head);
+    const match = line.text.match(/^(\s*[-*+]\s+\[)([\sxX])(\])/);
+    if (!match) return false;
+    const markerPos = line.from + match[1].length;
+    const next = /[xX]/.test(match[2]) ? " " : "x";
+    view.dispatch({ changes: { from: markerPos, to: markerPos + 1, insert: next } });
+    return true;
+}
+
 function updateBadge(v: EditorView) {
     let badge = v.dom.querySelector(".cm-mode-badge") as HTMLDivElement | null;
     if (!badge) {
@@ -432,6 +444,10 @@ function mount(content: string) {
                 {
                     key: "Mod-e",
                     run: (v) => { setReadMode(v, !readMode); return true; },
+                },
+                {
+                    key: "Mod-l",
+                    run: toggleTaskOnCurrentLine,
                 },
                 ...defaultKeymap,
                 ...historyKeymap,
