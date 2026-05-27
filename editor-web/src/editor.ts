@@ -8,7 +8,16 @@ import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxTree } from "@codemirror/language";
 import { tags } from "@lezer/highlight";
-import { vim, getCM } from "@replit/codemirror-vim";
+import { vim, Vim, getCM } from "@replit/codemirror-vim";
+
+// Route yank / paste / delete / change through the `+` register, which the
+// vim implementation pipes to navigator.clipboard. Without these maps, yank
+// only lives in vim's internal `"` register and isn't reachable from other
+// apps or from ⌘V.
+for (const key of ["y", "Y", "p", "P", "d", "D", "x", "X", "c", "C", "s", "S"]) {
+    Vim.noremap(key, `"+${key}`, "normal");
+    Vim.noremap(key, `"+${key}`, "visual");
+}
 
 // Paper palette — keep visually cohesive with Quick Capture's capture panel.
 const palette = {
@@ -254,10 +263,24 @@ const theme = EditorView.theme({
     ".cm-line": {
         padding: "0",
     },
-    ".cm-cursor, .cm-dropCursor": {
+    // Caret styling — scoped to the default cursor layer so it doesn't bleed
+    // onto vim's block cursor (which lives in .cm-vimCursorLayer). Without
+    // this scoping, the margin-left + thicker border on the block cursor
+    // leaves stale paint trails as it moves.
+    ".cm-cursorLayer:not(.cm-vimCursorLayer) .cm-cursor, .cm-dropCursor": {
         borderLeftColor: palette.text,
         borderLeftWidth: "2.5px",
         marginLeft: "-1px",   // re-center the thicker stem on the insertion point
+    },
+    // Vim block cursor — Apple system orange (pops against the Paper white).
+    ".cm-fat-cursor": {
+        backgroundColor: "#FF9500 !important",
+        color: "#ffffff !important",
+    },
+    "&:not(.cm-focused) .cm-fat-cursor": {
+        backgroundColor: "transparent !important",
+        outline: "solid 1px #FF9500",
+        color: "transparent !important",
     },
     // Read mode (Cmd+E): no cursor. drawSelection wraps the caret in
     // .cm-cursorLayer with its own animations, so hide the entire layer.
@@ -653,8 +676,16 @@ function ensureSidebar(view: EditorView) {
             <path d="M6 12l6 6 6-6"/>
             <path d="M4 21h16"/>
         </svg>`;
+    // Stop mousedown from bubbling to CodeMirror, which would otherwise treat
+    // the button press as the start of a drag-select — and complete the
+    // selection when the user next clicks in the editor.
+    btn.addEventListener("mousedown", (e) => {
+        e.preventDefault();
+        e.stopPropagation();
+    });
     btn.addEventListener("click", (e) => {
         e.preventDefault();
+        e.stopPropagation();
         moveCompletedToBottom(view);
     });
 
