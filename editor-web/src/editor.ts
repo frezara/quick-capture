@@ -244,8 +244,9 @@ function buildLivePreview(view: EditorView): DecorationSet {
 
                 // Priority suffix: trailing ` !`/` !!`/` !!!` paints a colored
                 // dot at the far-right of the line via a ::after pseudo (line
-                // class), and hides the raw `!`s off-cursor.
-                const priority = line.text.match(/(\s+)(!{1,3})\s*$/);
+                // class), and hides the raw `!`s off-cursor. Tolerant of an
+                // optional ` ➕ DATE TIME` timestamp tail that appendTodo adds.
+                const priority = line.text.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 if (priority && priority.index !== undefined) {
                     const level = priority[2].length;
                     ranges.push({
@@ -668,7 +669,7 @@ function moveCompletedToBottom(view: EditorView): void {
             // Collect consecutive indented children.
             const groupLines = [line];
             i++;
-            while (i < section.length && /^\s+\S/.test(section[i])) {
+            while (i < section.length && /^( {2,}|\t)\S/.test(section[i])) {
                 groupLines.push(section[i]);
                 i++;
             }
@@ -676,10 +677,12 @@ function moveCompletedToBottom(view: EditorView): void {
             if (isChecked) {
                 groupLines[0] = groupLines[0]
                     .replace(/^\s+/, "")
-                    .replace(/\s+!{1,3}\s*$/, "");
+                    .replace(/\s+!{1,3}(\s+➕\s+\S+\s+\S+)?\s*$/, "$1");
                 groups.push({ bucket: 4, lines: groupLines });
             } else {
-                const priority = line.match(/\s+(!{1,3})\s*$/);
+                // Optional ` ➕ DATE TIME` timestamp tail is tolerated, so a
+                // captured `task !!! ➕ ...` still classifies as priority 3.
+                const priority = line.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 const level = priority ? priority[1].length : 0;
                 const bucket = level === 0 ? 3 : 3 - level;
                 groups.push({ bucket, lines: groupLines });
