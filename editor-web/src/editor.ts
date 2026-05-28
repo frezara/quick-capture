@@ -242,33 +242,18 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     });
                 }
 
-                // Priority suffix: trailing ` !`/` !!`/` !!!` colors the task
-                // text and, for medium/high, washes the whole line with a
-                // tinted background + thick left bar so it really pops.
-                // Off-cursor the raw `!`s hide.
+                // Priority suffix: trailing ` !`/` !!`/` !!!` paints a colored
+                // dot at the far-right of the line via a ::after pseudo (line
+                // class), and hides the raw `!`s off-cursor.
                 const priority = line.text.match(/(\s+)(!{1,3})\s*$/);
                 if (priority && priority.index !== undefined) {
                     const level = priority[2].length;
-                    const textCls =
-                        level === 3 ? "cm-priority-high"
-                        : level === 2 ? "cm-priority-medium"
-                        : "cm-priority-low";
-                    const lineCls =
-                        level === 3 ? "cm-priority-line cm-priority-line-high"
-                        : level === 2 ? "cm-priority-line cm-priority-line-medium"
-                        : "cm-priority-line cm-priority-line-low";
                     ranges.push({
                         from: line.from, to: line.from,
-                        deco: Decoration.line({ class: lineCls }),
+                        deco: Decoration.line({ class: `cm-priority-dot cm-priority-dot-${level}` }),
                     });
-                    const suffixStart = line.from + priority.index;
-                    if (suffixStart > endPos) {
-                        ranges.push({
-                            from: endPos, to: suffixStart,
-                            deco: Decoration.mark({ class: textCls }),
-                        });
-                    }
                     if (!onLine) {
+                        const suffixStart = line.from + priority.index;
                         ranges.push({
                             from: suffixStart, to: line.from + line.text.length,
                             deco: Decoration.replace({}),
@@ -495,38 +480,26 @@ const theme = EditorView.theme({
         padding: "1px 5px",
         margin: "0 1px",
     },
-    // Priority styling. `cm-priority-*` colors the task text;
-    // `cm-priority-line-*` paints a tinted background + thick left bar across
-    // the whole logical line so it pops at a glance. The left bar is drawn
-    // via box-shadow inset so it doesn't shift text layout.
-    ".cm-priority-high": {
-        color: "#B71C1C",
-        fontWeight: "700",
+    // Priority dot — a single colored circle at the far-right of the line,
+    // drawn via a ::after pseudo-element so it doesn't disturb text layout.
+    // Aligned to the first visual line so wrapped tasks still show the dot
+    // at the top right.
+    ".cm-line.cm-priority-dot": {
+        position: "relative",
     },
-    ".cm-priority-medium": {
-        color: "#E65100",
-        fontWeight: "600",
+    ".cm-line.cm-priority-dot::after": {
+        content: '""',
+        position: "absolute",
+        right: "8px",
+        top: "0.6em",
+        width: "9px",
+        height: "9px",
+        borderRadius: "50%",
+        pointerEvents: "none",
     },
-    ".cm-priority-low": {
-        color: "#1976D2",
-    },
-    // Common shape for both priority levels — rounded card with a little
-    // breathing room and a small vertical margin so adjacent priority items
-    // visually separate.
-    ".cm-priority-line": {
-        borderRadius: "6px",
-        padding: "2px 10px",
-        margin: "3px 0",
-    },
-    ".cm-priority-line-high": {
-        backgroundColor: "rgba(211, 47, 47, 0.10)",
-    },
-    ".cm-priority-line-medium": {
-        backgroundColor: "rgba(245, 124, 0, 0.08)",
-    },
-    ".cm-priority-line-low": {
-        backgroundColor: "rgba(25, 118, 210, 0.07)",
-    },
+    ".cm-line.cm-priority-dot-3::after": { backgroundColor: "#D32F2F" },
+    ".cm-line.cm-priority-dot-2::after": { backgroundColor: "#F57C00" },
+    ".cm-line.cm-priority-dot-1::after": { backgroundColor: "#1976D2" },
     // Indent guides — thin vertical lines under each indent level on nested
     // list/task lines. Drawn via ::before + box-shadow so a single pseudo
     // element can render multiple lines (one per level) without extra DOM.

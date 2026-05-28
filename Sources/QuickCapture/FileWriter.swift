@@ -85,6 +85,11 @@ enum FileWriter {
 
     /// Pure function so it's easy to reason about and unit-test.
     /// Matches headings case-insensitively so `#Home` and `#home` land in the same section.
+    ///
+    /// Insertion is priority-aware: `!!!` items go to the very top of the
+    /// section, `!!` after all `!!!`s, `!` after those, and no-priority items
+    /// after those. Within a bucket the new item lands at the TOP (newer first).
+    /// Checked items (bucket 4) stay below everything.
     static func insert(item: String, underHeading heading: String, in content: String) -> String {
         let headingLine = "## \(heading)"
         var lines = content.components(separatedBy: "\n")
@@ -95,13 +100,50 @@ enum FileWriter {
         }
 
         if let h = headingIndex {
-            // Insert at the top of the section — newest first. Skip any blank
-            // lines immediately after the heading so the item attaches cleanly
-            // to the existing block rather than landing in the gap.
-            var insertIndex = h + 1
-            while insertIndex < lines.count,
-                  lines[insertIndex].trimmingCharacters(in: .whitespaces).isEmpty {
-                insertIndex += 1
+            let newBucket = priorityBucket(for: item)
+
+            // Skip blank lines right after the heading so the item attaches
+            // cleanly to the existing block.
+            var sectionStart = h + 1
+            while sectionStart < lines.count,
+                  lines[sectionStart].trimmingCharacters(in: .whitespaces).isEmpty {
+                sectionStart += 1
+            }
+
+            // Walk through the section, skipping past any task whose bucket is
+            // strictly less than the new item's (higher priority). Stop at the
+            // first task with bucket >= newBucket, or at the next heading, or
+            // at the end of the document. Indented continuation lines move
+            // with their parent task.
+            var i = sectionStart
+            var landedBeforeTask = false
+            while i < lines.count {
+                let trimmed = lines[i].trimmingCharacters(in: .whitespaces)
+                if trimmed.hasPrefix("#") { break }
+                if isTopLevelTaskLine(lines[i]) {
+                    let bucket = priorityBucket(for: lines[i])
+                    if bucket >= newBucket {
+                        landedBeforeTask = true
+                        break
+                    }
+                    i += 1
+                    while i < lines.count,
+                          lines[i].range(of: #"^\s+\S"#, options: .regularExpression) != nil {
+                        i += 1
+                    }
+                    continue
+                }
+                i += 1
+            }
+
+            // When landing at the section boundary (next heading or EOF),
+            // trim back over any trailing blank lines so we don't widen the gap.
+            var insertIndex = i
+            if !landedBeforeTask {
+                while insertIndex > sectionStart,
+                      lines[insertIndex - 1].trimmingCharacters(in: .whitespaces).isEmpty {
+                    insertIndex -= 1
+                }
             }
             lines.insert(item, at: insertIndex)
             return lines.joined(separator: "\n")
@@ -115,6 +157,27 @@ enum FileWriter {
         }
         result += "\(headingLine)\n\(item)\n"
         return result
+    }
+
+    /// 0 = unchecked `!!!`, 1 = `!!`, 2 = `!`, 3 = no priority, 4 = checked.
+    /// Tolerant of a trailing `➕ DATE TIME` timestamp suffix so `appendTodo`'s
+    /// timestamped output still classifies correctly.
+    static func priorityBucket(for line: String) -> Int {
+        if line.range(of: #"^\s*[-*+]\s+\[[xX]\]"#, options: .regularExpression) != nil {
+            return 4
+        }
+        let pattern = #"\s(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$"#
+        if let range = line.range(of: pattern, options: .regularExpression) {
+            let count = line[range].filter { $0 == "!" }.count
+            if count == 3 { return 0 }
+            if count == 2 { return 1 }
+            if count == 1 { return 2 }
+        }
+        return 3
+    }
+
+    private static func isTopLevelTaskLine(_ line: String) -> Bool {
+        return line.range(of: #"^[-*+]\s+\["#, options: .regularExpression) != nil
     }
 
     // MARK: - Archive

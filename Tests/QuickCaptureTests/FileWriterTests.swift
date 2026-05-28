@@ -61,6 +61,70 @@ final class FileWriterTests: XCTestCase {
                       "new item must land between ## home and ## work")
     }
 
+    // MARK: - insert priority-aware ordering
+
+    func testInsertHighPriorityGoesAboveAllLower() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] task A !!
+        - [ ] task B !
+        - [ ] task C
+        """
+        let result = FileWriter.insert(item: "- [ ] urgent !!!", underHeading: "work", in: content)
+        // New !!! should land directly under the heading, above everything.
+        XCTAssertTrue(result.contains("## work\n- [ ] urgent !!!\n- [ ] task A !!"),
+                      "!!! item should be at the top of the section; got:\n\(result)")
+    }
+
+    func testInsertMediumPriorityLandsAfterAllHigh() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] hot !!!
+        - [ ] other !!
+        - [ ] task C
+        """
+        let result = FileWriter.insert(item: "- [ ] new med !!", underHeading: "work", in: content)
+        // New !! sits after the !!! block but ABOVE the existing !! (newer-first
+        // within a bucket).
+        XCTAssertTrue(result.contains("- [ ] hot !!!\n- [ ] new med !!\n- [ ] other !!"),
+                      "!! item should land after !!! and above existing !!; got:\n\(result)")
+    }
+
+    func testInsertNoPriorityLandsAfterAllPriorityItems() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] hot !!!
+        - [ ] med !!
+        - [ ] low !
+        - [ ] existing plain
+        """
+        let result = FileWriter.insert(item: "- [ ] plain", underHeading: "work", in: content)
+        XCTAssertTrue(result.contains("- [ ] low !\n- [ ] plain\n- [ ] existing plain"),
+                      "no-priority item should sit after all priorities; got:\n\(result)")
+    }
+
+    func testInsertPriorityItemSkipsOverIndentedChildren() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] parent !!
+          - sub of parent
+        - [ ] other
+        """
+        let result = FileWriter.insert(item: "- [ ] new !", underHeading: "work", in: content)
+        // New ! item belongs after the !! parent + its indented child, before
+        // the plain "other".
+        XCTAssertTrue(result.contains("- [ ] parent !!\n  - sub of parent\n- [ ] new !\n- [ ] other"),
+                      "priority insertion must step over indented children of higher-priority parents; got:\n\(result)")
+    }
+
     // MARK: - ensureDocumentHeading(in:)
 
     func testEnsureDocumentHeadingOnEmpty() {
