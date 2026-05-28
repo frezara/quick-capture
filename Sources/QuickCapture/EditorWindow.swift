@@ -25,6 +25,13 @@ final class EditorWindow: NSWindow {
         self.fileURL = fileURL
         self.bridge = EditorBridge()
         let config = WKWebViewConfiguration()
+        // navigator.clipboard.writeText works in WKWebView from a user gesture,
+        // but `readText` is blocked unless we flip the private DOMPasteAllowed /
+        // javaScriptCanAccessClipboard prefs. Without these, vim's `p` (which
+        // calls clipboard.readText() internally) silently fails. KVC sidesteps
+        // the missing Swift API for the underscore-prefixed props.
+        config.preferences.setValue(true, forKey: "javaScriptCanAccessClipboard")
+        config.preferences.setValue(true, forKey: "DOMPasteAllowed")
         self.webView = WKWebView(frame: .zero, configuration: config)
 
         super.init(
