@@ -180,3 +180,17 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
 - LSUIElement is non-negotiable — don't ship a permanent dock icon. The
   `.regular` ↔ `.accessory` swap in `MainPanel` (editor mode ↔ capture
   mode / dismiss) is the approved way to get a menu bar during editing.
+
+## Agent skills
+
+### Issue tracker
+
+Issues and PRDs are tracked as GitHub issues (`frezara/quick-capture`) via the `gh` CLI. See `docs/agents/issue-tracker.md`.
+
+### Triage labels
+
+Default canonical labels (`needs-triage`, `needs-info`, `ready-for-agent`, `ready-for-human`, `wontfix`). See `docs/agents/triage-labels.md`.
+
+### Domain docs
+
+Single-context: `CONTEXT.md` + `docs/adr/` at the repo root. See `docs/agents/domain.md`.
