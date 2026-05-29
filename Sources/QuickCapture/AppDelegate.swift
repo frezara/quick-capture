@@ -7,7 +7,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     let appState = AppState()
 
     private var statusItem: NSStatusItem!
-    private var capturePanel: CapturePanel?
+    private var mainPanel: MainPanel?
     private var hotKey: HotKey?
     private lazy var settingsController = SettingsWindowController(appState: appState)
 
@@ -201,27 +201,34 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - Capture panel
 
     @objc func toggleCapture() {
-        if capturePanel?.isVisible == true {
+        if mainPanel?.isVisible == true {
             hideCapture()
         } else {
             showCapture()
         }
     }
 
+    /// Lazily builds the single shared panel that hosts both the capture box
+    /// and the editor.
+    @discardableResult
+    private func ensurePanel() -> MainPanel {
+        if let panel = mainPanel { return panel }
+        let panel = MainPanel(
+            appState: appState,
+            onSubmit: { [weak self] text, tag in self?.handleCapture(text, tag: tag) },
+            onDismiss: { [weak self] in self?.hideCapture() }
+        )
+        mainPanel = panel
+        return panel
+    }
+
     @objc func showCapture() {
         appState.refreshRecentTags()
-        if capturePanel == nil {
-            capturePanel = CapturePanel(
-                appState: appState,
-                onSubmit: { [weak self] text, tag in self?.handleCapture(text, tag: tag) },
-                onDismiss: { [weak self] in self?.hideCapture() }
-            )
-        }
-        capturePanel?.show()
+        ensurePanel().show()
     }
 
     func hideCapture() {
-        capturePanel?.orderOut(nil)
+        mainPanel?.orderOut(nil)
         // Tells CaptureView to clear its input state — fresh slate next time.
         NotificationCenter.default.post(name: .capturePanelDidHide, object: nil)
     }
@@ -288,8 +295,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     // MARK: - Editor
 
+    /// Menu-bar "Open Editor…" — summons the shared panel straight into editor
+    /// mode (on the capture file). ⌘F then toggles back to the capture box.
     @objc func openEditor() {
-        EditorWindowController.shared.openWithPanel()
+        appState.refreshRecentTags()
+        ensurePanel().showInEditor()
     }
 
     // MARK: - Launch at login

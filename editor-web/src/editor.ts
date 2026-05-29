@@ -576,6 +576,7 @@ declare global {
         qcEditor: {
             setContent: (content: string) => void;
             getContent: () => string;
+            focus: () => void;
         };
     }
 }
@@ -1042,6 +1043,7 @@ function attachVimModeListener(v: EditorView) {
 window.qcEditor = {
     setContent: (content: string) => mount(content),
     getContent: () => view?.state.doc.toString() ?? "",
+    focus: () => view?.focus(),
 };
 
 sendToSwift({ type: "ready" });

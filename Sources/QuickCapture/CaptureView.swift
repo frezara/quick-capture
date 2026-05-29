@@ -5,6 +5,7 @@ struct CaptureView: View {
     @ObservedObject var appState: AppState
     let onSubmit: (String, String?) -> Void
     let onDismiss: () -> Void
+    let onOpenEditor: () -> Void
     let onContentSizeChange: (CGSize) -> Void
 
     @State private var todoText = ""
@@ -93,14 +94,13 @@ struct CaptureView: View {
                 .tracking(0.5)
                 .foregroundStyle(Color(hex: 0x4A4A52))
             Spacer()
-            Button(action: openCaptureFile) {
+            Button(action: onOpenEditor) {
                 Image(systemName: "doc.text")
                     .font(.system(size: 13, weight: .medium))
                     .foregroundStyle(secondaryText)
             }
             .buttonStyle(.plain)
-            .keyboardShortcut("f", modifiers: .command)
-            .help("Open capture file (⌘F)")
+            .help("Open editor (⌘F)")
             .onHover { hovering in
                 if hovering {
                     NSCursor.pointingHand.push()
@@ -111,29 +111,6 @@ struct CaptureView: View {
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
-    }
-
-    /// Opens the capture file in Quick Capture's built-in editor and dismisses
-    /// the panel — the user is moving to the editor, so leaving the panel
-    /// floating would be in the way. Shows an alert when the file is missing
-    /// rather than silently creating it — the path may be a typo and we don't
-    /// want to scatter empty files.
-    private func openCaptureFile() {
-        let url = appState.captureFileURL
-        guard FileManager.default.fileExists(atPath: url.path) else {
-            let alert = NSAlert()
-            alert.messageText = "Capture file not found"
-            alert.informativeText = """
-            \(url.path)
-
-            Check the path in Settings, or capture something first to create the file.
-            """
-            alert.alertStyle = .warning
-            alert.runModal()
-            return
-        }
-        EditorWindowController.shared.open(url)
-        onDismiss()
     }
 
     // MARK: - Inputs row (todo + tag inline)
