@@ -71,6 +71,15 @@ struct SettingsView: View {
             } header: {
                 Text("Timestamp")
             }
+
+            Section {
+                Toggle("Vim keybindings in the editor", isOn: $appState.vimEnabled)
+                Text("When off, the editor uses standard text editing. ⌘F still toggles the editor.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            } header: {
+                Text("Editor")
+            }
         }
         .formStyle(.grouped)
         .frame(width: 480)

@@ -60,11 +60,18 @@ final class MainPanel: NSPanel {
     private var webViewReady = false
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var fileDescriptor: CInt = -1
+    private var vimObserver: NSObjectProtocol?
+    /// True for the duration of the editor→capture collapse animation, so
+    /// `captureContentDidChange` defers window geometry to the animation.
+    private var isCollapsing = false
 
     private let splitWidth: CGFloat = 1000
     private let captureWidth: CGFloat = 600
 
-    deinit { stopWatching() }
+    deinit {
+        stopWatching()
+        if let vimObserver { NotificationCenter.default.removeObserver(vimObserver) }
+    }
 
     init(appState: AppState,
          onSubmit: @escaping (String, String?) -> Void,
@@ -103,6 +110,11 @@ final class MainPanel: NSPanel {
         bridge.panel = self
         config.userContentController.add(bridge, name: "editorBridge")
         loadEditor()
+
+        // Live-toggle vim in the editor when the setting changes.
+        vimObserver = NotificationCenter.default.addObserver(
+            forName: .vimModeDidChange, object: nil, queue: .main
+        ) { [weak self] _ in self?.pushVimSetting() }
     }
 
     private func setupContainer() {
@@ -252,6 +264,7 @@ final class MainPanel: NSPanel {
     func closeEditor() {
         guard editorOpen else { return }
         editorOpen = false
+        isCollapsing = true
         refreshCaptureView()
         isMovableByWindowBackground = true
 
@@ -268,12 +281,19 @@ final class MainPanel: NSPanel {
             // `.accessory` and re-establish key/active before focusing, else
             // `makeFirstResponder` lands on a non-key panel and the field gets
             // no editing focus.
+            self.isCollapsing = false
             self.demoteToAccessory()
             NSApp.activate(ignoringOtherApps: true)
             self.makeKeyAndOrderFront(nil)
             self.orderFrontRegardless()
             self.focusCapture()
-            self.canDismissOnBlur = true
+            // Arm click-away dismiss only after the .regular→.accessory switch
+            // settles. That policy change makes the panel transiently resign key,
+            // which would otherwise be read as a click-away and dismiss the
+            // freshly-collapsed capture box. Mirrors show()'s guard window.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.canDismissOnBlur = true
+            }
         }
     }
 
@@ -298,6 +318,7 @@ final class MainPanel: NSPanel {
         // window lays out, so the box never grows to fit the tag suggestions.
         let wasOpen = editorOpen
         editorOpen = false
+        isCollapsing = false   // a fresh summon cancels any in-flight collapse
         if wasOpen { refreshCaptureView() }
         split.editorVisible = false
         editorContainer.isHidden = true
@@ -326,6 +347,13 @@ final class MainPanel: NSPanel {
             split.needsLayout = true
             return
         }
+        // While collapsing editor→capture, the frame animation owns the window
+        // geometry. Without this, the re-measure that closeEditor triggers (it
+        // sets editorOpen=false, so we'd reach here) fires a non-animated
+        // setFrame to a box at the editor's edge — which then animates to centre,
+        // reading as "shrink to the side, then re-centre". Record the size for
+        // the animation target; let the animation place the frame.
+        guard !isCollapsing else { return }
         // Keep the top edge fixed and grow/shrink *downward*, tracking the
         // content's SwiftUI-animated height each frame so the window moves in
         // lockstep with the footer — smooth and symmetric. Recentering (the old
@@ -351,10 +379,23 @@ final class MainPanel: NSPanel {
 
     // MARK: - Focus
 
-    private func focusCapture() {
+    /// Focus the capture input. On first launch the SwiftUI hosting view often
+    /// hasn't instantiated the editor's NSTextView yet (and the panel may not be
+    /// key), so a single attempt silently no-ops. Force a layout pass to realize
+    /// the text view, then retry briefly until `makeFirstResponder` takes.
+    private func focusCapture(retriesLeft: Int = 10) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let tv = self.firstTextView(in: self.captureHost) else { return }
-            self.makeFirstResponder(tv)
+            guard let self else { return }
+            if self.isVisible {
+                self.captureHost.layoutSubtreeIfNeeded()
+                if let tv = self.firstTextView(in: self.captureHost), self.makeFirstResponder(tv) {
+                    return
+                }
+            }
+            guard retriesLeft > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                self.focusCapture(retriesLeft: retriesLeft - 1)
+            }
         }
     }
 
@@ -493,9 +534,25 @@ final class MainPanel: NSPanel {
     /// Called by JS once CodeMirror has booted.
     fileprivate func editorDidBecomeReady() {
         webViewReady = true
+        // Set vim before content so the first mount() picks up the right mode.
+        pushVimSetting()
         let text = (try? String(contentsOf: loadedFileURL, encoding: .utf8)) ?? ""
         pushContent(text)
         startWatching()
+        // The editor no longer auto-focuses on mount; if it was opened before it
+        // finished loading (e.g. "Open Editor…" at cold launch), focus it now.
+        // Otherwise leave focus with the capture input.
+        if editorOpen { focusEditor() }
+    }
+
+    /// Push the current vim setting into the editor. Safe before the view
+    /// mounts — the JS records the flag and mount() reads it.
+    private func pushVimSetting() {
+        guard webViewReady else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.setVimEnabled(\(appState.vimEnabled))",
+            completionHandler: nil
+        )
     }
 
     /// Re-point the editor at the current capture file if it changed (path edit

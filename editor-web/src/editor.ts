@@ -665,6 +665,7 @@ declare global {
             getContent: () => string;
             focus: () => void;
             setFilename: (name: string) => void;
+            setVimEnabled: (on: boolean) => void;
             insertCapture: (from: number, text: string) => void;
         };
     }
@@ -1152,7 +1153,11 @@ function mount(content: string) {
     attachVimModeListener(view);
     updateBadge(view);
     ensureSidebar(view);
-    view.focus();
+    // Deliberately NOT auto-focused. On a cold launch the editor mounts in the
+    // background while the capture box is showing; focusing here would make the
+    // (hidden) web view the window's first responder and steal focus off the
+    // capture input. Swift drives editor focus (focusEditor / qcEditor.focus)
+    // when the editor is actually the active surface.
 }
 
 function attachVimModeListener(v: EditorView) {
@@ -1173,6 +1178,17 @@ window.qcEditor = {
     setFilename: (name: string) => {
         filename = name || "inbox.md";
         if (view) updateBadge(view);
+    },
+    // Toggle vim live by reconfiguring its compartment (placed first in the
+    // extension list, so vim's normal-mode bindings still win). Before the view
+    // mounts this just records the flag; mount() reads it.
+    setVimEnabled: (on: boolean) => {
+        vimEnabled = on;
+        if (!view) return;
+        view.dispatch({ effects: vimComp.reconfigure(on ? vim() : []) });
+        if (on) attachVimModeListener(view);
+        else vimMode = "normal";
+        updateBadge(view);
     },
     // Split mode: a capture submitted from the input strip is inserted into the
     // live buffer as a *targeted* transaction (not setContent/mount) so cursor,
