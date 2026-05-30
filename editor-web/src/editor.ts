@@ -577,6 +577,7 @@ declare global {
             setContent: (content: string) => void;
             getContent: () => string;
             focus: () => void;
+            insertCapture: (from: number, text: string) => void;
         };
     }
 }
@@ -1044,6 +1045,17 @@ window.qcEditor = {
     setContent: (content: string) => mount(content),
     getContent: () => view?.state.doc.toString() ?? "",
     focus: () => view?.focus(),
+    // Split mode: a capture submitted from the input strip is inserted into the
+    // live buffer as a *targeted* transaction (not setContent/mount) so cursor,
+    // scroll, and undo survive and the insert is one undoable step. `from` is a
+    // UTF-16 offset computed Swift-side from FileWriter.insert (see ADR-0003).
+    // docChanged fires → existing scheduleSave() persists it; no suppress.
+    insertCapture: (from: number, text: string) => {
+        if (!view) return;
+        const len = view.state.doc.length;
+        const at = Math.max(0, Math.min(from, len));
+        view.dispatch({ changes: { from: at, to: at, insert: text }, scrollIntoView: false });
+    },
 };
 
 sendToSwift({ type: "ready" });

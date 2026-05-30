@@ -30,14 +30,28 @@ enum FileWriter {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
-        let trimmedTag = tag?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-        let heading = trimmedTag.isEmpty ? untaggedSection : trimmedTag
+        let heading = sectionName(for: tag)
+        let item = todoLine(trimmedText, includeTimestamp: includeTimestamp, now: now)
+        try appendUnderHeading(heading, item: item, to: url)
+    }
 
-        var line = trimmedText
+    /// The `## H2` a capture routes to: the trimmed tag, or `## Quick capture`
+    /// when untagged. Shared so the file-append path and the editor-buffer
+    /// insert path (split mode) route identically.
+    static func sectionName(for tag: String?) -> String {
+        let trimmedTag = tag?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return trimmedTag.isEmpty ? untaggedSection : trimmedTag
+    }
+
+    /// Build the `- [ ] …` line for a capture. The single source of truth for
+    /// item formatting so the two write paths (disk append vs. editor-buffer
+    /// insert) can never drift — including the optional `➕ DATE TIME` suffix.
+    static func todoLine(_ text: String, includeTimestamp: Bool, now: Date = Date()) -> String {
+        var line = text.trimmingCharacters(in: .whitespacesAndNewlines)
         if includeTimestamp {
             line += " \(createdMarker) \(timestampString(for: now))"
         }
-        try appendUnderHeading(heading, item: "- [ ] \(line)", to: url)
+        return "- [ ] \(line)"
     }
 
     /// Format date as `YYYY-MM-DD HH:MM` in the user's local timezone.
