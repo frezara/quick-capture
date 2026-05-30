@@ -254,10 +254,14 @@ final class FileWriterTests: XCTestCase {
                 XCTFail("expected a single contiguous insertion for item \(s.item)")
                 continue
             }
+            // The only guarantee that matters: applying the delta reproduces
+            // FileWriter.insert's output exactly. The inserted *run* is the
+            // minimal diff (common prefix AND suffix stripped), so it needn't
+            // equal `s.item` verbatim — when the new item shares its `- [ ] `
+            // prefix with the adjacent task, that prefix is absorbed into the
+            // shared region and the run is a correct rotation.
             XCTAssertEqual(applyUTF16Insertion(to: s.content, at: from, inserting: inserted), new,
                            "delta must reproduce FileWriter.insert output for item \(s.item)")
-            XCTAssertTrue(inserted.contains(s.item),
-                          "the inserted run should contain the new item text")
         }
     }
 
