@@ -61,8 +61,7 @@ final class MainPanel: NSPanel {
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var fileDescriptor: CInt = -1
 
-    private let splitWidth: CGFloat = 900
-    private let splitHeight: CGFloat = 700
+    private let splitWidth: CGFloat = 1000
     private let captureWidth: CGFloat = 600
 
     deinit { stopWatching() }
@@ -189,8 +188,17 @@ final class MainPanel: NSPanel {
         }
     }
 
+    /// Editor-mode frame: comfortable fixed width, full visible height (clears
+    /// the menu bar and Dock), centered horizontally on the active screen.
+    private func splitFrame(in screen: NSRect) -> NSRect {
+        NSRect(x: screen.midX - splitWidth / 2,
+               y: screen.minY,
+               width: splitWidth,
+               height: screen.height)
+    }
+
     /// Summon straight into the split (the menu-bar "Open Editor…" route),
-    /// centered on screen without the grow animation.
+    /// without the grow animation.
     func showInEditor() {
         editorOpen = true
         refreshCaptureView()
@@ -201,10 +209,9 @@ final class MainPanel: NSPanel {
         editorContainer.isHidden = false
         editorContainer.alphaValue = 1
         if let screen = currentScreenVisibleFrame() {
-            anchorCenterY = screen.midY + (splitHeight - split.stripHeight) / 2
-            setFrame(NSRect(x: screen.midX - splitWidth / 2,
-                            y: screen.midY - splitHeight / 2,
-                            width: splitWidth, height: splitHeight), display: false)
+            let target = splitFrame(in: screen)
+            anchorCenterY = target.midY
+            setFrame(target, display: false)
         }
         canDismissOnBlur = false
         NSApp.activate(ignoringOtherApps: true)
@@ -219,8 +226,7 @@ final class MainPanel: NSPanel {
         editorOpen ? closeEditor() : openEditor()
     }
 
-    /// Grow into the split, centered on screen so the whole editor is visible
-    /// (the panel shifts up as it grows downward — the input rides up with it).
+    /// Grow into the split: comfortable width, full visible height, centered.
     func openEditor() {
         guard !editorOpen else { return }
         editorOpen = true
@@ -235,10 +241,8 @@ final class MainPanel: NSPanel {
         editorContainer.alphaValue = 0
 
         guard let screen = currentScreenVisibleFrame() else { return }
-        let target = NSRect(x: screen.midX - splitWidth / 2,
-                            y: screen.midY - splitHeight / 2,
-                            width: splitWidth, height: splitHeight)
-        anchorCenterY = screen.midY
+        let target = splitFrame(in: screen)
+        anchorCenterY = target.midY
         animateFrame(to: target, fadeEditorTo: 1) { [weak self] in
             self?.focusEditor()
         }
@@ -311,9 +315,9 @@ final class MainPanel: NSPanel {
     }
 
     /// Input-only: resize the window to the capture content height (anchored to
-    /// `anchorCenterY`). Split: the window stays `splitWidth×splitHeight`; only
-    /// the internal split line moves, so typing a multi-line capture doesn't
-    /// resize the editor window.
+    /// `anchorCenterY`). Split: the window keeps its full-height editor frame;
+    /// only the internal split line moves, so typing a multi-line capture
+    /// doesn't resize the editor window.
     private func captureContentDidChange(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
         captureContentSize = size

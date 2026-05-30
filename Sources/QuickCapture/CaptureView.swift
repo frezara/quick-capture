@@ -70,7 +70,7 @@ struct CaptureView: View {
             GeometryReader { proxy in
                 Color.clear
                     .onAppear { onContentSizeChange(proxy.size) }
-                    .onChange(of: proxy.size) { onContentSizeChange($0) }
+                    .onChange(of: proxy.size) { onContentSizeChange(proxy.size) }
             }
         )
         .background(surface)
@@ -86,7 +86,7 @@ struct CaptureView: View {
         // .tag opens it; a move to .todo closes it. A transient nil (produced
         // by AppKit while the panel resizes) is ignored so the footer doesn't
         // flicker and drive a resize loop.
-        .onChange(of: focused) { newValue in
+        .onChange(of: focused) { _, newValue in
             if newValue == .tag {
                 tagFieldActive = true
             } else {
