@@ -207,7 +207,75 @@ final class FileWriterTests: XCTestCase {
         )
     }
 
+    // MARK: - todoLine / sectionName parity (disk path vs. split-buffer path)
+
+    func testTodoLineReproducesAppendTodoLineExactly() throws {
+        // Split mode builds its item via FileWriter.todoLine; the disk path
+        // builds it inside appendTodo. They must be byte-identical or captures
+        // would format differently depending on whether the editor is open.
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fixed = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try FileWriter.appendTodo("buy milk", tag: "home", to: url, includeTimestamp: true, now: fixed)
+        let written = try String(contentsOf: url, encoding: .utf8)
+        let line = FileWriter.todoLine("buy milk", includeTimestamp: true, now: fixed)
+
+        XCTAssertTrue(written.contains(line),
+                      "todoLine must reproduce the exact line appendTodo writes.\nline: \(line)\nfile:\n\(written)")
+    }
+
+    func testTodoLineWithoutTimestampIsPlainTask() {
+        XCTAssertEqual(FileWriter.todoLine("buy milk", includeTimestamp: false), "- [ ] buy milk")
+    }
+
+    func testSectionNameRoutingMatchesAppendTodo() {
+        XCTAssertEqual(FileWriter.sectionName(for: "home"), "home")
+        XCTAssertEqual(FileWriter.sectionName(for: "  work  "), "work")
+        XCTAssertEqual(FileWriter.sectionName(for: nil), FileWriter.untaggedSection)
+        XCTAssertEqual(FileWriter.sectionName(for: "   "), FileWriter.untaggedSection)
+    }
+
+    // MARK: - singleInsertionDelta (split-mode targeted insert)
+
+    func testSingleInsertionDeltaReproducesInsertOutput() {
+        // For each scenario, the delta applied to the old buffer must reproduce
+        // exactly what FileWriter.insert returns — that's what lets the editor
+        // apply a targeted transaction instead of a full setContent.
+        let scenarios: [(content: String, item: String, heading: String)] = [
+            ("", "- [ ] first", "home"),
+            ("# Inbox\n\n## work\n- [ ] task A !!\n- [ ] task B\n", "- [ ] urgent !!!", "work"),
+            ("# Inbox\n\n## work\n- [ ] task A !!\n- [ ] plain\n", "- [ ] mid !", "work"),
+            ("# Inbox\n\n## home\n- [ ] x\n", "- [ ] standup", "work"),   // new section
+        ]
+        for s in scenarios {
+            let new = FileWriter.insert(item: s.item, underHeading: s.heading, in: s.content)
+            guard let (from, inserted) = MainPanel.singleInsertionDelta(from: s.content, to: new) else {
+                XCTFail("expected a single contiguous insertion for item \(s.item)")
+                continue
+            }
+            XCTAssertEqual(applyUTF16Insertion(to: s.content, at: from, inserting: inserted), new,
+                           "delta must reproduce FileWriter.insert output for item \(s.item)")
+            XCTAssertTrue(inserted.contains(s.item),
+                          "the inserted run should contain the new item text")
+        }
+    }
+
+    func testSingleInsertionDeltaNilWhenNotAPureInsertion() {
+        XCTAssertNil(MainPanel.singleInsertionDelta(from: "abc", to: "abc"), "no change → nil")
+        XCTAssertNil(MainPanel.singleInsertionDelta(from: "abc", to: "axc"), "replacement → nil")
+        XCTAssertNil(MainPanel.singleInsertionDelta(from: "abc", to: "ab"),  "deletion → nil")
+    }
+
     // MARK: - Helpers
+
+    /// Mirrors the CodeMirror transaction `insertCapture` performs: insert
+    /// `inserting` at UTF-16 offset `at`.
+    private func applyUTF16Insertion(to old: String, at: Int, inserting: String) -> String {
+        var units = Array(old.utf16)
+        units.insert(contentsOf: Array(inserting.utf16), at: at)
+        return String(utf16CodeUnits: units, count: units.count)
+    }
 
     private func makeTempFile() -> URL {
         FileManager.default.temporaryDirectory

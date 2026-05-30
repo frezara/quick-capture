@@ -4,14 +4,25 @@ import SwiftUI
 struct CaptureView: View {
     @ObservedObject var appState: AppState
     let onSubmit: (String, String?) -> Void
-    let onDismiss: () -> Void
-    let onOpenEditor: () -> Void
+    let onClose: () -> Void
+    let onToggleEditor: () -> Void
+    let onEscape: () -> Void
     let onContentSizeChange: (CGSize) -> Void
+    /// When true the editor is open beneath this strip — the header shows the
+    /// filename + close, and the toggle collapses rather than opens.
+    var editorOpen: Bool = false
+    var filename: String = ""
 
     @State private var todoText = ""
     @State private var tagText = ""
     @State private var shakeTrigger = 0
     @State private var isShaking = false
+    /// Sticky tag-suggestions visibility. Driven off `focused` transitions
+    /// rather than read live, so a *transient* `focused == nil` (which AppKit
+    /// briefly produces while the panel resizes) doesn't collapse the footer
+    /// and start a resize⇄focus oscillation. Only an explicit move to the todo
+    /// field hides it.
+    @State private var tagFieldActive = false
     @FocusState private var focused: Field?
 
     enum Field: Hashable { case todo, tag }
@@ -41,24 +52,27 @@ struct CaptureView: View {
                 .transition(.move(edge: .top).combined(with: .opacity))
             }
         }
-        .animation(.easeInOut(duration: 0.22), value: shouldShowExtras)
+        // Animate the footer in/out. MainPanel tracks this animated height
+        // per frame (top-anchored) so the window grows/shrinks in lockstep —
+        // smooth and symmetric both ways.
+        .animation(.easeInOut(duration: 0.18), value: shouldShowExtras)
         .animation(.easeInOut(duration: 0.18), value: isCalendarMode)
         // Pin the root to its intrinsic height — otherwise NSHostingView's fixed
         // frame can squash the VStack when the todo field grows mid-resize,
         // clipping the header.
         .fixedSize(horizontal: false, vertical: true)
-        // Report intrinsic content size up to CapturePanel so it can resize
-        // the window to fit. background+GeometryReader is the standard SwiftUI
-        // recipe for measuring without affecting layout.
+        // Report intrinsic content size up to MainPanel so it can resize the
+        // window to fit. We call back directly from the GeometryReader's
+        // onAppear/onChange rather than via a PreferenceKey: on macOS 14 the
+        // `.onPreferenceChange` path only ever delivered the default value and
+        // never the real measured size, so the window never grew with content.
         .background(
             GeometryReader { proxy in
                 Color.clear
-                    .preference(key: ContentSizeKey.self, value: proxy.size)
+                    .onAppear { onContentSizeChange(proxy.size) }
+                    .onChange(of: proxy.size) { onContentSizeChange(proxy.size) }
             }
         )
-        .onPreferenceChange(ContentSizeKey.self) { size in
-            onContentSizeChange(size)
-        }
         .background(surface)
         .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
         .overlay(
@@ -68,7 +82,25 @@ struct CaptureView: View {
         .onAppear {
             DispatchQueue.main.async { focused = .todo }
         }
-        .onExitCommand { onDismiss() }
+        // Keep the sticky footer flag in step with real focus moves. A move to
+        // .tag opens it; a move to .todo closes it. A transient nil (produced
+        // by AppKit while the panel resizes) is ignored so the footer doesn't
+        // flicker and drive a resize loop.
+        .onChange(of: focused) { _, newValue in
+            if newValue == .tag {
+                tagFieldActive = true
+            } else {
+                // Collapse the footer when the tag field is no longer focused —
+                // but defer the check so the *transient* focus drop AppKit emits
+                // while the panel resizes (the footer appearing changes the
+                // height) doesn't collapse it and start a resize⇄focus
+                // oscillation. If focus has genuinely moved on by then, hide it.
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
+                    if focused != .tag { tagFieldActive = false }
+                }
+            }
+        }
+        .onExitCommand { onEscape() }
         // Global Enter handler — guarantees that pressing Enter saves the todo
         // no matter where focus is (chip, suggestion area, transient nil).
         // Children's own Enter handlers (TextField.onSubmit, chip onKeyPress)
@@ -80,6 +112,7 @@ struct CaptureView: View {
         .onReceive(NotificationCenter.default.publisher(for: .capturePanelDidHide)) { _ in
             todoText = ""
             tagText = ""
+            tagFieldActive = false
             focused = .todo
         }
     }
@@ -89,28 +122,43 @@ struct CaptureView: View {
     private var header: some View {
         HStack(spacing: 8) {
             AppIconBadge(size: 18)
-            Text("QUICK CAPTURE")
-                .font(.system(size: 11, weight: .semibold))
-                .tracking(0.5)
-                .foregroundStyle(Color(hex: 0x4A4A52))
-            Spacer()
-            Button(action: onOpenEditor) {
-                Image(systemName: "doc.text")
-                    .font(.system(size: 13, weight: .medium))
-                    .foregroundStyle(secondaryText)
-            }
-            .buttonStyle(.plain)
-            .help("Open editor (⌘F)")
-            .onHover { hovering in
-                if hovering {
-                    NSCursor.pointingHand.push()
-                } else {
-                    NSCursor.pop()
-                }
+            if editorOpen {
+                // Split mode: the filename takes the title slot; the chrome
+                // (collapse + close) folds into this row (no separate bar).
+                Text(filename)
+                    .font(.system(size: 12, weight: .medium))
+                    .foregroundStyle(Color(hex: 0x4A4A52))
+                    .lineLimit(1)
+                    .truncationMode(.middle)
+                Spacer()
+                headerButton("chevron.up", help: "Collapse editor (⌘F)", action: onToggleEditor)
+                headerButton("xmark", help: "Close", action: onClose)
+            } else {
+                Text("QUICK CAPTURE")
+                    .font(.system(size: 11, weight: .semibold))
+                    .tracking(0.5)
+                    .foregroundStyle(Color(hex: 0x4A4A52))
+                Spacer()
+                headerButton("doc.text", help: "Open editor (⌘F)", action: onToggleEditor)
             }
         }
         .padding(.horizontal, 14)
         .padding(.vertical, 11)
+    }
+
+    private func headerButton(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: systemName)
+                .font(.system(size: 13, weight: .medium))
+                .foregroundStyle(secondaryText)
+                .frame(width: 20, height: 20)
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help(help)
+        .onHover { hovering in
+            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
+        }
     }
 
     // MARK: - Inputs row (todo + tag inline)
@@ -242,7 +290,7 @@ struct CaptureView: View {
     /// The accessory section below the inputs is shown when the user is either
     /// browsing tag suggestions OR composing a calendar event.
     private var shouldShowExtras: Bool {
-        focused == .tag || isCalendarMode
+        tagFieldActive || isCalendarMode
     }
 
     /// Parses the current todo text into a CalendarEvent. Returns nil when the
@@ -391,16 +439,6 @@ struct TagChip: View {
                 .clipShape(RoundedRectangle(cornerRadius: 6))
         }
         .buttonStyle(.plain)
-    }
-}
-
-/// Carries the SwiftUI root's intrinsic size up to `CapturePanel` so the
-/// NSPanel can resize its window to match. Last-write-wins is fine — there's
-/// only one reporter.
-struct ContentSizeKey: PreferenceKey {
-    static var defaultValue: CGSize = .zero
-    static func reduce(value: inout CGSize, nextValue: () -> CGSize) {
-        value = nextValue()
     }
 }
 
