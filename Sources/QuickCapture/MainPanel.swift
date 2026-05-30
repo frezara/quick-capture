@@ -123,11 +123,11 @@ final class MainPanel: NSPanel {
         captureHost.autoresizingMask = [.width, .height]
 
         editorContainer.wantsLayer = true
-        editorContainer.layer?.cornerRadius = 12
         editorContainer.layer?.masksToBounds = true
-        editorContainer.layer?.backgroundColor = NSColor.white.cgColor
-        editorContainer.layer?.borderWidth = 1
-        editorContainer.layer?.borderColor = NSColor.black.withAlphaComponent(0.07).cgColor
+        // No corners/border of its own — the SplitContainerView is now the single
+        // rounded, bordered panel and clips the editor's bottom corners. The
+        // steel surface fill just avoids a load flash before the web view paints.
+        editorContainer.layer?.backgroundColor = SplitContainerView.steelSurface.cgColor
         editorContainer.frame = initialFrame
         editorContainer.autoresizingMask = [.width, .height]
         editorContainer.isHidden = true
@@ -533,6 +533,10 @@ final class MainPanel: NSPanel {
         lastSyncedContent = text
         guard let encoded = String(data: try! JSONEncoder().encode(text), encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.qcEditor.setContent(\(encoded))", completionHandler: nil)
+        // Keep the editor's status-bar filename in step with the loaded file.
+        if let name = String(data: try! JSONEncoder().encode(loadedFileURL.lastPathComponent), encoding: .utf8) {
+            webView.evaluateJavaScript("window.qcEditor.setFilename(\(name))", completionHandler: nil)
+        }
     }
 
     // MARK: - File watching
@@ -599,10 +603,14 @@ private final class SplitContainerView: NSView {
     private var inputStrip: NSView?
     private var editorHost: NSView?
 
+    static let steelSurface = NSColor(srgbRed: 0xF7/255, green: 0xF9/255, blue: 0xFB/255, alpha: 1)
+    static let steelBorder  = NSColor(srgbRed: 0xC2/255, green: 0xCC/255, blue: 0xD7/255, alpha: 1)
+
     var stripHeight: CGFloat = 100 { didSet { if editorVisible, stripHeight != oldValue { relayoutSplit() } } }
     var editorVisible = false {
         didSet {
             guard editorVisible != oldValue else { return }
+            applyChrome()
             if editorVisible {
                 relayoutSplit()
             } else {
@@ -616,7 +624,9 @@ private final class SplitContainerView: NSView {
             }
         }
     }
-    private let gap: CGFloat = 10
+    // No gap — capture strip and editor are fused into one panel; the strip's
+    // own bottom hairline (drawn by CaptureView) is the only seam.
+    private let gap: CGFloat = 0
 
     func configure(inputStrip: NSView, editorHost: NSView) {
         self.inputStrip = inputStrip
@@ -625,6 +635,25 @@ private final class SplitContainerView: NSView {
         addSubview(inputStrip)
         inputStrip.frame = bounds
         editorHost.isHidden = true
+    }
+
+    /// In the split, this view IS the window: one rounded, bordered, steel-surface
+    /// panel that clips the fused capture strip + editor. Input-only, it's
+    /// chrome-less and transparent so CaptureView's own rounded panel shows.
+    private func applyChrome() {
+        wantsLayer = true
+        if editorVisible {
+            layer?.cornerRadius = Metrics.radiusWindow
+            layer?.masksToBounds = true
+            layer?.borderWidth = 1
+            layer?.borderColor = Self.steelBorder.cgColor
+            layer?.backgroundColor = Self.steelSurface.cgColor
+        } else {
+            layer?.cornerRadius = 0
+            layer?.masksToBounds = false
+            layer?.borderWidth = 0
+            layer?.backgroundColor = NSColor.clear.cgColor
+        }
     }
 
     // Only re-pin the split surfaces while the editor is open. In input-only the

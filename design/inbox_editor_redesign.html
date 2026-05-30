@@ -1,0 +1,144 @@
+<!--
+  INBOX.MD EDITOR — "Misted Steel" (sharpened, restructured)
+  Changes this pass:
+   - removed the redundant title bar + window controls (filename lives in status bar)
+   - removed the snapshot/date tab strip (single-file for now; reintroduce when
+     one-file-per-day lands)
+   - removed the left icon rail; export/archive now float bottom-right
+   - colour-coded priority orbs (high / med / low)
+   - sharpened palette: brighter accent, crisper borders/shadow, tighter radii
+-->
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600;700&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  /* ===== Misted Steel LIGHT ===== */
+  :root,
+  [data-theme="light"] {
+    --bg:#e4eaf0; --bg-haze:#d4dde7;
+    --surface:#f7f9fb; --surface-field:#e8eef3; --surface-rail:#eef2f6;
+    --border:#c2ccd7; --border-strong:#a7b4c2; --highlight:#ffffff;
+    --ink:#1b222b; --ink-secondary:#54616e; --ink-tertiary:#8b97a4;
+    --accent:#2f6fa3; --accent-ink:#245a86; --accent-soft:#d4e3f1; --on-accent:#ffffff;
+    --pri-high:#db5560; --pri-med:#d99a3c; --pri-low:#4e9e84;
+    --shadow:0 18px 42px -22px rgba(28,42,60,.5);
+  }
+  /* ===== Misted Steel DARK ===== */
+  [data-theme="dark"] {
+    --bg:#161b21; --bg-haze:#0d1115;
+    --surface:#242c35; --surface-field:#1a212a; --surface-rail:#1e252e;
+    --border:#38424e; --border-strong:#4a5663; --highlight:#404b57;
+    --ink:#edf1f5; --ink-secondary:#a2aebb; --ink-tertiary:#6b7682;
+    --accent:#5aa2e0; --accent-ink:#8fc2ee; --accent-soft:#23364a; --on-accent:#161b21;
+    --pri-high:#f0727c; --pri-med:#e7b05a; --pri-low:#6fbba0;
+    --shadow:0 18px 42px -22px rgba(0,0,0,.65);
+  }
+  :root {
+    --r-window:14px; --r-field:10px; --r-chip:7px;
+    --s1:6px; --s2:10px; --s3:16px; --s4:22px;
+    --mono:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;
+    --ui:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { min-height:100vh; display:flex; align-items:center; justify-content:center; padding:48px 24px; font-family:var(--ui);
+    background:radial-gradient(120% 120% at 30% 0%, var(--bg) 0%, var(--bg-haze) 100%); transition:background .35s ease; }
+  .switcher { position:fixed; top:20px; right:22px; display:flex; gap:2px; padding:3px;
+    background:var(--surface); border:1px solid var(--border); border-radius:999px; box-shadow:var(--shadow); z-index:5; }
+  .switcher button { font:600 11px/1 var(--ui); letter-spacing:.06em; text-transform:uppercase; color:var(--ink-secondary);
+    background:transparent; border:0; cursor:pointer; padding:7px 14px; border-radius:999px; transition:all .2s ease; }
+  .switcher button[aria-pressed="true"] { background:var(--accent-soft); color:var(--accent-ink); }
+
+  .window { position:relative; width:min(840px,100%); display:flex; flex-direction:column; background:var(--surface);
+    border:1px solid var(--border); border-radius:var(--r-window); box-shadow:var(--shadow); overflow:hidden;
+    background-image:linear-gradient(180deg, color-mix(in srgb,var(--highlight) 55%,transparent) 0%, transparent 5%); }
+
+  /* capture bar = top of window */
+  .capture { display:flex; align-items:center; gap:var(--s2); padding:var(--s3); border-bottom:1px solid var(--border); }
+  .capture .glyph { width:20px; height:20px; color:var(--ink-secondary); display:grid; place-items:center; }
+  .capture .glyph svg { width:15px; height:15px; }
+  .cap-input { flex:1; background:var(--surface-field); border:1px solid transparent; border-radius:var(--r-field);
+    padding:11px 14px; font:400 15px/1.2 var(--mono); color:var(--ink); }
+  .cap-tag { flex:0 0 110px; background:var(--accent-soft); color:var(--accent-ink);
+    border:1px solid color-mix(in srgb,var(--accent) 38%,transparent); border-radius:var(--r-field); padding:11px 14px; font:400 14px/1.2 var(--mono); }
+  .cap-tag .hash { color:var(--accent); }
+
+  .content { flex:1; padding:var(--s4) 30px var(--s4) 32px; overflow:auto; min-height:430px; }
+  .h1 { display:flex; align-items:center; gap:12px; margin-bottom:var(--s4); }
+  .h1 .hashglyph { font:700 26px/1 var(--mono); color:var(--accent); }
+  .h1 .title { font:700 28px/1 var(--mono); color:var(--ink); letter-spacing:-.015em; }
+  .h2 { font:600 17px/1 var(--mono); color:var(--ink); margin:var(--s4) 0 var(--s2); padding-bottom:var(--s2); border-bottom:1px solid var(--border); }
+  .h2:first-of-type { margin-top:0; }
+  .item { display:flex; align-items:flex-start; gap:11px; padding:7px 0; font:400 14px/1.5 var(--mono); color:var(--ink); }
+  .box { flex:0 0 auto; width:17px; height:17px; margin-top:1px; border-radius:5px; border:1.5px solid var(--border-strong);
+    background:var(--surface); display:grid; place-items:center; }
+  .item.done .box { background:var(--accent); border-color:var(--accent); }
+  .item.done .box svg { width:11px; height:11px; color:var(--on-accent); }
+  .item.done .label { color:var(--ink-tertiary); text-decoration:line-through; text-decoration-color:var(--ink-tertiary); }
+  .label { flex:1; }
+  .icode { font-family:var(--mono); font-size:13px; background:var(--accent-soft); color:var(--accent-ink); padding:1px 7px; border-radius:6px; }
+
+  /* priority orbs */
+  .orb { flex:0 0 auto; width:9px; height:9px; border-radius:50%; margin-top:6px; }
+  .orb.high { background:var(--pri-high); box-shadow:0 0 0 3px color-mix(in srgb,var(--pri-high) 22%,transparent); }
+  .orb.med  { background:var(--pri-med);  box-shadow:0 0 0 3px color-mix(in srgb,var(--pri-med) 22%,transparent); }
+  .orb.low  { background:var(--pri-low);  box-shadow:0 0 0 3px color-mix(in srgb,var(--pri-low) 22%,transparent); }
+
+  /* floating action cluster (replaces left rail) */
+  .fab { position:absolute; right:18px; bottom:56px; display:flex; flex-direction:column; gap:5px;
+    background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:5px; box-shadow:var(--shadow); }
+  .fab button { width:34px; height:34px; border:0; background:transparent; border-radius:8px; color:var(--ink-secondary);
+    cursor:pointer; display:grid; place-items:center; transition:all .15s; }
+  .fab button:hover { background:var(--accent-soft); color:var(--accent-ink); }
+  .fab svg { width:17px; height:17px; }
+
+  .statusbar { display:flex; align-items:center; gap:var(--s3); padding:8px var(--s3); border-top:1px solid var(--border);
+    background:var(--surface-rail); font:600 11px/1 var(--mono); color:var(--ink-tertiary); }
+  .mode { background:var(--accent-soft); color:var(--accent-ink); letter-spacing:.1em; padding:5px 11px; border-radius:6px; font-weight:600; }
+  .status-right { margin-left:auto; display:flex; gap:var(--s3); }
+</style>
+
+<div class="switcher">
+  <button aria-pressed="true"  onclick="setT('light',this)">Light</button>
+  <button aria-pressed="false" onclick="setT('dark',this)">Dark</button>
+</div>
+
+<div class="window">
+  <div class="capture">
+    <div class="cap-input">do something!</div>
+    <div class="cap-tag"><span class="hash">#</span> q</div>
+  </div>
+
+  <div class="content">
+    <div class="h1"><span class="hashglyph">#</span><span class="title">Inbox</span></div>
+
+    <div class="h2">quick-capture</div>
+    <div class="item"><span class="box"></span><span class="label">Input does not have focus on first launch</span><span class="orb high" title="high"></span></div>
+    <div class="item"><span class="box"></span><span class="label">What design <span class="icode">skill</span> to use for ios?</span></div>
+    <div class="item"><span class="box"></span><span class="label">themes need to change live</span><span class="orb med" title="medium"></span></div>
+    <div class="item"><span class="box"></span><span class="label">may be this should exist as a separate app too? Just the markdown editor?</span><span class="orb low" title="low"></span></div>
+    <div class="item"><span class="box"></span><span class="label">Beautify the editor with themes like anthropic, gruvbox or based on other design systems?</span></div>
+    <div class="item done"><span class="box"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12l5 5 9-11"/></svg></span><span class="label">Need a redesign of this app</span></div>
+
+    <div class="h2">hyper-active</div>
+    <div class="item"><span class="box"></span><span class="label">hyper + 1 isn't working like it's supposed to</span><span class="orb high" title="high"></span></div>
+    <div class="item"><span class="box"></span><span class="label">All a sudden only small stacked windows are being created for hyper+1 which should actually be two 2x1 layout.</span></div>
+    <div class="item"><span class="box"></span><span class="label">Change layout for windows/panes</span><span class="orb low" title="low"></span></div>
+    <div class="item"><span class="box"></span><span class="label">if chrome is active but no window is open then hyperactive does not open a window and bring it forward</span></div>
+  </div>
+
+  <div class="fab">
+    <button title="export"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M12 3v12M7 11l5 4 5-4M5 21h14"/></svg></button>
+    <button title="archive"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><rect x="3" y="4" width="18" height="4" rx="1"/><path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8M10 12h4"/></svg></button>
+  </div>
+
+  <div class="statusbar">
+    <span class="mode">NORMAL</span>
+    <span>inbox.md</span>
+    <div class="status-right"><span>10 items &middot; 1 done</span><span>UTF-8</span></div>
+  </div>
+</div>
+
+<script>
+  function setT(t, btn){ document.documentElement.setAttribute('data-theme', t);
+    document.querySelectorAll('.switcher button').forEach(b => b.setAttribute('aria-pressed', b === btn)); }
+</script>

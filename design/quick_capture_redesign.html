@@ -1,0 +1,108 @@
+<!--
+  QUICK CAPTURE — "Misted Steel" (sharpened)
+  Visual target for the SwiftUI build. Do not port HTML literally.
+  :root = the design-token contract; sharpened pass = brighter accent,
+  crisper borders/shadow, tighter radii.
+-->
+<meta charset="utf-8">
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600&display=swap');
+
+  /* ===== Misted Steel LIGHT ===== */
+  :root,
+  [data-theme="light"] {
+    --bg:#e4eaf0; --bg-haze:#d4dde7;
+    --surface:#f7f9fb; --surface-field:#e8eef3; --surface-rail:#eef2f6;
+    --border:#c2ccd7; --border-strong:#a7b4c2; --highlight:#ffffff;
+    --ink:#1b222b; --ink-secondary:#54616e; --ink-tertiary:#8b97a4;
+    --accent:#2f6fa3; --accent-ink:#245a86; --accent-soft:#d4e3f1; --on-accent:#ffffff;
+    --pri-high:#db5560; --pri-med:#d99a3c; --pri-low:#4e9e84;
+    --shadow:0 18px 42px -22px rgba(28,42,60,.5);
+  }
+  /* ===== Misted Steel DARK ===== */
+  [data-theme="dark"] {
+    --bg:#161b21; --bg-haze:#0d1115;
+    --surface:#242c35; --surface-field:#1a212a; --surface-rail:#1e252e;
+    --border:#38424e; --border-strong:#4a5663; --highlight:#404b57;
+    --ink:#edf1f5; --ink-secondary:#a2aebb; --ink-tertiary:#6b7682;
+    --accent:#5aa2e0; --accent-ink:#8fc2ee; --accent-soft:#23364a; --on-accent:#161b21;
+    --pri-high:#f0727c; --pri-med:#e7b05a; --pri-low:#6fbba0;
+    --shadow:0 18px 42px -22px rgba(0,0,0,.65);
+  }
+  :root {
+    --r-window:14px; --r-field:10px; --r-chip:7px;
+    --s1:6px; --s2:10px; --s3:16px; --s4:22px;
+    --mono:'IBM Plex Mono',ui-monospace,'SF Mono',monospace;
+    --ui:'IBM Plex Sans',ui-sans-serif,system-ui,sans-serif;
+  }
+  * { box-sizing:border-box; margin:0; padding:0; }
+  body { min-height:100vh; display:flex; flex-direction:column; align-items:center; justify-content:center;
+    gap:30px; padding:56px 24px; font-family:var(--ui);
+    background:radial-gradient(120% 120% at 30% 0%, var(--bg) 0%, var(--bg-haze) 100%); transition:background .35s ease; }
+  .switcher { position:fixed; top:20px; right:22px; display:flex; gap:2px; padding:3px;
+    background:var(--surface); border:1px solid var(--border); border-radius:999px; box-shadow:var(--shadow); z-index:5; }
+  .switcher button { font:600 11px/1 var(--ui); letter-spacing:.06em; text-transform:uppercase;
+    color:var(--ink-secondary); background:transparent; border:0; cursor:pointer; padding:7px 14px; border-radius:999px; transition:all .2s ease; }
+  .switcher button[aria-pressed="true"] { background:var(--accent-soft); color:var(--accent-ink); }
+  .caption { font:600 11px/1 var(--ui); letter-spacing:.14em; text-transform:uppercase; color:var(--ink-tertiary); align-self:flex-start; margin-left:4px; }
+  .frame { width:min(720px,100%); display:flex; flex-direction:column; gap:10px; }
+
+  .panel { position:relative; background:var(--surface); border:1px solid var(--border);
+    border-radius:var(--r-window); box-shadow:var(--shadow); padding:var(--s3);
+    background-image:linear-gradient(180deg, color-mix(in srgb,var(--highlight) 60%,transparent) 0%, transparent 12%); }
+  .row { display:flex; align-items:center; gap:var(--s2); }
+  .glyph { flex:0 0 auto; width:22px; height:22px; display:grid; place-items:center; color:var(--ink-secondary); }
+  .glyph svg { width:16px; height:16px; }
+  .input { flex:1 1 auto; background:var(--surface-field); border:1px solid transparent; border-radius:var(--r-field);
+    padding:13px 15px; font:400 17px/1.2 var(--mono); color:var(--ink); transition:border-color .15s, box-shadow .15s; }
+  .input.placeholder { color:var(--ink-tertiary); }
+  .input.focused { border-color:var(--accent); box-shadow:0 0 0 3px var(--accent-soft); }
+  .caret { color:var(--accent); font-weight:600; animation:blink 1.1s steps(1) infinite; }
+  @keyframes blink { 50% { opacity:0; } }
+  .tag { flex:0 0 132px; background:var(--surface-field); border:1px solid transparent; border-radius:var(--r-field);
+    padding:13px 15px; font:400 15px/1.2 var(--mono); color:var(--ink-tertiary); }
+  .tag.active { background:var(--accent-soft); color:var(--accent-ink); border-color:color-mix(in srgb,var(--accent) 38%,transparent); }
+  .tag .hash { opacity:.6; }
+  .open { flex:0 0 auto; width:22px; height:22px; color:var(--ink-tertiary); display:grid; place-items:center; }
+  .open svg { width:16px; height:16px; }
+  .suggest { display:flex; gap:var(--s1); flex-wrap:wrap; margin-top:var(--s3); padding-top:var(--s3); border-top:1px solid var(--border); }
+  .chip { font:400 13px/1 var(--mono); color:var(--ink-secondary); background:var(--surface-field); border:1px solid var(--border); border-radius:var(--r-chip); padding:7px 11px; }
+  .chip .hash { color:var(--ink-tertiary); }
+  .chip.match { color:var(--accent-ink); background:var(--accent-soft); border-color:color-mix(in srgb,var(--accent) 42%,transparent); }
+  .chip.match .hash { color:var(--accent); }
+</style>
+
+<div class="switcher">
+  <button aria-pressed="true"  onclick="setT('light',this)">Light</button>
+  <button aria-pressed="false" onclick="setT('dark',this)">Dark</button>
+</div>
+
+<div class="frame">
+  <div class="caption">Resting</div>
+  <div class="panel"><div class="row">
+    <div class="input placeholder">What needs doing?</div>
+    <div class="tag"><span class="hash">#</span> tag</div>
+    <span class="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg></span>
+  </div></div>
+</div>
+
+<div class="frame">
+  <div class="caption">Typing &middot; tag &middot; suggestions</div>
+  <div class="panel">
+    <div class="row">
+      <div class="input focused">do something!<span class="caret">|</span></div>
+      <div class="tag active"><span class="hash">#</span> q</div>
+      <span class="open"><svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round"><path d="M14 3v4a1 1 0 0 0 1 1h4"/><path d="M17 21H7a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h7l5 5v11a2 2 0 0 1-2 2z"/></svg></span>
+    </div>
+    <div class="suggest">
+      <span class="chip"><span class="hash">#</span>cal</span>
+      <span class="chip match"><span class="hash">#</span>quick-capture</span>
+      <span class="chip"><span class="hash">#</span>hyper-active</span>
+    </div>
+  </div>
+</div>
+
+<script>
+  function setT(t, btn){ document.documentElement.setAttribute('data-theme', t);
+    document.querySelectorAll('.switcher button').forEach(b => b.setAttribute('aria-pressed', b === btn)); }
+</script>
