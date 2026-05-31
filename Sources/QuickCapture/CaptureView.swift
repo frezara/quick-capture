@@ -24,8 +24,7 @@ struct CaptureView: View {
     enum Field: Hashable { case todo, tag }
 
     // "Misted Steel" palette resolved from system appearance (see DesignSystem).
-    // The panel forces aqua today, so this is `.light` in practice; unforcing
-    // the panel's appearance later flips dark on automatically.
+    // The panel follows the system colour scheme — dark mode renders Theme.dark.
     @Environment(\.colorScheme) private var colorScheme
     private var theme: Theme { colorScheme == .dark ? .dark : .light }
 
