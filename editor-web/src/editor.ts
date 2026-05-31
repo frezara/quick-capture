@@ -168,16 +168,6 @@ function selectionOverlaps(state: EditorState, from: number, to: number): boolea
 
 /// The accent "#" glyph that stands in for the H1 mark — a small filled accent
 /// box with a white hash, matching the editor mockup. H2–H6 marks stay hidden.
-class HashGlyphWidget extends WidgetType {
-    toDOM(): HTMLElement {
-        const span = document.createElement("span");
-        span.className = "cm-h1-hash";
-        span.textContent = "#";
-        return span;
-    }
-    eq(): boolean { return true; }
-    ignoreEvent(): boolean { return true; }
-}
 
 function buildLivePreview(view: EditorView): DecorationSet {
     // In read mode (Cmd+E) all syntax stays hidden regardless of cursor
@@ -213,15 +203,9 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     if (view.state.doc.sliceString(end, end + 1) === " ") end += 1;
                     // Reveal when the cursor is anywhere on the heading line.
                     if (!readMode && selectionOverlaps(view.state, line.from, line.to)) return;
-                    // H1 (`#`, mark width 1) renders as an accent glyph box; the
-                    // rest collapse to zero width (a `mark` would leave a visible
-                    // gap before the heading).
-                    const isH1 = node.to - node.from === 1;
                     ranges.push({
                         from: node.from, to: end,
-                        deco: isH1
-                            ? Decoration.replace({ widget: new HashGlyphWidget() })
-                            : Decoration.replace({}),
+                        deco: Decoration.replace({}),
                     });
                     return;
                 }
@@ -473,18 +457,6 @@ function makeTheme() {
     ".cm-mode-badge--replace": {
         backgroundColor: palette.accentInk,
         color: palette.onAccent,
-    },
-    // H1 mark rendered as a filled accent glyph box (white "#").
-    ".cm-h1-hash": {
-        display: "inline-block",
-        backgroundColor: palette.accent,
-        color: palette.onAccent,
-        borderRadius: "7px",
-        padding: "0 0.26em",
-        marginRight: "0.34em",
-        fontWeight: "800",
-        lineHeight: "1.18",
-        verticalAlign: "0.02em",
     },
     // Transient "Saved" badge — appears under the mode badge on ⌘S, fades out
     // after a moment. Subtle Apple-like green so it reads as success without
