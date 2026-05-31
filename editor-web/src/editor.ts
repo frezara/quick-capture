@@ -421,6 +421,25 @@ function makeTheme() {
     },
     ".cm-status-file": { color: palette.soft },
     ".cm-status-right": { marginLeft: "auto", display: "flex", gap: "16px" },
+    // Empty-state overlay — shown when the document has zero todo lines.
+    ".cm-empty-state": {
+        position: "absolute",
+        inset: "0",
+        bottom: "33px",   // clear the status bar
+        display: "flex",
+        flexDirection: "column",
+        alignItems: "center",
+        justifyContent: "center",
+        gap: "6px",
+        pointerEvents: "none",
+        userSelect: "none",
+        color: palette.muted,
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontSize: "12px",
+        lineHeight: "1.6",
+        textAlign: "center",
+        zIndex: "1",
+    },
     // Mode pill — accentSoft (NORMAL) by default; the other vim modes keep the
     // conventional green/amber/red cues so the mode reads at a glance.
     ".cm-mode-badge": {
@@ -1025,6 +1044,7 @@ function updateBadge(v: EditorView) {
 
 /// Refreshes the "N items · M done" tally from the document. Counts every
 /// `- [ ]` / `- [x]` task line (any indent), done = the checked ones.
+/// Also shows/hides the empty-state overlay when the count crosses zero.
 function updateCounts(v: EditorView) {
     const bar = v.dom.querySelector(".cm-statusbar");
     if (!bar) return;
@@ -1033,6 +1053,22 @@ function updateCounts(v: EditorView) {
     const done = (text.match(/^\s*[-*+]\s+\[[xX]\]/gm) ?? []).length;
     (bar.querySelector(".cm-status-count") as HTMLElement).textContent =
         `${items} item${items === 1 ? "" : "s"} · ${done} done`;
+
+    // Empty-state overlay — appears when there are no todos at all.
+    const editorRoot = v.dom.closest(".cm-editor") as HTMLElement | null ?? v.dom;
+    let overlay = editorRoot.querySelector(".cm-empty-state") as HTMLElement | null;
+    if (items === 0) {
+        if (!overlay) {
+            overlay = document.createElement("div");
+            overlay.className = "cm-empty-state";
+            overlay.innerHTML =
+                "<span>Nothing here yet.</span>" +
+                "<span>Press ⌥T to capture your first thought.</span>";
+            editorRoot.appendChild(overlay);
+        }
+    } else {
+        overlay?.remove();
+    }
 }
 
 function sendToSwift(message: Record<string, unknown>) {

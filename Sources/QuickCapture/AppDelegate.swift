@@ -297,7 +297,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         do {
             try fm.createDirectory(at: dir, withIntermediateDirectories: true)
             if !fm.fileExists(atPath: file.path) {
-                try FileWriter.documentHeading.appending("\n")
+                try FileWriter.scaffoldContent
                     .write(to: file, atomically: true, encoding: .utf8)
             }
         } catch {
