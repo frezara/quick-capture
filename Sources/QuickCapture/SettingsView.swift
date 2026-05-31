@@ -20,7 +20,7 @@ struct SettingsView: View {
                             .font(Typeface.mono(12))
                             .foregroundStyle(t.ink)
                             .multilineTextAlignment(.trailing)
-                            .frame(maxWidth: 160)
+                            .truncationMode(.head)
                         Button("Choose…", action: chooseFile)
                             .buttonStyle(SettingsGhostButton(t: t))
                     }
@@ -164,6 +164,22 @@ struct SettingsView: View {
             appState.captureFilePath = url.path
         }
     }
+}
+
+// MARK: - Previews
+
+#Preview("Settings · long path") {
+    SettingsView()
+        .environmentObject({
+            let s = AppState()
+            s.captureFilePath = "/Users/fahadqazi/Documents/Notes/Personal/2024/quick-capture/inbox.md"
+            return s
+        }())
+}
+
+#Preview("Settings · short path") {
+    SettingsView()
+        .environmentObject(AppState())
 }
 
 // MARK: - Ghost button
