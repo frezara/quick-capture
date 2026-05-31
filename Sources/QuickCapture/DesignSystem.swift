@@ -104,16 +104,24 @@ struct ThemedRoot<Content: View>: View {
 
 // MARK: - Typography
 
-// IBM Plex Mono / Sans are not bundled yet, so these resolve to the system
-// equivalents (monospaced design / default). Bundle the .otf files and switch
-// the bodies to `.custom("IBMPlexMono"/"IBMPlexSans", size:)` to upgrade — the
-// call sites don't change.
 enum Typeface {
     static func mono(_ s: CGFloat, _ w: Font.Weight = .regular) -> Font {
-        .system(size: s, weight: w, design: .monospaced)
+        switch w {
+        case .bold, .heavy, .black:
+            return .custom("IBMPlexMono-Bold", size: s)
+        case .semibold, .medium:
+            return .custom("IBMPlexMono-SemiBold", size: s)
+        default:
+            return .custom("IBMPlexMono-Regular", size: s)
+        }
     }
     static func ui(_ s: CGFloat, _ w: Font.Weight = .regular) -> Font {
-        .system(size: s, weight: w)
+        switch w {
+        case .bold, .heavy, .black, .semibold, .medium:
+            return .custom("IBMPlexSans-SemiBold", size: s)
+        default:
+            return .custom("IBMPlexSans-Regular", size: s)
+        }
     }
 }
 
