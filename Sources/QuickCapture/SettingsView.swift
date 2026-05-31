@@ -3,88 +3,123 @@ import UniformTypeIdentifiers
 
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
+    @Environment(\.colorScheme) private var scheme
+    private var t: Theme { scheme == .dark ? .dark : .light }
 
     var body: some View {
-        Form {
-            Section {
-                HStack {
-                    TextField("Path", text: $appState.captureFilePath)
-                        .textFieldStyle(.roundedBorder)
-                        .font(.system(.body, design: .monospaced))
-                    Button("Choose…") { chooseFile() }
+        VStack(alignment: .leading, spacing: 14) {
+            settingsCard("CAPTURE FILE") {
+                settingsRow(
+                    label: "Path",
+                    note: "Items are appended as `- [ ] …` lines."
+                ) {
+                    HStack(spacing: Metrics.s2) {
+                        TextField("", text: $appState.captureFilePath)
+                            .textFieldStyle(.plain)
+                            .font(Typeface.mono(12))
+                            .foregroundStyle(t.ink)
+                            .multilineTextAlignment(.trailing)
+                            .frame(maxWidth: 160)
+                        Button("Choose…", action: chooseFile)
+                            .buttonStyle(SettingsGhostButton(t: t))
+                    }
                 }
-                Text("Captured items are appended as `- [ ] …` lines.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Capture File")
             }
 
-            Section {
-                HStack {
-                    Text("Hotkey")
-                    Spacer()
+            settingsCard("SHORTCUT") {
+                settingsRow(
+                    label: "Hotkey",
+                    note: "Click, press your combo, Esc cancels. Needs ⌃⌥⇧⌘."
+                ) {
                     KeyRecorderView(hotKey: $appState.hotKey)
                 }
-                Text("Click the field, then press your combo. Esc cancels. Requires at least one modifier (⌃⌥⇧⌘).")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Shortcut")
             }
 
-            Section {
-                Picker("Input font", selection: $appState.captureFontDesign) {
-                    ForEach(CaptureFontDesign.allCases) { design in
-                        Text(design.label)
-                            .font(.system(size: 13, design: design.design))
-                            .tag(design)
+            settingsCard("APPEARANCE") {
+                settingsRow(label: "Input font", note: nil) {
+                    Picker("", selection: $appState.captureFontDesign) {
+                        ForEach(CaptureFontDesign.allCases) { d in Text(d.label).tag(d) }
                     }
+                    .labelsHidden()
+                    .frame(width: 180)
                 }
-                HStack(alignment: .firstTextBaseline) {
-                    Text("Preview")
-                        .foregroundStyle(.secondary)
-                    Spacer()
+                t.border.frame(height: 1)
+                settingsRow(label: "Preview", note: nil, labelColor: t.inkSecondary) {
                     Text("What needs doing?")
                         .font(.system(size: 17, design: appState.captureFontDesign.design))
+                        .foregroundStyle(t.ink)
                 }
-            } header: {
-                Text("Appearance")
             }
 
-            Section {
-                Toggle("Append timestamp to each capture", isOn: $appState.includeTimestamp)
-                if appState.includeTimestamp {
-                    HStack(alignment: .firstTextBaseline) {
-                        Text("Preview")
-                            .foregroundStyle(.secondary)
-                        Spacer()
-                        Text("- [ ] buy milk \(FileWriter.createdMarker) \(FileWriter.timestampString(for: Date()))")
-                            .font(.system(.caption, design: .monospaced))
-                            .foregroundStyle(.secondary)
-                            .textSelection(.enabled)
-                    }
+            settingsCard("TIMESTAMP") {
+                settingsRow(
+                    label: "Append timestamp to each capture",
+                    note: "Uses Obsidian Tasks `\(FileWriter.createdMarker)` marker — `YYYY-MM-DD HH:MM`."
+                ) {
+                    Toggle("", isOn: $appState.includeTimestamp).labelsHidden()
                 }
-                Text("Uses the Obsidian Tasks plugin's `\(FileWriter.createdMarker)` (created) marker with `YYYY-MM-DD HH:MM`.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Timestamp")
             }
 
-            Section {
-                Toggle("Vim keybindings in the editor", isOn: $appState.vimEnabled)
-                Text("When off, the editor uses standard text editing. ⌘F still toggles the editor.")
-                    .font(.caption)
-                    .foregroundStyle(.secondary)
-            } header: {
-                Text("Editor")
+            settingsCard("EDITOR") {
+                settingsRow(
+                    label: "Vim keybindings",
+                    note: "When off, standard editing. ⌘F still toggles the editor."
+                ) {
+                    Toggle("", isOn: $appState.vimEnabled).labelsHidden()
+                }
             }
         }
-        .formStyle(.grouped)
+        .padding(Metrics.s3)
         .frame(width: 480)
-        .padding()
+        .background(t.bg)
     }
+
+    // MARK: - Components
+
+    private func settingsCard<Content: View>(
+        _ title: String,
+        @ViewBuilder content: () -> Content
+    ) -> some View {
+        VStack(alignment: .leading, spacing: Metrics.s1) {
+            Text(title)
+                .font(TypeScale.caption)
+                .tracking(Tracking.caption)
+                .foregroundStyle(t.inkTertiary)
+            VStack(spacing: 0) { content() }
+                .background(t.surface)
+                .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous))
+                .overlay(
+                    RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                        .strokeBorder(t.border, lineWidth: 1)
+                )
+        }
+    }
+
+    private func settingsRow<Control: View>(
+        label: String,
+        note: String?,
+        labelColor: Color? = nil,
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        HStack(alignment: .center, spacing: Metrics.s3) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(label)
+                    .font(TypeScale.body)
+                    .foregroundStyle(labelColor ?? t.ink)
+                if let note {
+                    Text(note)
+                        .font(TypeScale.caption)
+                        .foregroundStyle(t.inkTertiary)
+                }
+            }
+            Spacer()
+            control()
+        }
+        .padding(.horizontal, Metrics.s3)
+        .padding(.vertical, 12)
+    }
+
+    // MARK: - Actions
 
     private func chooseFile() {
         let panel = NSOpenPanel()
@@ -97,9 +132,29 @@ struct SettingsView: View {
         ]
         panel.canCreateDirectories = true
         panel.message = "Choose a markdown file to append captures to"
-
         if panel.runModal() == .OK, let url = panel.url {
             appState.captureFilePath = url.path
         }
+    }
+}
+
+// MARK: - Ghost button
+
+private struct SettingsGhostButton: ButtonStyle {
+    let t: Theme
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(TypeScale.code)
+            .foregroundStyle(configuration.isPressed ? t.accentInk : t.accent)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                    .fill(configuration.isPressed ? t.accentSoft : .clear)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                    .strokeBorder(t.accent.opacity(0.5), lineWidth: 1)
+            )
     }
 }
