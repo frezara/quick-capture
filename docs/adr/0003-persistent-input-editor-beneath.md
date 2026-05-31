@@ -1,6 +1,13 @@
 # ADR-0003: Persistent capture input, editor opens beneath it
 
-Status: Accepted — amends ADR-0001
+Status: Superseded by ADR-0004
+
+> **Superseded (ADR-0004):** the persistent input strip + editor-beneath
+> ("split") model below was reverted. The capture box and editor are again
+> **mutually-exclusive modes**, and the single-writer / in-memory-buffer model
+> (Decision §2–§3) is gone — the file on disk is canonical. Kept for the record
+> and for the concurrency analysis, which is why ADR-0004 doesn't need to
+> re-derive it.
 
 ## Context
 

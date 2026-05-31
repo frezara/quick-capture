@@ -1,13 +1,13 @@
 # ADR-0001: One panel, two modes
 
-Status: Accepted — mutual-exclusion premise amended by ADR-0003
+Status: Accepted — briefly amended by ADR-0003, restored by ADR-0004
 
-> **Update (ADR-0003):** the two surfaces are no longer mutually-exclusive
-> modes that crossfade. The capture input is now persistent and the editor
-> opens *beneath* it. The mechanics below (warm web view, `⌘F` window
-> intercept, mode-aware dismiss, activation-policy swap) still hold, but they
-> are now keyed to whether the *editor is open* rather than to an exclusive
-> "mode". Read ADR-0003 alongside this.
+> **History:** ADR-0003 amended this to a persistent-input "split" (editor
+> beneath the capture box, both visible). ADR-0004 reverted that — the two
+> surfaces are once again **mutually-exclusive modes** that crossfade, exactly
+> as decided here. The mechanics below (warm web view, `⌘F` window intercept,
+> mode-aware dismiss, activation-policy swap) hold as written. Read ADR-0004
+> for the revert rationale and the gestures it adds (⌘W dismiss, vim-aware Esc).
 
 ## Context
 
