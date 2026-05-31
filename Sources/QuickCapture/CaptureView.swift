@@ -8,10 +8,6 @@ struct CaptureView: View {
     let onToggleEditor: () -> Void
     let onEscape: () -> Void
     let onContentSizeChange: (CGSize) -> Void
-    /// When true the editor is open beneath this strip — the header shows the
-    /// filename + close, and the toggle collapses rather than opens.
-    var editorOpen: Bool = false
-    var filename: String = ""
 
     @State private var todoText = ""
     @State private var tagText = ""
@@ -82,22 +78,14 @@ struct CaptureView: View {
             }
         )
         .background(panelSurface)
-        // Standalone: a self-contained rounded, bordered panel. Joined (editor
-        // open): square and chrome-less — the SplitContainerView is the single
-        // rounded panel, and only a bottom hairline separates strip from editor.
-        .clipShape(RoundedRectangle(cornerRadius: editorOpen ? 0 : Metrics.radiusWindow,
-                                    style: .continuous))
-        .overlay(alignment: .bottom) {
-            if editorOpen {
-                Rectangle().fill(theme.border).frame(height: 1)
-            }
-        }
-        .overlay {
-            if !editorOpen {
-                RoundedRectangle(cornerRadius: Metrics.radiusWindow, style: .continuous)
-                    .strokeBorder(theme.border, lineWidth: 1)
-            }
-        }
+        // The capture box is always a self-contained rounded, bordered panel —
+        // capture mode and editor mode are mutually exclusive (ADR-0004), so it
+        // never has to fuse with the editor.
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusWindow, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusWindow, style: .continuous)
+                .strokeBorder(theme.border, lineWidth: 1)
+        )
         .onAppear {
             DispatchQueue.main.async { focused = .todo }
         }
@@ -599,14 +587,14 @@ private extension AppState {
     .background(Color(0xE4EAF0))
 }
 
-#Preview("Capture · editor split") {
+#Preview("Capture · dark") {
     CaptureView(
         appState: .previewSeeded(),
         onSubmit: { _, _ in }, onClose: {}, onToggleEditor: {},
-        onEscape: {}, onContentSizeChange: { _ in },
-        editorOpen: true, filename: "inbox.md"
+        onEscape: {}, onContentSizeChange: { _ in }
     )
     .frame(width: 600)
     .padding(40)
-    .background(Color(0xE4EAF0))
+    .background(Color(0x161B21))
+    .preferredColorScheme(.dark)
 }
