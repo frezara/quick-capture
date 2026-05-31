@@ -1,3 +1,4 @@
+import ServiceManagement
 import SwiftUI
 import UniformTypeIdentifiers
 
@@ -68,6 +69,15 @@ struct SettingsView: View {
                     Toggle("", isOn: $appState.vimEnabled).labelsHidden()
                 }
             }
+
+            settingsCard("GENERAL") {
+                settingsRow(
+                    label: "Launch at Login",
+                    note: "App must be in /Applications for this to take effect."
+                ) {
+                    Toggle("", isOn: launchAtLoginBinding).labelsHidden()
+                }
+            }
         }
         .padding(Metrics.s3)
         .frame(width: 480)
@@ -120,6 +130,24 @@ struct SettingsView: View {
     }
 
     // MARK: - Actions
+
+    private var launchAtLoginBinding: Binding<Bool> {
+        Binding(
+            get: { SMAppService.mainApp.status == .enabled },
+            set: { enabled in
+                do {
+                    if enabled { try SMAppService.mainApp.register() }
+                    else        { try SMAppService.mainApp.unregister() }
+                } catch {
+                    let alert = NSAlert()
+                    alert.messageText = "Couldn't update launch-at-login"
+                    alert.informativeText = "\(error.localizedDescription)\n\nYou can also toggle this in System Settings → General → Login Items."
+                    alert.alertStyle = .warning
+                    alert.runModal()
+                }
+            }
+        )
+    }
 
     private func chooseFile() {
         let panel = NSOpenPanel()

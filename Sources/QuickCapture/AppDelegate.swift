@@ -1,6 +1,5 @@
 import AppKit
 import HotKey
-import ServiceManagement
 import SwiftUI
 
 final class AppDelegate: NSObject, NSApplicationDelegate {
@@ -157,12 +156,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsItem.target = self
         menu.addItem(settingsItem)
 
-        let launchItem = NSMenuItem(title: "Launch at Login",
-                                    action: #selector(toggleLaunchAtLogin),
-                                    keyEquivalent: "")
-        launchItem.target = self
-        menu.addItem(launchItem)
-
         menu.addItem(.separator())
 
         menu.addItem(NSMenuItem(title: "Quit Quick Capture",
@@ -287,38 +280,4 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         settingsController.show()
     }
 
-    // MARK: - Launch at login
-
-    /// Toggles whether the app auto-starts on user login. Uses SMAppService
-    /// (modern replacement for the legacy LSSharedFileList API). The app must
-    /// live in /Applications for the system to honor this registration.
-    @objc func toggleLaunchAtLogin() {
-        let service = SMAppService.mainApp
-        do {
-            if service.status == .enabled {
-                try service.unregister()
-            } else {
-                try service.register()
-            }
-        } catch {
-            let alert = NSAlert()
-            alert.messageText = "Couldn't update launch-at-login setting"
-            alert.informativeText = """
-            \(error.localizedDescription)
-
-            You can also toggle this in System Settings → General → Login Items.
-            """
-            alert.alertStyle = .warning
-            alert.runModal()
-        }
-    }
-
-    /// Called by AppKit before the status menu is shown — used here to refresh
-    /// the "Launch at Login" checkmark to reflect the current SMAppService state.
-    @objc func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
-        if menuItem.action == #selector(toggleLaunchAtLogin) {
-            menuItem.state = SMAppService.mainApp.status == .enabled ? .on : .off
-        }
-        return true
-    }
 }
