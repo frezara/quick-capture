@@ -26,6 +26,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             return
         }
 
+        scaffoldDefaultCaptureFile()
         setupStatusItem()
         setupMainMenu()
         setupHotKey()
@@ -278,6 +279,30 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         settingsController.show()
+    }
+
+    // MARK: - Default capture file scaffolding
+
+    /// Creates ~/QuickCapture/inbox.md on every launch if it doesn't exist yet,
+    /// but only when the user has never set a custom capture path. Idempotent.
+    private func scaffoldDefaultCaptureFile() {
+        let saved = UserDefaults.standard.string(forKey: "captureFilePath") ?? ""
+        guard saved.isEmpty else { return }
+
+        let home = NSHomeDirectory()
+        let dir = URL(fileURLWithPath: (home as NSString).appendingPathComponent("QuickCapture"))
+        let file = dir.appendingPathComponent("inbox.md")
+        let fm = FileManager.default
+
+        do {
+            try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+            if !fm.fileExists(atPath: file.path) {
+                try FileWriter.documentHeading.appending("\n")
+                    .write(to: file, atomically: true, encoding: .utf8)
+            }
+        } catch {
+            NSLog("QuickCapture: failed to scaffold default capture file: %@", error.localizedDescription)
+        }
     }
 
 }

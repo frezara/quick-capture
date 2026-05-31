@@ -137,7 +137,8 @@ final class AppState: ObservableObject {
             self.captureFilePath = saved
         } else {
             let home = NSHomeDirectory()
-            self.captureFilePath = (home as NSString).appendingPathComponent("QuickCapture.md")
+            self.captureFilePath = (home as NSString)
+                .appendingPathComponent("QuickCapture/inbox.md")
         }
 
         if let data = UserDefaults.standard.data(forKey: Keys.hotKey),
