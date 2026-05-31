@@ -34,6 +34,11 @@ targets:
       - path: editor-web/dist
         buildPhase: resources
         type: folder
+      # IBM Plex Mono + Sans — bundled as a folder reference so
+      # ATSApplicationFontsPath can find them at runtime.
+      - path: Sources/QuickCapture/Fonts
+        buildPhase: resources
+        type: folder
     dependencies:
       - package: HotKey
     settings:
