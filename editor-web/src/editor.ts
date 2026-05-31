@@ -634,6 +634,7 @@ function makeTheme() {
     // at the top right.
     ".cm-line.cm-priority-dot": {
         position: "relative",
+        paddingRight: "28px",   // clear the 9px orb + 3px halo + 8px right offset
     },
     ".cm-line.cm-priority-dot::after": {
         content: '""',
