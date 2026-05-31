@@ -10,8 +10,8 @@ import WebKit
 /// mutually-exclusive crossfaded modes. See ADR-0003.
 ///
 /// Behaviors keyed to whether the editor is open (`editorOpen`):
-/// - **Click-away dismiss** only fires when the editor is closed (`resignKey`);
-///   the editor must survive losing focus so you can copy from other apps.
+/// - **Click-away / ⌘Tab dismiss** fires in both capture and editor modes
+///   (`resignKey`); `canDismissOnBlur` guards against false fires during transitions.
 /// - **⌘F** is intercepted in `performKeyEquivalent` *before* it reaches
 ///   CodeMirror/WebKit (which would treat it as "find"), toggling the editor.
 ///   **⌘J** jumps focus to the input strip while the editor is open.
@@ -218,6 +218,9 @@ final class MainPanel: NSPanel {
         makeKeyAndOrderFront(nil)
         orderFrontRegardless()
         focusEditor()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.canDismissOnBlur = true
+        }
     }
 
     // MARK: - Open / close
@@ -245,6 +248,9 @@ final class MainPanel: NSPanel {
         anchorCenterY = target.midY
         animateFrame(to: target, fadeEditorTo: 1) { [weak self] in
             self?.focusEditor()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.canDismissOnBlur = true
+            }
         }
     }
 
@@ -465,9 +471,9 @@ final class MainPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
-        guard !editorOpen, canDismissOnBlur else { return }
+        guard canDismissOnBlur else { return }
         canDismissOnBlur = false
-        onDismiss()
+        dismiss()
     }
 
     // MARK: - Editor file plumbing
