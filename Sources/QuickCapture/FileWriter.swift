@@ -13,6 +13,16 @@ enum FileWriter {
     static let documentHeading = "# Inbox"
     static let untaggedSection = "Quick capture"
 
+    /// Content written to inbox.md on first launch. Includes a welcome todo so
+    /// the editor has something to show and users discover the core gestures.
+    static let scaffoldContent = """
+        # Inbox
+
+        ## Quick capture
+
+        - [ ] Welcome to Quick Capture — press ⌥T to capture a thought, ⌘F to open the editor.
+        """
+
     /// Obsidian Tasks plugin's "created date" marker.
     static let createdMarker = "➕"
 

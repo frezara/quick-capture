@@ -3,6 +3,26 @@ import XCTest
 
 final class FileWriterTests: XCTestCase {
 
+    // MARK: - scaffoldContent
+
+    func testScaffoldContentStartsWithDocumentHeading() {
+        XCTAssertTrue(FileWriter.scaffoldContent.hasPrefix("# Inbox"))
+    }
+
+    func testScaffoldContentContainsWelcomeTodo() {
+        XCTAssertTrue(
+            FileWriter.scaffoldContent.contains("- [ ]"),
+            "scaffold must include at least one todo so the editor has content on first run"
+        )
+    }
+
+    func testScaffoldContentContainsMentionOfHotkey() {
+        XCTAssertTrue(
+            FileWriter.scaffoldContent.contains("⌥T") || FileWriter.scaffoldContent.contains("⌘F"),
+            "scaffold welcome entry should mention the core gestures"
+        )
+    }
+
     // MARK: - insert(item:underHeading:in:)
 
     func testInsertCreatesHeadingAndItemWhenContentIsEmpty() {
