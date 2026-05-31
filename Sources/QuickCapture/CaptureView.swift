@@ -8,10 +8,6 @@ struct CaptureView: View {
     let onToggleEditor: () -> Void
     let onEscape: () -> Void
     let onContentSizeChange: (CGSize) -> Void
-    /// When true the editor is open beneath this strip — the header shows the
-    /// filename + close, and the toggle collapses rather than opens.
-    var editorOpen: Bool = false
-    var filename: String = ""
 
     @State private var todoText = ""
     @State private var tagText = ""
@@ -27,31 +23,39 @@ struct CaptureView: View {
 
     enum Field: Hashable { case todo, tag }
 
-    // Paper palette
-    private let surface         = Color.white
-    private let borderColor     = Color(hex: 0xF0F0F3)
-    private let primaryText     = Color(hex: 0x1F1F24)
-    private let secondaryText   = Color(hex: 0x6E6E72)
-    private let tertiaryText    = Color(hex: 0x8A8A8E)
-    private let inputBackground = Color(hex: 0xF4F4F7)
+    // "Misted Steel" palette resolved from system appearance (see DesignSystem).
+    // The panel forces aqua today, so this is `.light` in practice; unforcing
+    // the panel's appearance later flips dark on automatically.
+    @Environment(\.colorScheme) private var colorScheme
+    private var theme: Theme { colorScheme == .dark ? .dark : .light }
+
+    /// The tag field switches to its accent treatment once it's focused or holds
+    /// text — the "active" state from the mockup.
+    private var tagActive: Bool { focused == .tag || !tagText.isEmpty }
 
     var body: some View {
         VStack(spacing: 0) {
-            header
-            Divider().background(borderColor)
             inputsRow
             if shouldShowExtras {
-                Divider().background(borderColor)
-                Group {
-                    if isCalendarMode {
-                        calendarPreview
-                    } else {
-                        footer
+                // Symmetric: gap above the rule (from the inputs) and below it
+                // (to the chips), so the separator doesn't get squashed against
+                // the input row.
+                VStack(spacing: 0) {
+                    Rectangle().fill(theme.border).frame(height: 1)
+                        .padding(.top, Metrics.s3)
+                    Group {
+                        if isCalendarMode {
+                            calendarPreview
+                        } else {
+                            footer
+                        }
                     }
+                    .padding(.top, Metrics.s3)
                 }
-                .transition(.move(edge: .top).combined(with: .opacity))
+                .transition(.opacity)
             }
         }
+        .padding(Metrics.s3)
         // Animate the footer in/out. MainPanel tracks this animated height
         // per frame (top-anchored) so the window grows/shrinks in lockstep —
         // smooth and symmetric both ways.
@@ -73,11 +77,14 @@ struct CaptureView: View {
                     .onChange(of: proxy.size) { onContentSizeChange(proxy.size) }
             }
         )
-        .background(surface)
-        .clipShape(RoundedRectangle(cornerRadius: 12, style: .continuous))
+        .background(panelSurface)
+        // The capture box is always a self-contained rounded, bordered panel —
+        // capture mode and editor mode are mutually exclusive (ADR-0004), so it
+        // never has to fuse with the editor.
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusWindow, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: 12, style: .continuous)
-                .strokeBorder(Color.black.opacity(0.07), lineWidth: 1)
+            RoundedRectangle(cornerRadius: Metrics.radiusWindow, style: .continuous)
+                .strokeBorder(theme.border, lineWidth: 1)
         )
         .onAppear {
             DispatchQueue.main.async { focused = .todo }
@@ -117,131 +124,124 @@ struct CaptureView: View {
         }
     }
 
-    // MARK: - Header
+    // MARK: - Panel surface
 
-    private var header: some View {
-        HStack(spacing: 8) {
-            AppIconBadge(size: 18)
-            if editorOpen {
-                // Split mode: the filename takes the title slot; the chrome
-                // (collapse + close) folds into this row (no separate bar).
-                Text(filename)
-                    .font(.system(size: 12, weight: .medium))
-                    .foregroundStyle(Color(hex: 0x4A4A52))
-                    .lineLimit(1)
-                    .truncationMode(.middle)
-                Spacer()
-                headerButton("chevron.up", help: "Collapse editor (⌘F)", action: onToggleEditor)
-                headerButton("xmark", help: "Close", action: onClose)
-            } else {
-                Text("QUICK CAPTURE")
-                    .font(.system(size: 11, weight: .semibold))
-                    .tracking(0.5)
-                    .foregroundStyle(Color(hex: 0x4A4A52))
-                Spacer()
-                headerButton("doc.text", help: "Open editor (⌘F)", action: onToggleEditor)
-            }
-        }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 11)
+    /// `surface` fill with the brushed top-edge `highlight` (bright in the top
+    /// ~12%, fading out) from the mockup.
+    private var panelSurface: some View {
+        theme.surface.overlay(
+            LinearGradient(
+                stops: [
+                    .init(color: theme.highlight.opacity(0.6), location: 0),
+                    .init(color: .clear, location: 0.12),
+                ],
+                startPoint: .top, endPoint: .bottom
+            )
+            .allowsHitTesting(false)
+        )
     }
 
-    private func headerButton(_ systemName: String, help: String, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: systemName)
-                .font(.system(size: 13, weight: .medium))
-                .foregroundStyle(secondaryText)
-                .frame(width: 20, height: 20)
-                .contentShape(Rectangle())
-        }
-        .buttonStyle(.plain)
-        .help(help)
-        .onHover { hovering in
-            if hovering { NSCursor.pointingHand.push() } else { NSCursor.pop() }
-        }
-    }
-
-    // MARK: - Inputs row (todo + tag inline)
+    // MARK: - Inputs row (todo + tag inline, trailing "open" glyph)
 
     private var inputsRow: some View {
-        HStack(alignment: .top, spacing: 10) {
-            ZStack(alignment: .topLeading) {
-                if todoText.isEmpty {
-                    Text("What needs doing?")
-                        .font(.system(size: 17, design: appState.captureFontDesign.design))
-                        .foregroundStyle(tertiaryText)
-                        .allowsHitTesting(false)
-                }
-                TodoTextEditor(
-                    text: $todoText,
-                    font: appState.captureFontDesign.nsFont(size: 17),
-                    textColor: NSColor(primaryText),
-                    maxLines: 4,
-                    isFocused: Binding(
-                        get: { focused == .todo },
-                        set: { if $0 { focused = .todo } }
-                    ),
-                    onSubmit: { submit() },
-                    onTab: { focused = .tag }
-                )
-            }
-            .padding(.horizontal, 12)
-            .padding(.vertical, 8)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(inputBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(isShaking ? Color.red.opacity(0.75) : Color.clear,
-                                  lineWidth: 1)
-                    .animation(.easeOut(duration: 0.2), value: isShaking)
-            )
-            // Shakes when the user tries to submit with no text — signals
-            // that the todo field is required.
-            .phaseAnimator([0.0, -7, 7, -5, 5, -3, 3, 0], trigger: shakeTrigger) { content, phase in
-                content.offset(x: phase)
-            } animation: { _ in
-                .easeInOut(duration: 0.04)
-            }
-
-            HStack(spacing: 4) {
-                Text("#")
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(matchedPalette?.fg ?? tertiaryText)
-                TextField("tag", text: $tagText)
-                    .textFieldStyle(.plain)
-                    .font(.system(size: 13, design: .monospaced))
-                    .foregroundStyle(matchedPalette?.fg ?? primaryText)
-                    .focused($focused, equals: .tag)
-                    .onSubmit { submit() }
-                    .onKeyPress(.tab) {
-                        // Tab → autocomplete to the first prefix-matched tag.
-                        // Empty or no match → no-op (no Tab cycle anywhere).
-                        let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
-                        guard !query.isEmpty else { return .handled }
-                        if let match = matchedTag,
-                           match.lowercased() != query.lowercased() {
-                            tagText = match
-                        }
-                        return .handled
-                    }
-            }
-            .padding(.horizontal, 10)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .fill(matchedPalette?.bg ?? inputBackground)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 10, style: .continuous)
-                    .strokeBorder(matchedPalette?.border ?? Color.clear,
-                                  lineWidth: 1)
-            )
-            .frame(width: 140)
+        HStack(alignment: .top, spacing: Metrics.s2) {
+            todoField
+            tagField
         }
-        .padding(.horizontal, 18)
-        .padding(.vertical, 10)
+    }
+
+    private var todoField: some View {
+        let focusedNow = focused == .todo
+        return ZStack(alignment: .topLeading) {
+            if todoText.isEmpty {
+                Text("What needs doing?")
+                    .font(.system(size: 17, design: appState.captureFontDesign.design))
+                    .foregroundStyle(theme.inkTertiary)
+                    .allowsHitTesting(false)
+            }
+            TodoTextEditor(
+                text: $todoText,
+                font: appState.captureFontDesign.nsFont(size: 17),
+                textColor: NSColor(theme.ink),
+                maxLines: 4,
+                isFocused: Binding(
+                    get: { focused == .todo },
+                    set: { if $0 { focused = .todo } }
+                ),
+                onSubmit: { submit() },
+                onTab: { focused = .tag }
+            )
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                .fill(theme.surfaceField)
+        )
+        // Focus → accent border; submit-on-empty → a red border flash.
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                .strokeBorder(isShaking ? Color.red.opacity(0.75)
+                                        : (focusedNow ? theme.accent : .clear),
+                              lineWidth: 1)
+                .animation(.easeOut(duration: 0.2), value: isShaking)
+        )
+        // 3px accent-soft focus ring sitting just outside the field edge
+        // (the mockup's `box-shadow:0 0 0 3px`).
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusField + 1, style: .continuous)
+                .strokeBorder(theme.accentSoft, lineWidth: 3)
+                .padding(-2)
+                .opacity(focusedNow && !isShaking ? 1 : 0)
+                .animation(.easeOut(duration: 0.15), value: focusedNow)
+        )
+        .frame(maxWidth: .infinity)
+        // Shakes when the user tries to submit with no text — signals
+        // that the todo field is required.
+        .phaseAnimator([0.0, -7, 7, -5, 5, -3, 3, 0], trigger: shakeTrigger) { content, phase in
+            content.offset(x: phase)
+        } animation: { _ in
+            .easeInOut(duration: 0.04)
+        }
+    }
+
+    private var tagField: some View {
+        HStack(spacing: Metrics.s1) {
+            Text("#")
+                .font(TypeScale.tag)
+                .foregroundStyle(tagActive ? theme.accent : theme.inkTertiary)
+            TextField("", text: $tagText, prompt: Text("tag").foregroundStyle(theme.inkTertiary))
+                .textFieldStyle(.plain)
+                .font(TypeScale.tag)
+                .foregroundStyle(tagActive ? theme.accentInk : theme.ink)
+                .focused($focused, equals: .tag)
+                .onSubmit { submit() }
+                .onKeyPress(.tab) {
+                    // Tab → autocomplete to the first prefix-matched tag.
+                    // Empty or no match → no-op (no Tab cycle anywhere).
+                    let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard !query.isEmpty else { return .handled }
+                    if let match = matchedTag,
+                       match.lowercased() != query.lowercased() {
+                        tagText = match
+                    }
+                    return .handled
+                }
+        }
+        .padding(.horizontal, 15)
+        .padding(.vertical, 13)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                .fill(tagActive ? theme.accentSoft : theme.surfaceField)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                .strokeBorder(tagActive ? theme.accent.opacity(0.38) : .clear, lineWidth: 1)
+        )
+        // Fixed width — wide enough for common tags like "quick-capture" so the
+        // field never resizes as you type (longer tags scroll within it). The
+        // todo field (maxWidth: .infinity) absorbs the remaining space.
+        .frame(width: 180)
     }
 
     /// Tags that are always present in the suggestions and Tab autocomplete,
@@ -267,10 +267,6 @@ struct CaptureView: View {
         return allKnownTags.first(where: { $0.lowercased().hasPrefix(query) })
     }
 
-    private var matchedPalette: TagPalette.Entry? {
-        matchedTag.map { TagPalette.entry(for: $0) }
-    }
-
     // MARK: - Suggestions
 
     /// All known tags stay visible — they don't filter as the user types.
@@ -287,11 +283,12 @@ struct CaptureView: View {
         tagText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cal"
     }
 
-    /// The accessory section below the inputs is shown when the user is either
-    /// browsing tag suggestions OR composing a calendar event.
-    private var shouldShowExtras: Bool {
-        tagFieldActive || isCalendarMode
-    }
+    /// The accessory section below the inputs is always present (tag chips, or
+    /// the calendar preview in `#cal` mode). Keeping it shown in both modes
+    /// means the capture strip is a fixed height — no jarring grow/shrink on the
+    /// floating HUD, and no squash when collapsing back from the editor (the
+    /// strip's measured height matches in both modes).
+    private var shouldShowExtras: Bool { true }
 
     /// Parses the current todo text into a CalendarEvent. Returns nil when the
     /// text is blank or the parser couldn't find a date.
@@ -304,26 +301,23 @@ struct CaptureView: View {
     }
 
     private var calendarPreview: some View {
-        let palette = TagPalette.entry(for: "cal")
-        return HStack(spacing: 8) {
+        HStack(spacing: Metrics.s2) {
             Image(systemName: "calendar")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(palette.fg)
+                .foregroundStyle(theme.accent)
             if let event = parsedCalendarEvent {
                 Text(formatCalendarPreview(event))
-                    .font(.system(size: 12, design: .monospaced))
-                    .foregroundStyle(palette.fg)
+                    .font(TypeScale.code)
+                    .foregroundStyle(theme.accentInk)
             } else {
                 Text(todoText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
                      ? "Type the event, e.g. \"call Seb tomorrow at 2pm\""
                      : "No date found — add a time like \"tomorrow at 2pm\"")
                     .font(.system(size: 12))
-                    .foregroundStyle(tertiaryText)
+                    .foregroundStyle(theme.inkTertiary)
             }
             Spacer(minLength: 0)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 10)
     }
 
     /// Human-readable preview: "Today at 14:00 · 30 min" / "Tomorrow at 09:00 · 1 hr".
@@ -363,27 +357,46 @@ struct CaptureView: View {
 
     private var footer: some View {
         ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: 6) {
+            HStack(spacing: Metrics.s1) {
                 ForEach(displayedTags, id: \.self) { tag in
-                    TagChip(tag: tag) { chipTapped(tag) }
+                    chip(tag, isMatch: tag.lowercased() == matchedTag?.lowercased())
+                        .onTapGesture { chipTapped(tag) }
                 }
             }
-            .padding(.vertical, 1)   // breathing room so chip shadows/borders don't clip
+            .padding(.vertical, 1)   // breathing room so chip borders don't clip
         }
-        // Fade chips into the panel background at the right edge, hinting
-        // that more content scrolls beyond. allowsHitTesting(false) keeps
-        // chips under the gradient still tappable.
+        // Fade chips into the panel surface at the right edge, hinting that more
+        // content scrolls beyond. allowsHitTesting(false) keeps chips under the
+        // gradient still tappable.
         .overlay(alignment: .trailing) {
             LinearGradient(
-                colors: [.clear, surface],
+                colors: [.clear, theme.surface],
                 startPoint: .leading,
                 endPoint: .trailing
             )
             .frame(width: 20)
             .allowsHitTesting(false)
         }
-        .padding(.horizontal, 14)
-        .padding(.vertical, 8)
+    }
+
+    /// One steel chip treatment for every tag (no per-tag colour). The
+    /// prefix-matched tag carries the `accentSoft` / `accentInk` fill.
+    private func chip(_ name: String, isMatch: Bool) -> some View {
+        HStack(spacing: 0) {
+            Text("#").foregroundStyle(isMatch ? theme.accent : theme.inkTertiary)
+            Text(name).foregroundStyle(isMatch ? theme.accentInk : theme.inkSecondary)
+        }
+        .font(TypeScale.chip)
+        .padding(.horizontal, 11)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .fill(isMatch ? theme.accentSoft : theme.surfaceField)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .strokeBorder(isMatch ? theme.accent.opacity(0.42) : theme.border, lineWidth: 1)
+        )
     }
 
     // MARK: - Actions
@@ -418,29 +431,6 @@ struct CaptureView: View {
 }
 
 // MARK: - Reusable subviews
-
-struct TagChip: View {
-    let tag: String
-    let onTap: () -> Void
-
-    var body: some View {
-        let entry = TagPalette.entry(for: tag)
-        Button(action: onTap) {
-            Text("#\(tag)")
-                .font(.system(size: 12, design: .monospaced))
-                .foregroundStyle(entry.fg)
-                .padding(.horizontal, 9)
-                .padding(.vertical, 3)
-                .background(entry.bg)
-                .overlay(
-                    RoundedRectangle(cornerRadius: 6)
-                        .strokeBorder(entry.border, lineWidth: 1)
-                )
-                .clipShape(RoundedRectangle(cornerRadius: 6))
-        }
-        .buttonStyle(.plain)
-    }
-}
 
 extension CaptureFontDesign {
     func nsFont(size: CGFloat) -> NSFont {
@@ -573,3 +563,38 @@ struct TodoTextEditor: NSViewRepresentable {
     }
 }
 
+
+// MARK: - Previews
+
+private extension AppState {
+    /// Lightweight state for previews — seeds a couple of recent tags so the
+    /// suggestion footer has something to show.
+    static func previewSeeded() -> AppState {
+        let s = AppState()
+        s.recentTags = ["quick-capture", "hyper-active"]
+        return s
+    }
+}
+
+#Preview("Capture · standalone") {
+    CaptureView(
+        appState: .previewSeeded(),
+        onSubmit: { _, _ in }, onClose: {}, onToggleEditor: {},
+        onEscape: {}, onContentSizeChange: { _ in }
+    )
+    .frame(width: 600)
+    .padding(40)
+    .background(Color(0xE4EAF0))
+}
+
+#Preview("Capture · dark") {
+    CaptureView(
+        appState: .previewSeeded(),
+        onSubmit: { _, _ in }, onClose: {}, onToggleEditor: {},
+        onEscape: {}, onContentSizeChange: { _ in }
+    )
+    .frame(width: 600)
+    .padding(40)
+    .background(Color(0x161B21))
+    .preferredColorScheme(.dark)
+}

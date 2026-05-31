@@ -30,7 +30,7 @@ final class MainPanel: NSPanel {
 
     // MARK: Surfaces
 
-    private let split = SplitContainerView()
+    private let container = PanelContainerView()
     private var captureHost: NSHostingView<CaptureView>!
     private let editorContainer = EditorContainerView()
     private let webView: WKWebView
@@ -60,11 +60,18 @@ final class MainPanel: NSPanel {
     private var webViewReady = false
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var fileDescriptor: CInt = -1
+    private var vimObserver: NSObjectProtocol?
+    /// True for the duration of the editor→capture collapse animation, so
+    /// `captureContentDidChange` defers window geometry to the animation.
+    private var isCollapsing = false
 
     private let splitWidth: CGFloat = 1000
     private let captureWidth: CGFloat = 600
 
-    deinit { stopWatching() }
+    deinit {
+        stopWatching()
+        if let vimObserver { NotificationCenter.default.removeObserver(vimObserver) }
+    }
 
     init(appState: AppState,
          onSubmit: @escaping (String, String?) -> Void,
@@ -96,38 +103,37 @@ final class MainPanel: NSPanel {
         hasShadow = true
         isOpaque = false
         becomesKeyOnlyIfNeeded = false
-        appearance = NSAppearance(named: .aqua)
+        // Follow the system appearance (drives the Misted-Steel light/dark
+        // pair). Previously pinned to .aqua, which forced the UI light.
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
 
         setupContainer()
         bridge.panel = self
         config.userContentController.add(bridge, name: "editorBridge")
         loadEditor()
+
+        // Live-toggle vim in the editor when the setting changes.
+        vimObserver = NotificationCenter.default.addObserver(
+            forName: .vimModeDidChange, object: nil, queue: .main
+        ) { [weak self] _ in self?.pushVimSetting() }
     }
 
     private func setupContainer() {
         // Start surfaces at the real capture size so AppKit's first
-        // resize-to-content-rect (on `contentView = split`) is a no-op rather
+        // resize-to-content-rect (on `contentView = container`) is a no-op rather
         // than a degenerate scale-up from `.zero`.
         let initialFrame = NSRect(x: 0, y: 0, width: captureWidth, height: 100)
-        split.frame = initialFrame
-        split.stripHeight = captureContentSize.height
+        container.frame = initialFrame
+        container.captureHeight = captureContentSize.height
 
         captureHost = NSHostingView(rootView: makeCaptureView())
         captureHost.wantsLayer = true
         captureHost.frame = initialFrame
-        // Autoresizing keeps the input strip filling the window as it grows with
-        // multi-line input / tag suggestions (the proven capture behavior).
-        // `SplitContainerView.relayout` overrides this only while the editor is
-        // open, to pin the strip to the top.
+        // Capture mode: the host fills the window so its SwiftUI content measures
+        // correctly and drives the window height. PanelContainerView centres it
+        // at a fixed size only while the editor is the active surface.
         captureHost.autoresizingMask = [.width, .height]
 
-        editorContainer.wantsLayer = true
-        editorContainer.layer?.cornerRadius = 12
-        editorContainer.layer?.masksToBounds = true
-        editorContainer.layer?.backgroundColor = NSColor.white.cgColor
-        editorContainer.layer?.borderWidth = 1
-        editorContainer.layer?.borderColor = NSColor.black.withAlphaComponent(0.07).cgColor
         editorContainer.frame = initialFrame
         editorContainer.autoresizingMask = [.width, .height]
         editorContainer.isHidden = true
@@ -136,13 +142,13 @@ final class MainPanel: NSPanel {
         webView.setValue(false, forKey: "drawsBackground")   // no white flash on load
         editorContainer.configure(web: webView)
 
-        split.configure(inputStrip: captureHost, editorHost: editorContainer)
-        contentView = split
+        container.configure(capture: captureHost, editor: editorContainer)
+        contentView = container
     }
 
-    /// Rebuilds the capture surface for the current `editorOpen`/filename. @State
-    /// (typed text, focus) survives because NSHostingView preserves the SwiftUI
-    /// graph across rootView updates of the same view type.
+    /// Builds the capture surface. @State (typed text, focus) survives a rebuild
+    /// because NSHostingView preserves the SwiftUI graph across rootView updates
+    /// of the same view type.
     private func makeCaptureView() -> CaptureView {
         CaptureView(
             appState: appState,
@@ -150,14 +156,8 @@ final class MainPanel: NSPanel {
             onClose: { [weak self] in self?.onDismiss() },
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
-            onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
-            editorOpen: editorOpen,
-            filename: loadedFileURL.lastPathComponent
+            onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) }
         )
-    }
-
-    private func refreshCaptureView() {
-        captureHost.rootView = makeCaptureView()
     }
 
     // MARK: - Presentation
@@ -173,7 +173,7 @@ final class MainPanel: NSPanel {
             setFrame(f, display: false)
             // Force layout so frame.height reflects real content size before we
             // position — otherwise the first show jumps after the size report.
-            split.layoutSubtreeIfNeeded()
+            container.layoutSubtreeIfNeeded()
             let x = screen.midX - captureWidth / 2
             let y = anchorCenterY + frame.height / 2
             setFrameTopLeftPoint(NSPoint(x: x, y: y))
@@ -201,13 +201,13 @@ final class MainPanel: NSPanel {
     /// without the grow animation.
     func showInEditor() {
         editorOpen = true
-        refreshCaptureView()
         isMovableByWindowBackground = false
         promoteToRegular()
         reconcileEditorFile()
-        split.editorVisible = true
+        container.editorActive = true
         editorContainer.isHidden = false
         editorContainer.alphaValue = 1
+        captureHost.alphaValue = 0
         if let screen = currentScreenVisibleFrame() {
             let target = splitFrame(in: screen)
             anchorCenterY = target.midY
@@ -226,17 +226,17 @@ final class MainPanel: NSPanel {
         editorOpen ? closeEditor() : openEditor()
     }
 
-    /// Grow into the split: comfortable width, full visible height, centered.
+    /// Switch to editor mode: crossfade the capture box out and the full editor
+    /// in while the window grows to the editor frame.
     func openEditor() {
         guard !editorOpen else { return }
         editorOpen = true
-        refreshCaptureView()
         isMovableByWindowBackground = false
         promoteToRegular()
         NSApp.activate(ignoringOtherApps: true)
         reconcileEditorFile()
 
-        split.editorVisible = true
+        container.editorActive = true   // capture box → centred fixed box (won't stretch)
         editorContainer.isHidden = false
         editorContainer.alphaValue = 0
 
@@ -248,37 +248,49 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// Collapse back to the input box, re-centered on screen.
+    /// Switch to capture mode: crossfade the editor out and the capture box in
+    /// while the window shrinks back to the centered capture box.
     func closeEditor() {
         guard editorOpen else { return }
+        flushEditorSave()   // disk canonical before capture mode can write (ADR-0004)
         editorOpen = false
-        refreshCaptureView()
+        isCollapsing = true
         isMovableByWindowBackground = true
 
         guard let screen = currentScreenVisibleFrame() else { return }
         anchorCenterY = screen.midY
         let target = NSRect(x: screen.midX - captureWidth / 2,
-                            y: screen.midY - split.stripHeight / 2,
-                            width: captureWidth, height: split.stripHeight)
+                            y: screen.midY - container.captureHeight / 2,
+                            width: captureWidth, height: container.captureHeight)
         animateFrame(to: target, fadeEditorTo: 0) { [weak self] in
             guard let self else { return }
-            self.split.editorVisible = false
+            // Window is back to capture size; hand the capture host back to its
+            // fill/measure behavior and hide the editor.
+            self.container.editorActive = false
             self.editorContainer.isHidden = true
             // The web view held first responder under `.regular`; drop back to
             // `.accessory` and re-establish key/active before focusing, else
             // `makeFirstResponder` lands on a non-key panel and the field gets
             // no editing focus.
+            self.isCollapsing = false
             self.demoteToAccessory()
             NSApp.activate(ignoringOtherApps: true)
             self.makeKeyAndOrderFront(nil)
             self.orderFrontRegardless()
             self.focusCapture()
-            self.canDismissOnBlur = true
+            // Arm click-away dismiss only after the .regular→.accessory switch
+            // settles. That policy change makes the panel transiently resign key,
+            // which would otherwise be read as a click-away and dismiss the
+            // freshly-shown capture box. Mirrors show()'s guard window.
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.canDismissOnBlur = true
+            }
         }
     }
 
-    /// Animate the window frame while fading the editor in/out. The input strip
-    /// never fades — it stays put as the panel grows around it.
+    /// Animate the window frame while crossfading the two surfaces: the editor
+    /// fades to `alpha`, the capture box to its complement, so exactly one is
+    /// visible at rest (mutually-exclusive modes, ADR-0004).
     private func animateFrame(to targetFrame: NSRect,
                               fadeEditorTo alpha: CGFloat,
                               completion: @escaping () -> Void) {
@@ -288,20 +300,17 @@ final class MainPanel: NSPanel {
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
             animator().setFrame(targetFrame, display: true)
             editorContainer.animator().alphaValue = alpha
+            captureHost.animator().alphaValue = 1 - alpha
         }, completionHandler: completion)
     }
 
     private func collapseStateReset() {
-        // Only rebuild the capture view if we're actually coming back from the
-        // editor (header differs). Reassigning the hosting view's rootView on a
-        // plain re-summon resets SwiftUI's size measurement to zero before the
-        // window lays out, so the box never grows to fit the tag suggestions.
-        let wasOpen = editorOpen
         editorOpen = false
-        if wasOpen { refreshCaptureView() }
-        split.editorVisible = false
+        isCollapsing = false   // a fresh summon cancels any in-flight collapse
+        container.editorActive = false
         editorContainer.isHidden = true
         editorContainer.alphaValue = 0
+        captureHost.alphaValue = 1
         isMovableByWindowBackground = true
         demoteToAccessory()
     }
@@ -314,18 +323,22 @@ final class MainPanel: NSPanel {
         return screen?.visibleFrame
     }
 
-    /// Input-only: resize the window to the capture content height (anchored to
-    /// `anchorCenterY`). Split: the window keeps its full-height editor frame;
-    /// only the internal split line moves, so typing a multi-line capture
-    /// doesn't resize the editor window.
+    /// Capture mode: resize the window to the capture content height (top edge
+    /// fixed, growing downward). Editor mode: just record the height — the window
+    /// keeps its full editor frame; the (hidden) capture box stays centred at the
+    /// recorded size so it dissolves in place on the next switch.
     private func captureContentDidChange(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
         captureContentSize = size
-        split.stripHeight = size.height
-        guard !editorOpen else {
-            split.needsLayout = true
-            return
-        }
+        container.captureHeight = size.height
+        guard !editorOpen else { return }
+        // While collapsing editor→capture, the frame animation owns the window
+        // geometry. Without this, the re-measure that closeEditor triggers (it
+        // sets editorOpen=false, so we'd reach here) fires a non-animated
+        // setFrame to a box at the editor's edge — which then animates to centre,
+        // reading as "shrink to the side, then re-centre". Record the size for
+        // the animation target; let the animation place the frame.
+        guard !isCollapsing else { return }
         // Keep the top edge fixed and grow/shrink *downward*, tracking the
         // content's SwiftUI-animated height each frame so the window moves in
         // lockstep with the footer — smooth and symmetric. Recentering (the old
@@ -351,10 +364,23 @@ final class MainPanel: NSPanel {
 
     // MARK: - Focus
 
-    private func focusCapture() {
+    /// Focus the capture input. On first launch the SwiftUI hosting view often
+    /// hasn't instantiated the editor's NSTextView yet (and the panel may not be
+    /// key), so a single attempt silently no-ops. Force a layout pass to realize
+    /// the text view, then retry briefly until `makeFirstResponder` takes.
+    private func focusCapture(retriesLeft: Int = 10) {
         DispatchQueue.main.async { [weak self] in
-            guard let self, let tv = self.firstTextView(in: self.captureHost) else { return }
-            self.makeFirstResponder(tv)
+            guard let self else { return }
+            if self.isVisible {
+                self.captureHost.layoutSubtreeIfNeeded()
+                if let tv = self.firstTextView(in: self.captureHost), self.makeFirstResponder(tv) {
+                    return
+                }
+            }
+            guard retriesLeft > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                self.focusCapture(retriesLeft: retriesLeft - 1)
+            }
         }
     }
 
@@ -378,67 +404,35 @@ final class MainPanel: NSPanel {
 
     // MARK: - Capture routing
 
-    /// Esc: return focus to the editor when it's open, otherwise dismiss.
-    private func handleEscape() {
-        if editorOpen { focusEditor() } else { onDismiss() }
+    /// Esc from the capture box dismisses. (In editor mode, Esc is handled inside
+    /// the web view — vim, or the dismiss binding when vim is off — not here.)
+    private func handleEscape() { dismiss() }
+
+    /// Fully dismiss the panel. Flushes the editor's pending save first so disk
+    /// is current, then hands off to the dismiss closure (which hides the panel
+    /// and clears any preserved capture text).
+    private func dismiss() {
+        flushEditorSave()
+        onDismiss()
     }
 
-    /// A capture submitted from the input strip. When the editor is closed (or
-    /// the capture is a `#cal` event, which never writes a todo) it takes the
-    /// unchanged disk path. When the editor is open it routes through the live
-    /// buffer so there's only ever one writer to the file.
+    /// Esc in the editor with vim off (posted from editor.ts via the bridge).
+    fileprivate func dismissFromEditor() { dismiss() }
+
+    /// A capture submitted from the capture box. Capture and editor are mutually
+    /// exclusive (ADR-0004), so this only runs in capture mode — it always writes
+    /// straight to disk, which is the canonical copy.
     private func handleSubmit(_ text: String, _ tag: String?) {
-        let isCal = tag?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cal"
-        if !editorOpen || isCal {
-            onSubmit(text, tag)
-            return
-        }
-        insertIntoEditorBuffer(text, tag: tag)
+        onSubmit(text, tag)
     }
 
-    /// Reuse the pure `FileWriter.insert` over the editor's current buffer, then
-    /// apply just the delta as a targeted transaction (cursor/scroll/undo
-    /// preserved). Focus is in the input here, so the buffer is stable across
-    /// the async round-trip.
-    private func insertIntoEditorBuffer(_ text: String, tag: String?) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let heading = FileWriter.sectionName(for: tag)
-        let item = FileWriter.todoLine(trimmed, includeTimestamp: appState.includeTimestamp)
-
-        webView.evaluateJavaScript("window.qcEditor.getContent()") { [weak self] result, _ in
-            guard let self, let old = result as? String else { return }
-            let new = FileWriter.insert(item: item, underHeading: heading, in: old)
-            guard let (from, inserted) = Self.singleInsertionDelta(from: old, to: new) else {
-                // Non-contiguous change (e.g. a missing `# Inbox` got prepended
-                // *and* the item inserted). Rare; fall back to a full replace.
-                NSLog("Capture insert produced a non-contiguous delta; full replace.")
-                self.pushContent(new)
-                self.focusEditor()
-                return
-            }
-            guard let payload = String(data: try! JSONEncoder().encode(inserted), encoding: .utf8) else { return }
-            self.webView.evaluateJavaScript("window.qcEditor.insertCapture(\(from), \(payload))",
-                                            completionHandler: nil)
-            self.focusEditor()
-        }
-    }
-
-    /// `old` and `new` differ by exactly one inserted run (`FileWriter.insert`
-    /// only adds). Returns the UTF-16 offset (CodeMirror indexing) and the
-    /// inserted text, or nil if the change isn't a single contiguous insertion.
-    static func singleInsertionDelta(from old: String, to new: String) -> (Int, String)? {
-        let o = Array(old.utf16), n = Array(new.utf16)
-        guard n.count > o.count else { return nil }
-        var p = 0
-        while p < o.count && o[p] == n[p] { p += 1 }
-        var s = 0
-        while s < o.count - p && o[o.count - 1 - s] == n[n.count - 1 - s] { s += 1 }
-        // What remains in `old` after stripping the shared prefix/suffix must be
-        // empty for this to be a pure insertion.
-        guard p + s == o.count else { return nil }
-        let units = Array(n[p ..< n.count - s])
-        return (p, String(utf16CodeUnits: units, count: units.count))
+    /// Flush the editor's debounced autosave so disk is current before leaving
+    /// editor mode (no-op until the editor has loaded). The call is async, but
+    /// the web view is never torn down, so the queued save still lands.
+    private func flushEditorSave() {
+        guard webViewReady else { return }
+        webView.evaluateJavaScript("window.qcEditor && window.qcEditor.flushSave && window.qcEditor.flushSave()",
+                                   completionHandler: nil)
     }
 
     // MARK: - Window overrides
@@ -446,8 +440,8 @@ final class MainPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { editorOpen }
 
-    /// Intercept ⌘F (toggle editor) and ⌘J (focus the input strip) before
-    /// CodeMirror/WebKit can claim them.
+    /// Intercept ⌘F (switch mode) and ⌘W (dismiss) before CodeMirror/WebKit or
+    /// the standard Close menu item can claim them.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else {
             return super.performKeyEquivalent(with: event)
@@ -456,8 +450,8 @@ final class MainPanel: NSPanel {
         case "f":
             toggleEditor()
             return true
-        case "j" where editorOpen:
-            focusCapture()
+        case "w":
+            dismiss()
             return true
         default:
             return super.performKeyEquivalent(with: event)
@@ -493,9 +487,25 @@ final class MainPanel: NSPanel {
     /// Called by JS once CodeMirror has booted.
     fileprivate func editorDidBecomeReady() {
         webViewReady = true
+        // Set vim before content so the first mount() picks up the right mode.
+        pushVimSetting()
         let text = (try? String(contentsOf: loadedFileURL, encoding: .utf8)) ?? ""
         pushContent(text)
         startWatching()
+        // The editor no longer auto-focuses on mount; if it was opened before it
+        // finished loading (e.g. "Open Editor…" at cold launch), focus it now.
+        // Otherwise leave focus with the capture input.
+        if editorOpen { focusEditor() }
+    }
+
+    /// Push the current vim setting into the editor. Safe before the view
+    /// mounts — the JS records the flag and mount() reads it.
+    private func pushVimSetting() {
+        guard webViewReady else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.setVimEnabled(\(appState.vimEnabled))",
+            completionHandler: nil
+        )
     }
 
     /// Re-point the editor at the current capture file if it changed (path edit
@@ -504,7 +514,6 @@ final class MainPanel: NSPanel {
         let url = appState.captureFileURL
         guard url != loadedFileURL else { return }
         loadedFileURL = url
-        refreshCaptureView()
         guard webViewReady else { return }
         stopWatching()
         let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
@@ -533,6 +542,10 @@ final class MainPanel: NSPanel {
         lastSyncedContent = text
         guard let encoded = String(data: try! JSONEncoder().encode(text), encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.qcEditor.setContent(\(encoded))", completionHandler: nil)
+        // Keep the editor's status-bar filename in step with the loaded file.
+        if let name = String(data: try! JSONEncoder().encode(loadedFileURL.lastPathComponent), encoding: .utf8) {
+            webView.evaluateJavaScript("window.qcEditor.setFilename(\(name))", completionHandler: nil)
+        }
     }
 
     // MARK: - File watching
@@ -589,75 +602,118 @@ final class MainPanel: NSPanel {
     }
 }
 
-// MARK: - Split container view
+// MARK: - Panel container view
 
-/// Stacks the capture input strip (pinned to the top) above the editor host.
-/// Input-only: the strip fills the whole view, the editor is hidden. Split: the
-/// strip takes `stripHeight` at the top and the editor fills the rest below a
-/// small gap. Plain manual layout — no Auto Layout — to match the rest.
-private final class SplitContainerView: NSView {
-    private var inputStrip: NSView?
+/// Hosts both surfaces at once (kept warm) and crossfades between them — the two
+/// are mutually-exclusive **modes**, never on screen together (ADR-0004). The
+/// editor host always fills the window. The capture host fills the window in
+/// **capture mode** (so its SwiftUI content measures correctly and drives the
+/// window height) and is pinned to a fixed-size centred box in **editor mode**
+/// and during transitions, so it dissolves in place rather than stretching as
+/// the frame animates. Plain manual layout — no Auto Layout.
+private final class PanelContainerView: NSView {
+    private var captureHost: NSView?
     private var editorHost: NSView?
 
-    var stripHeight: CGFloat = 100 { didSet { if editorVisible, stripHeight != oldValue { relayoutSplit() } } }
-    var editorVisible = false {
+    /// Measured capture-content height; sizes the centred capture box while the
+    /// editor is the active surface.
+    var captureHeight: CGFloat = 100 { didSet { if editorActive, captureHeight != oldValue { layoutSurfaces() } } }
+
+    /// True while the editor is the active surface (and through the open/close
+    /// crossfade). Flips the capture host between fill (capture mode) and a
+    /// fixed centred box (editor mode / transition).
+    var editorActive = false {
         didSet {
-            guard editorVisible != oldValue else { return }
-            if editorVisible {
-                relayoutSplit()
+            guard editorActive != oldValue else { return }
+            if editorActive {
+                captureHost?.autoresizingMask = []   // we position it manually
+                layoutSurfaces()
             } else {
-                // Back to input-only: hand the strip back to autoresizing and
-                // hide the editor. We deliberately do NOT keep managing the
-                // strip's frame in input-only — letting the autoresizing mask
-                // size it (like the original plain container) is what keeps the
-                // SwiftUI content measuring correctly so the box grows to fit.
-                inputStrip?.frame = bounds
-                editorHost?.isHidden = true
+                // Capture mode: hand the host back to its autoresizing mask so it
+                // fills the window. We deliberately do NOT keep managing its frame
+                // here — letting the mask size it is what keeps the SwiftUI
+                // content measuring correctly so the box grows with its content.
+                captureHost?.autoresizingMask = [.width, .height]
+                captureHost?.frame = bounds
             }
         }
     }
-    private let gap: CGFloat = 10
 
-    func configure(inputStrip: NSView, editorHost: NSView) {
-        self.inputStrip = inputStrip
-        self.editorHost = editorHost
-        addSubview(editorHost)
-        addSubview(inputStrip)
-        inputStrip.frame = bounds
-        editorHost.isHidden = true
+    private let captureWidth: CGFloat = 600
+
+    func configure(capture: NSView, editor: NSView) {
+        self.captureHost = capture
+        self.editorHost = editor
+        addSubview(editor)    // editor behind…
+        addSubview(capture)   // …capture in front (crossfade decides what shows)
+        capture.frame = bounds
+        editor.frame = bounds
     }
 
-    // Only re-pin the split surfaces while the editor is open. In input-only the
-    // capture host is sized purely by its autoresizing mask — touching its frame
-    // here (during AppKit's layout pass) corrupts the hosting view's intrinsic
-    // measurement and the box stops growing with its content.
+    // Only re-pin while the editor is active. In capture mode the host is sized
+    // purely by its autoresizing mask — touching its frame here (during AppKit's
+    // layout pass) corrupts the hosting view's intrinsic measurement.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if editorVisible { relayoutSplit() }
+        if editorActive { layoutSurfaces() }
     }
 
-    private func relayoutSplit() {
-        guard let inputStrip, let editorHost else { return }
-        inputStrip.frame = NSRect(x: 0, y: bounds.height - stripHeight,
-                                  width: bounds.width, height: stripHeight)
-        let editorH = max(0, bounds.height - stripHeight - gap)
-        editorHost.frame = NSRect(x: 0, y: 0, width: bounds.width, height: editorH)
-        editorHost.isHidden = false
+    private func layoutSurfaces() {
+        guard let captureHost, let editorHost else { return }
+        editorHost.frame = bounds
+        // Centred fixed-width box; in capture mode the window equals this size so
+        // it reads as full-bleed, and in editor mode it stays put while hidden.
+        let h = min(captureHeight, bounds.height)
+        captureHost.frame = NSRect(x: (bounds.width - captureWidth) / 2,
+                                   y: (bounds.height - h) / 2,
+                                   width: captureWidth, height: h)
     }
 }
 
 // MARK: - Editor container view
 
-/// Hosts the editor web view, full bounds. The filename/close chrome now lives
-/// in the capture input strip's header (see CaptureView), so there's no
-/// separate chrome bar.
+/// Hosts the editor web view full-bleed and is itself the editor's standalone
+/// rounded, bordered, steel-surface panel (ADR-0004 — no shared/fused chrome).
 private final class EditorContainerView: NSView {
     private var web: NSView?
+
+    // Dynamic so the panel surface/border track light/dark. Layer colours are
+    // CGColors (no auto-update), so applyChrome() re-resolves them against the
+    // effective appearance, and we re-apply on appearance change.
+    static let steelSurface = NSColor(name: nil) { a in
+        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x24/255, green: 0x2C/255, blue: 0x35/255, alpha: 1)
+            : NSColor(srgbRed: 0xF7/255, green: 0xF9/255, blue: 0xFB/255, alpha: 1)
+    }
+    static let steelBorder = NSColor(name: nil) { a in
+        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x38/255, green: 0x42/255, blue: 0x4E/255, alpha: 1)
+            : NSColor(srgbRed: 0xC2/255, green: 0xCC/255, blue: 0xD7/255, alpha: 1)
+    }
 
     func configure(web: NSView) {
         self.web = web
         addSubview(web)
+        applyChrome()
         needsLayout = true
+    }
+
+    /// Rounded steel panel: corner radius + 1px border + surface fill, all
+    /// re-resolved for the current light/dark appearance.
+    func applyChrome() {
+        wantsLayer = true
+        layer?.cornerRadius = Metrics.radiusWindow
+        layer?.masksToBounds = true
+        layer?.borderWidth = 1
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.borderColor = Self.steelBorder.cgColor
+            layer?.backgroundColor = Self.steelSurface.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyChrome()
     }
 
     override func layout() {
@@ -668,8 +724,8 @@ private final class EditorContainerView: NSView {
 
 // MARK: - JS → Swift bridge
 
-/// WKWebView message handler. JS posts `{ type: "ready" | "save" | "archive",
-/// content?: String }` to the `editorBridge` handler.
+/// WKWebView message handler. JS posts `{ type: "ready" | "save" | "archive" |
+/// "dismiss", content?: String }` to the `editorBridge` handler.
 final class EditorBridge: NSObject, WKScriptMessageHandler {
     weak var panel: MainPanel?
 
@@ -684,6 +740,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
             if let content = dict["content"] as? String { panel?.write(content) }
         case "archive":
             panel?.archive()
+        case "dismiss":
+            // Esc in the editor when vim is off (editor.ts decides).
+            panel?.dismissFromEditor()
         default:
             break
         }

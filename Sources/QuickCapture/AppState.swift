@@ -4,6 +4,7 @@ import SwiftUI
 extension Notification.Name {
     static let hotKeyDidChange      = Notification.Name("QuickCapture.hotKeyDidChange")
     static let capturePanelDidHide  = Notification.Name("QuickCapture.capturePanelDidHide")
+    static let vimModeDidChange     = Notification.Name("QuickCapture.vimModeDidChange")
 }
 
 /// Font design applied to the capture panel's todo input. Maps directly onto
@@ -39,6 +40,7 @@ final class AppState: ObservableObject {
         static let hotKey             = "hotKey"
         static let includeTimestamp   = "includeTimestamp"
         static let captureFontDesign  = "captureFontDesign"
+        static let vimEnabled         = "vimEnabled"
     }
 
     @Published var captureFilePath: String {
@@ -66,6 +68,17 @@ final class AppState: ObservableObject {
     @Published var captureFontDesign: CaptureFontDesign {
         didSet {
             UserDefaults.standard.set(captureFontDesign.rawValue, forKey: Keys.captureFontDesign)
+        }
+    }
+
+    /// Vim keybindings in the editor. On by default. The editor reads this via
+    /// the JS bridge (`MainPanel` pushes it); a change is broadcast so a live
+    /// editor can toggle without a reload.
+    @Published var vimEnabled: Bool {
+        didSet {
+            guard vimEnabled != oldValue else { return }
+            UserDefaults.standard.set(vimEnabled, forKey: Keys.vimEnabled)
+            NotificationCenter.default.post(name: .vimModeDidChange, object: nil)
         }
     }
 
@@ -141,6 +154,13 @@ final class AppState: ObservableObject {
             self.captureFontDesign = decoded
         } else {
             self.captureFontDesign = .monospaced
+        }
+
+        // Default to on (the prior always-on behavior) when never set.
+        if UserDefaults.standard.object(forKey: Keys.vimEnabled) == nil {
+            self.vimEnabled = true
+        } else {
+            self.vimEnabled = UserDefaults.standard.bool(forKey: Keys.vimEnabled)
         }
     }
 }

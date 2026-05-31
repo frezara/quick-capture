@@ -10,8 +10,9 @@ decisions behind the non-obvious bits, see `docs/adr/`.
 ## What the app is
 
 Quick Capture is a personal macOS menu bar app (`LSUIElement`, no permanent
-dock icon). A single floating `NSPanel` hosts a persistent capture **input
-strip**; a full markdown **editor** opens beneath it on demand.
+dock icon). A single floating `NSPanel` shows one of two mutually-exclusive
+surfaces — a small **capture box** or a full markdown **editor** — and ⌘F
+crossfades between them.
 
 ## Glossary
 
@@ -36,25 +37,25 @@ strip**; a full markdown **editor** opens beneath it on demand.
 - **Item / todo** — a single `- [ ] <text>` (or `- [x]`) line. "Item" and
   "todo" are interchangeable; prefer **item**.
 
-- **Input strip** — the capture field pinned to the top of the panel. It is
-  always present while the panel shows; the one surface that never goes away.
+- **Capture box** — the small, content-sized, centered quick-capture surface
+  summoned by the global hotkey (default `⌥T`). Self-dismisses on click-away.
 
-- **Input-only** — the collapsed state: just the input strip (the small,
-  content-sized, centered quick-capture box summoned by the global hotkey,
-  default `⌥T`). Self-dismisses on click-away.
+- **Capture mode** — the state showing the capture box and nothing else. One of
+  two mutually-exclusive modes (see **editor mode**).
 
-- **Split** — the expanded state: the input strip on top with the CodeMirror 6
-  editor (`WKWebView`, Obsidian-style live preview) open *beneath* it. Reached
-  via `⌘F` (or the menu-bar "Open Editor…"); `⌘F` again collapses back to
-  input-only. Survives loss of focus. Input and editor are visible at once —
-  capturing and editing are not mutually exclusive.
+- **Editor mode** — the state showing the full-screen editor and nothing else.
+  Reached via `⌘F` (or the menu-bar "Open Editor…"); `⌘F` returns to capture
+  mode. Survives loss of focus. Capturing and editing are mutually exclusive —
+  only one surface is ever on screen (see ADR-0004).
 
-- **Editor** — the markdown editing surface in the lower half of a split.
-  While open, its in-memory buffer is the canonical copy of the capture file
-  (see ADR-0003); captures are inserted into it rather than written to disk.
+- **Editor** — the markdown editing surface (CodeMirror 6 in a `WKWebView`,
+  Obsidian-style live preview), shown full-screen in editor mode. The capture
+  file on disk is always canonical: the editor reads it on entry and autosaves
+  back to it (see ADR-0004).
 
-- **MainPanel** — the one `NSPanel` that hosts the input strip and the editor
-  and drives the input-only↔split transition. There is never more than one.
+- **MainPanel** — the one `NSPanel` that hosts both surfaces (kept warm) and
+  drives the capture↔editor mode switch (a crossfade). There is never more than
+  one.
 
 - **Live preview** — the editor's rendering of markdown in place: checkbox
   widgets, hidden syntax marks when the cursor is off the line, indent guides,
@@ -85,6 +86,8 @@ strip**; a full markdown **editor** opens beneath it on demand.
 
 - Don't say "window" for the panel — it's the **MainPanel** / **the panel**.
 - Don't say "note" for an item — it's an **item** / **todo**.
-- Don't say "tab" or "mode" for the two surfaces — the **input strip** is
-  always present and the **editor** opens beneath it (**split**). They are not
-  mutually-exclusive modes; the states are **input-only** and **split**.
+- Don't say "tab" or "view" for the two surfaces — they are **capture mode**
+  and **editor mode**, two mutually-exclusive modes of the one panel.
+- Don't say "input strip" / "input-only" / "split" — that was the superseded
+  ADR-0003 model (persistent input with the editor beneath). The current model
+  is mutually-exclusive modes (ADR-0004).

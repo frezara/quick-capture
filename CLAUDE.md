@@ -12,18 +12,19 @@ Project hand-off doc for Claude Code. Read this first.
    a markdown file. Tags route entries under `## tag` headings; untagged
    items go under `## Quick capture`. `#cal` re-interprets the input as a
    natural-language calendar event and opens an `.ics`.
-2. **Editor mode** — `⌘F` grows the same panel in place (frame animation +
-   crossfade) into a CodeMirror 6 editor hosted in a `WKWebView`, with
+2. **Editor mode** — `⌘F` crossfades the panel (frame animation + alpha
+   crossfade) to a full CodeMirror 6 editor hosted in a `WKWebView`, with
    Obsidian-style live preview (checkbox widgets, hidden syntax marks, indent
-   guides), vim mode, priority dots, archive button, and file-watcher reload.
-   A slim custom header (‹ back · filename · ✕) sits above the web view.
-   `⌘F` (or the ‹ back button) shrinks it back to the capture box. The
-   menu-bar "Open Editor…" summons straight into editor mode.
+   guides), vim mode (optional), priority orbs, a floating action cluster, and
+   file-watcher reload. The editor is headerless — its bottom status bar carries
+   the filename, vim mode, and item count. `⌘F` crossfades back to the capture
+   box. The menu-bar "Open Editor…" summons straight into editor mode.
 
-One window, one file (always the capture file). The editor's web view stays
-warm across mode switches, so toggling is instant and preserves cursor/scroll.
-Typed-but-unsaved capture text is preserved when you ⌘F into the editor and
-back; it's only cleared on a full dismiss.
+The two are **mutually-exclusive modes** — only one surface is ever on screen
+(see ADR-0004). One window, one file (always the capture file). The editor's web
+view stays warm across mode switches, so toggling is instant and preserves
+cursor/scroll. Typed-but-unsaved capture text is preserved when you ⌘F into the
+editor and back; it's only cleared on a full dismiss.
 
 LSUIElement app (no dock icon by default). Editor mode bumps the activation
 policy to `.regular` so the standard menu bar (⌘H/⌘Q/⌘W/Cut/Copy/Paste) works;
@@ -40,9 +41,9 @@ Sources/QuickCapture/
   AppDelegate.swift                NSStatusItem, main menu, hotkey, panel lifecycle, launch-at-login
   AppState.swift                   ObservableObject; UserDefaults-backed settings + recent-tag scan
   HotKeyConfig.swift               Codable hotkey model used by KeyRecorderView
-  MainPanel.swift                  The one NSPanel: hosts CaptureView + the editor WKWebView,
-                                   mode switching (capture↔editor), ⌘F intercept, frame/crossfade
-                                   animation, slim editor chrome bar, file watcher, JS↔Swift bridge
+  MainPanel.swift                  The one NSPanel: hosts CaptureView + the editor WKWebView
+                                   (both warm), mutually-exclusive mode switching (capture↔editor),
+                                   ⌘F intercept, frame/crossfade animation, file watcher, JS↔Swift bridge
   CaptureView.swift                SwiftUI capture UI (multi-line input, tag field, shake-on-empty)
   KeyRecorderView.swift            Settings widget for re-binding the global hotkey
   SettingsView.swift               SwiftUI Settings form (file path, hotkey, font, timestamp)
@@ -100,17 +101,23 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
 - **Archive.** `FileWriter.archiveCompleted` moves every `- [x]` line to a
   sibling `<name>_archive.<ext>` file, preserving the source's H2 sections.
   Indented checked items are flattened to the top level in the archive.
-- **One panel, two modes.** `MainPanel` keeps both surfaces mounted at once
-  (a `CaptureView` hosting view and the editor `WKWebView` inside an
-  `EditorContainerView`) and crossfades between them while animating the
-  window frame (`animateTransition`). Capture mode is content-sized and
-  centered; editor mode is a fixed 900×700 centered frame. `switchToEditor` /
-  `switchToCapture` / `showInEditor` drive the mode; `show()` always resets to
-  capture so re-summoning lands on the capture box.
+- **One panel, two mutually-exclusive modes (ADR-0004).** `MainPanel` keeps
+  both surfaces mounted at once inside a `PanelContainerView` (a `CaptureView`
+  hosting view and the editor `WKWebView` inside an `EditorContainerView`) and
+  **crossfades** between them while animating the window frame (`animateFrame`
+  fades the editor to α and the capture box to 1−α, so exactly one shows). The
+  editor host always fills the window; the capture host fills the window in
+  capture mode (so its SwiftUI content measures and drives the window height)
+  and is pinned to a centred fixed-size box in editor mode / during the
+  crossfade, so it dissolves in place rather than stretching. Capture mode is
+  content-sized and centered; editor mode is a comfortable fixed-width,
+  full-visible-height centered frame. `openEditor` / `closeEditor` /
+  `showInEditor` drive the mode; `show()` always resets to capture so
+  re-summoning lands on the capture box.
 - **⌘F is intercepted at the window.** `MainPanel.performKeyEquivalent`
   catches ⌘F *before* it reaches CodeMirror/WebKit (which would treat it as
-  "find") and toggles the mode. Vim owns Escape inside the editor, so ⌘F (not
-  Escape) is the back gesture.
+  "find") and switches mode. Vim owns Escape inside the editor, so ⌘F (not
+  Escape) is the switch gesture.
 - **Mode-aware dismiss.** `resignKey` only self-dismisses (click-away) in
   capture mode — the editor must survive losing focus so you can copy from
   other apps. `canBecomeMain` is true only in editor mode.

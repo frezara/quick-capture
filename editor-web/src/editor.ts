@@ -19,18 +19,61 @@ for (const key of ["y", "Y", "p", "P", "d", "D", "x", "X", "c", "C", "s", "S"]) 
     Vim.noremap(key, `"+${key}`, "visual");
 }
 
-// Paper palette — keep visually cohesive with Quick Capture's capture panel.
-const palette = {
-    text: "#1F1F24",
-    muted: "#8A8A8E",
-    soft: "#6E6E72",
-    accent: "#0066cc",
-    codeBg: "#F4F4F7",
-    selection: "#D6E4FF",
-    borderSoft: "#E5E5EA",
+// "Misted Steel" palettes — mirror DesignSystem.swift (Theme.light / .dark) so
+// the editor reads as the same surface as the capture bar. The active one
+// follows the system appearance (prefers-color-scheme). Warm colour is confined
+// to the priority orbs.
+type Palette = typeof lightPalette;
+
+const lightPalette = {
+    surface: "#F7F9FB",
+    surfaceField: "#E8EEF3",
+    surfaceRail: "#EEF2F6",
+    highlight: "#FFFFFF",
+    text: "#1B222B",          // ink
+    soft: "#54616E",          // inkSecondary
+    muted: "#8B97A4",         // inkTertiary
+    accent: "#2F6FA3",
+    accentInk: "#245A86",
+    accentSoft: "#D4E3F1",
+    onAccent: "#FFFFFF",
+    codeBg: "#E8EEF3",        // surfaceField (recessed wells / badge fallback)
+    selection: "#D4E3F1",     // accentSoft
+    borderSoft: "#C2CCD7",    // border
+    borderStrong: "#A7B4C2",
+    priHigh: "#DB5560",
+    priMed: "#D99A3C",
+    priLow: "#4E9E84",
 };
 
-const highlight = HighlightStyle.define([
+const darkPalette: Palette = {
+    surface: "#242C35",
+    surfaceField: "#1A212A",
+    surfaceRail: "#1E252E",
+    highlight: "#404B57",
+    text: "#EDF1F5",
+    soft: "#A2AEBB",
+    muted: "#6B7682",
+    accent: "#5AA2E0",
+    accentInk: "#8FC2EE",
+    accentSoft: "#23364A",
+    onAccent: "#161B21",
+    codeBg: "#1A212A",
+    selection: "#23364A",
+    borderSoft: "#38424E",
+    borderStrong: "#4A5663",
+    priHigh: "#F0727C",
+    priMed: "#E7B05A",
+    priLow: "#6FBBA0",
+};
+
+const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+// Mutable so makeHighlight()/makeTheme() (below) read the active palette; the
+// appearance listener reassigns it and reconfigures the theme compartment.
+let palette: Palette = prefersDark.matches ? darkPalette : lightPalette;
+
+function makeHighlight() {
+    return HighlightStyle.define([
     // Headings — Obsidian-ish sizing curve, bumped to match the target design.
     { tag: tags.heading1, fontSize: "2.4em", fontWeight: "800", color: palette.text, lineHeight: "1.2" },
     { tag: tags.heading2, fontSize: "1.55em", fontWeight: "700", color: palette.text, lineHeight: "1.3" },
@@ -58,7 +101,8 @@ const highlight = HighlightStyle.define([
     { tag: tags.processingInstruction, color: palette.muted },
     { tag: tags.meta, color: palette.muted },
     { tag: tags.contentSeparator, color: palette.muted },
-]);
+    ]);
+}
 
 // MARK: - Live preview (Obsidian-style)
 //
@@ -122,6 +166,19 @@ function selectionOverlaps(state: EditorState, from: number, to: number): boolea
     return false;
 }
 
+/// The accent "#" glyph that stands in for the H1 mark — a small filled accent
+/// box with a white hash, matching the editor mockup. H2–H6 marks stay hidden.
+class HashGlyphWidget extends WidgetType {
+    toDOM(): HTMLElement {
+        const span = document.createElement("span");
+        span.className = "cm-h1-hash";
+        span.textContent = "#";
+        return span;
+    }
+    eq(): boolean { return true; }
+    ignoreEvent(): boolean { return true; }
+}
+
 function buildLivePreview(view: EditorView): DecorationSet {
     // In read mode (Cmd+E) all syntax stays hidden regardless of cursor
     // position — the cursor is invisible anyway and reveal would be confusing.
@@ -156,11 +213,15 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     if (view.state.doc.sliceString(end, end + 1) === " ") end += 1;
                     // Reveal when the cursor is anywhere on the heading line.
                     if (!readMode && selectionOverlaps(view.state, line.from, line.to)) return;
-                    // Replace (zero-width) rather than mark — the latter leaves
-                    // a transparent-but-visible-width gap before the heading.
+                    // H1 (`#`, mark width 1) renders as an accent glyph box; the
+                    // rest collapse to zero width (a `mark` would leave a visible
+                    // gap before the heading).
+                    const isH1 = node.to - node.from === 1;
                     ranges.push({
                         from: node.from, to: end,
-                        deco: Decoration.replace({}),
+                        deco: isH1
+                            ? Decoration.replace({ widget: new HashGlyphWidget() })
+                            : Decoration.replace({}),
                     });
                     return;
                 }
@@ -240,6 +301,14 @@ function buildLivePreview(view: EditorView): DecorationSet {
                             widget: new CheckboxWidget(checked, widthInChars, taskOffset),
                         }),
                     });
+                    // Strike + mute the label of a completed task.
+                    const labelEnd = line.from + line.text.length;
+                    if (checked && labelEnd > endPos) {
+                        ranges.push({
+                            from: endPos, to: labelEnd,
+                            deco: Decoration.mark({ class: "cm-done-label" }),
+                        });
+                    }
                 }
 
                 // Priority suffix: trailing ` !`/` !!`/` !!!` paints a colored
@@ -289,9 +358,10 @@ const livePreview = ViewPlugin.fromClass(class {
     decorations: (v) => v.decorations,
 });
 
-const theme = EditorView.theme({
+function makeTheme() {
+    return EditorView.theme({
     "&": {
-        backgroundColor: "#ffffff",
+        backgroundColor: palette.surface,
         color: palette.text,
         height: "100%",
     },
@@ -299,10 +369,10 @@ const theme = EditorView.theme({
         fontFamily: 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace',
         fontSize: "15px",
         lineHeight: "1.7",
-        padding: "40px 56px 96px",
+        // Full-width content (no left rail, no centered column) per the mockup;
+        // generous side padding, extra bottom clearance for the status bar + fab.
+        padding: "36px 44px 110px",
         caretColor: palette.text,
-        maxWidth: "780px",
-        margin: "0 auto",
     },
     ".cm-scroller": {
         overflow: "auto",
@@ -320,14 +390,14 @@ const theme = EditorView.theme({
         borderLeftWidth: "2.5px",
         marginLeft: "-1px",   // re-center the thicker stem on the insertion point
     },
-    // Vim block cursor — Apple system orange (pops against the Paper white).
+    // Vim block cursor — steel accent (pops against the misted surface).
     ".cm-fat-cursor": {
-        backgroundColor: "#FF9500 !important",
-        color: "#ffffff !important",
+        backgroundColor: `${palette.accent} !important`,
+        color: `${palette.onAccent} !important`,
     },
     "&:not(.cm-focused) .cm-fat-cursor": {
         backgroundColor: "transparent !important",
-        outline: "solid 1px #FF9500",
+        outline: `solid 1px ${palette.accent}`,
         color: "transparent !important",
     },
     // Read mode (Cmd+E): no cursor. drawSelection wraps the caret in
@@ -342,73 +412,100 @@ const theme = EditorView.theme({
     "&.cm-read-mode .cm-content": {
         caretColor: "transparent !important",
     },
-    // Mode badge — floats over the top-right corner of the editor.
-    ".cm-mode-badge": {
+    // Bottom status bar (surfaceRail) — home of the vim mode pill, filename,
+    // item count, and encoding. Pinned across the foot of the editor, above the
+    // scroller.
+    ".cm-statusbar": {
         position: "absolute",
-        top: "12px",
-        right: "16px",
-        padding: "3px 10px",
-        borderRadius: "10px",
-        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+        left: "0",
+        right: "0",
+        bottom: "0",
+        display: "flex",
+        alignItems: "center",
+        gap: "16px",
+        height: "33px",
+        padding: "0 16px",
+        backgroundColor: palette.surfaceRail,
+        borderTop: `1px solid ${palette.borderSoft}`,
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontSize: "11px",
+        fontWeight: "600",
+        letterSpacing: "0.3px",
+        color: palette.muted,
+        userSelect: "none",
+        zIndex: "8",
+    },
+    ".cm-status-file": { color: palette.soft },
+    ".cm-status-right": { marginLeft: "auto", display: "flex", gap: "16px" },
+    // Mode pill — accentSoft (NORMAL) by default; the other vim modes keep the
+    // conventional green/amber/red cues so the mode reads at a glance.
+    ".cm-mode-badge": {
+        padding: "4px 11px",
+        borderRadius: "6px",
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
         fontSize: "10.5px",
         fontWeight: "600",
-        letterSpacing: "0.4px",
+        letterSpacing: "1px",
         textTransform: "uppercase",
-        backgroundColor: palette.codeBg,
-        color: palette.soft,
-        border: `1px solid ${palette.borderSoft}`,
+        backgroundColor: palette.accentSoft,
+        color: palette.accentInk,
         userSelect: "none",
-        pointerEvents: "none",
-        zIndex: "10",
     },
+    // Monochrome mode tints — distinguished by fill weight, not hue, so warm
+    // colour stays confined to the priority orbs. Normal = soft, Insert = solid
+    // accent (active editing), Visual = neutral well, Replace = strong ink.
     ".cm-mode-badge--read": {
         backgroundColor: palette.text,
-        color: "#ffffff",
-        borderColor: palette.text,
+        color: palette.onAccent,
     },
-    // Vim mode tints — keeps the badge identifiable at a glance without
-    // shouting. Normal = neutral, Insert = green, Visual = amber,
-    // Replace = red. Mirrors the conventional terminal-vim color cues.
     ".cm-mode-badge--normal": {
-        backgroundColor: "#EEF1F4",
-        color: "#3A3A3F",
-        borderColor: "#D5D9DD",
+        backgroundColor: palette.accentSoft,
+        color: palette.accentInk,
     },
     ".cm-mode-badge--insert": {
-        backgroundColor: "#E6F4EA",
-        color: "#1B7340",
-        borderColor: "#C2E4CE",
+        backgroundColor: palette.accent,
+        color: palette.onAccent,
     },
     ".cm-mode-badge--visual": {
-        backgroundColor: "#FCEFD4",
-        color: "#8A5A00",
-        borderColor: "#EFD9A1",
+        backgroundColor: palette.surfaceField,
+        color: palette.soft,
     },
     ".cm-mode-badge--replace": {
-        backgroundColor: "#FBE7E5",
-        color: "#A52218",
-        borderColor: "#F3C4C0",
+        backgroundColor: palette.accentInk,
+        color: palette.onAccent,
+    },
+    // H1 mark rendered as a filled accent glyph box (white "#").
+    ".cm-h1-hash": {
+        display: "inline-block",
+        backgroundColor: palette.accent,
+        color: palette.onAccent,
+        borderRadius: "7px",
+        padding: "0 0.26em",
+        marginRight: "0.34em",
+        fontWeight: "800",
+        lineHeight: "1.18",
+        verticalAlign: "0.02em",
     },
     // Transient "Saved" badge — appears under the mode badge on ⌘S, fades out
     // after a moment. Subtle Apple-like green so it reads as success without
     // shouting.
     ".cm-saved-badge": {
         position: "absolute",
-        top: "44px",
+        top: "14px",
         right: "16px",
         display: "flex",
         alignItems: "center",
         gap: "4px",
         padding: "3px 10px 3px 8px",
-        borderRadius: "10px",
-        fontFamily: '-apple-system, BlinkMacSystemFont, "SF Pro Text", sans-serif',
+        borderRadius: "8px",
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
         fontSize: "10.5px",
         fontWeight: "600",
-        letterSpacing: "0.4px",
+        letterSpacing: "0.6px",
         textTransform: "uppercase",
-        backgroundColor: "#E6F4EA",
-        color: "#1B7340",
-        border: "1px solid #C2E4CE",
+        backgroundColor: palette.accentSoft,
+        color: palette.accentInk,
+        border: `1px solid ${palette.accent}33`,
         opacity: "0",
         transform: "translateY(-4px)",
         transition: "opacity 0.18s ease, transform 0.18s ease",
@@ -419,43 +516,46 @@ const theme = EditorView.theme({
         opacity: "1",
         transform: "translateY(0)",
     },
-    // Floating vertical toolbar on the left edge. Sits over the editor's
-    // padding so it doesn't disrupt the centered content column.
+    // Floating action cluster, bottom-right (replaces the old left rail). A
+    // small surface card holding the reorg + archive buttons; clears the
+    // status bar.
     ".cm-sidebar": {
         position: "absolute",
-        top: "50%",
-        left: "12px",
-        transform: "translateY(-50%)",
+        right: "18px",
+        bottom: "52px",
+        top: "auto",
+        left: "auto",
+        transform: "none",
         display: "flex",
         flexDirection: "column",
-        gap: "4px",
-        padding: "4px",
-        borderRadius: "10px",
-        backgroundColor: "rgba(255, 255, 255, 0.95)",
+        gap: "5px",
+        padding: "5px",
+        borderRadius: "12px",
+        backgroundColor: palette.surface,
         border: `1px solid ${palette.borderSoft}`,
-        boxShadow: "0 1px 4px rgba(0, 0, 0, 0.06)",
-        zIndex: "5",
+        boxShadow: "0 12px 28px -16px rgba(28, 42, 60, 0.45)",
+        zIndex: "9",
     },
     ".cm-sidebar-btn": {
-        width: "32px",
-        height: "32px",
+        width: "34px",
+        height: "34px",
         display: "flex",
         alignItems: "center",
         justifyContent: "center",
         border: "none",
         backgroundColor: "transparent",
         color: palette.soft,
-        borderRadius: "6px",
+        borderRadius: "8px",
         cursor: "pointer",
         padding: "0",
         transition: "background-color 0.12s ease, color 0.12s ease",
     },
     ".cm-sidebar-btn:hover": {
-        backgroundColor: palette.codeBg,
-        color: palette.text,
+        backgroundColor: palette.accentSoft,
+        color: palette.accentInk,
     },
     ".cm-sidebar-btn:active": {
-        backgroundColor: palette.borderSoft,
+        backgroundColor: palette.accentSoft,
     },
     "&.cm-focused .cm-selectionBackground, ::selection": {
         backgroundColor: palette.selection,
@@ -475,11 +575,19 @@ const theme = EditorView.theme({
     // Pink pill behind inline `code`. Applied via decoration only when the
     // cursor isn't on the line, so editing the raw markdown drops the pill.
     ".cm-inline-code-pill": {
-        backgroundColor: "#FFE9EF",
-        border: "1px solid #F5BBD0",
-        borderRadius: "4px",
-        padding: "1px 5px",
+        backgroundColor: palette.accentSoft,
+        color: palette.accentInk,
+        borderRadius: "6px",
+        padding: "1px 6px",
         margin: "0 1px",
+    },
+    // Completed task label — struck through and muted (the checkbox keeps its
+    // accent fill). Applied only when the checkbox widget is rendered (cursor
+    // off the line), so editing the raw markdown reads normally.
+    ".cm-done-label": {
+        textDecoration: "line-through",
+        textDecorationColor: palette.muted,
+        color: palette.muted,
     },
     // Priority dot — a single colored circle at the far-right of the line,
     // drawn via a ::after pseudo-element so it doesn't disturb text layout.
@@ -498,9 +606,21 @@ const theme = EditorView.theme({
         borderRadius: "50%",
         pointerEvents: "none",
     },
-    ".cm-line.cm-priority-dot-3::after": { backgroundColor: "#D32F2F" },
-    ".cm-line.cm-priority-dot-2::after": { backgroundColor: "#F57C00" },
-    ".cm-line.cm-priority-dot-1::after": { backgroundColor: "#1976D2" },
+    // Colour-coded priority orbs, each with a soft same-colour halo
+    // (`!!!` = high, `!!` = med, `!` = low). The only warm colour in the editor.
+    // `38` ≈ 22% alpha as an 8-digit hex, so the halo tracks the active palette.
+    ".cm-line.cm-priority-dot-3::after": {
+        backgroundColor: palette.priHigh,
+        boxShadow: `0 0 0 3px ${palette.priHigh}38`,
+    },
+    ".cm-line.cm-priority-dot-2::after": {
+        backgroundColor: palette.priMed,
+        boxShadow: `0 0 0 3px ${palette.priMed}38`,
+    },
+    ".cm-line.cm-priority-dot-1::after": {
+        backgroundColor: palette.priLow,
+        boxShadow: `0 0 0 3px ${palette.priLow}38`,
+    },
     // Indent guides — thin vertical lines under each indent level on nested
     // list/task lines. Drawn via ::before + box-shadow so a single pseudo
     // element can render multiple lines (one per level) without extra DOM.
@@ -538,19 +658,19 @@ const theme = EditorView.theme({
         width: "16px",
         height: "16px",
         margin: "0 10px 0 0",
-        border: `1.5px solid ${palette.muted}`,
-        borderRadius: "3px",
+        border: `1.5px solid ${palette.borderStrong}`,
+        borderRadius: "5px",
         verticalAlign: "-3px",
         cursor: "pointer",
-        backgroundColor: "transparent",
+        backgroundColor: palette.surface,
         transition: "border-color 0.12s ease, background-color 0.12s ease",
     },
     ".cm-task-checkbox:hover": {
-        borderColor: palette.text,
+        borderColor: palette.accent,
     },
     ".cm-task-checkbox:checked": {
-        backgroundColor: palette.text,
-        borderColor: palette.text,
+        backgroundColor: palette.accent,
+        borderColor: palette.accent,
         backgroundImage: "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\"><path d=\"M4 8.5l2.5 2.5L12 5.5\" stroke=\"white\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>')",
         backgroundSize: "14px",
         backgroundPosition: "center",
@@ -564,7 +684,15 @@ const theme = EditorView.theme({
         paddingBottom: "4px",
         borderBottom: `1px solid ${palette.borderSoft}`,
     },
-}, { dark: false });
+    }, { dark: palette === darkPalette });
+}
+
+// Active theme + syntax highlight, swapped in a compartment when the system
+// appearance changes.
+const themeComp = new Compartment();
+function themeExtensions() {
+    return [syntaxHighlighting(makeHighlight()), makeTheme()];
+}
 
 declare global {
     interface Window {
@@ -577,7 +705,9 @@ declare global {
             setContent: (content: string) => void;
             getContent: () => string;
             focus: () => void;
-            insertCapture: (from: number, text: string) => void;
+            setFilename: (name: string) => void;
+            setVimEnabled: (on: boolean) => void;
+            flushSave: () => void;
         };
     }
 }
@@ -863,13 +993,37 @@ function toggleTaskOnCurrentLine(view: EditorView): boolean {
     return true;
 }
 
+// Filename shown in the status bar. Swift sets the real name via
+// `qcEditor.setFilename`; this is just the fallback before that lands.
+let filename = "inbox.md";
+
+/// Builds the bottom status bar once (mode pill · filename · item count · UTF-8)
+/// and returns it for updates.
+function ensureStatusBar(v: EditorView): HTMLDivElement {
+    let bar = v.dom.querySelector(".cm-statusbar") as HTMLDivElement | null;
+    if (bar) return bar;
+    bar = document.createElement("div");
+    bar.className = "cm-statusbar";
+
+    const mode = document.createElement("div");
+    mode.className = "cm-mode-badge";
+    const file = document.createElement("div");
+    file.className = "cm-status-file";
+    const right = document.createElement("div");
+    right.className = "cm-status-right";
+    const count = document.createElement("span");
+    count.className = "cm-status-count";
+    const enc = document.createElement("span");
+    enc.textContent = "UTF-8";
+    right.append(count, enc);
+    bar.append(mode, file, right);
+    v.dom.appendChild(bar);
+    return bar;
+}
+
 function updateBadge(v: EditorView) {
-    let badge = v.dom.querySelector(".cm-mode-badge") as HTMLDivElement | null;
-    if (!badge) {
-        badge = document.createElement("div");
-        badge.className = "cm-mode-badge";
-        v.dom.appendChild(badge);
-    }
+    const bar = ensureStatusBar(v);
+    const badge = bar.querySelector(".cm-mode-badge") as HTMLDivElement;
     badge.classList.remove(
         "cm-mode-badge--read",
         "cm-mode-badge--normal",
@@ -882,21 +1036,31 @@ function updateBadge(v: EditorView) {
     if (readMode) {
         badge.textContent = "Reading";
         badge.classList.add("cm-mode-badge--read");
-        return;
-    }
-
-    if (!vimEnabled) {
+    } else if (!vimEnabled) {
         badge.textContent = "Editing";
-        return;
+    } else {
+        badge.textContent =
+            vimMode === "insert" ? "Insert" :
+            vimMode === "visual" ? "Visual" :
+            vimMode === "replace" ? "Replace" :
+            "Normal";
+        badge.classList.add(`cm-mode-badge--${vimMode}`);
     }
 
-    const label =
-        vimMode === "insert" ? "Insert" :
-        vimMode === "visual" ? "Visual" :
-        vimMode === "replace" ? "Replace" :
-        "Normal";
-    badge.textContent = label;
-    badge.classList.add(`cm-mode-badge--${vimMode}`);
+    (bar.querySelector(".cm-status-file") as HTMLElement).textContent = filename;
+    updateCounts(v);
+}
+
+/// Refreshes the "N items · M done" tally from the document. Counts every
+/// `- [ ]` / `- [x]` task line (any indent), done = the checked ones.
+function updateCounts(v: EditorView) {
+    const bar = v.dom.querySelector(".cm-statusbar");
+    if (!bar) return;
+    const text = v.state.doc.toString();
+    const items = (text.match(/^\s*[-*+]\s+\[[ xX]\]/gm) ?? []).length;
+    const done = (text.match(/^\s*[-*+]\s+\[[xX]\]/gm) ?? []).length;
+    (bar.querySelector(".cm-status-count") as HTMLElement).textContent =
+        `${items} item${items === 1 ? "" : "s"} · ${done} done`;
 }
 
 function sendToSwift(message: Record<string, unknown>) {
@@ -971,10 +1135,17 @@ function mount(content: string) {
             EditorView.lineWrapping,
             markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
             indentUnit.of("    "),   // 4-space indent matches Obsidian's defaults
-            syntaxHighlighting(highlight),
+            themeComp.of(themeExtensions()),
             livePreview,
             readModeComp.of([]),
             keymap.of([
+                {
+                    // Esc dismisses the panel. This only fires when vim is OFF —
+                    // with vim on, its keymap (loaded earlier) owns Escape, so
+                    // this never runs. See ADR-0004.
+                    key: "Escape",
+                    run: () => { sendToSwift({ type: "dismiss" }); return true; },
+                },
                 {
                     key: "Mod-e",
                     run: (v) => { setReadMode(v, !readMode); return true; },
@@ -1016,9 +1187,11 @@ function mount(content: string) {
                 ...defaultKeymap,
                 ...historyKeymap,
             ]),
-            theme,
             EditorView.updateListener.of((update) => {
-                if (update.docChanged) scheduleSave();
+                if (update.docChanged) {
+                    scheduleSave();
+                    updateCounts(update.view);
+                }
             }),
         ],
     });
@@ -1027,7 +1200,11 @@ function mount(content: string) {
     attachVimModeListener(view);
     updateBadge(view);
     ensureSidebar(view);
-    view.focus();
+    // Deliberately NOT auto-focused. On a cold launch the editor mounts in the
+    // background while the capture box is showing; focusing here would make the
+    // (hidden) web view the window's first responder and steal focus off the
+    // capture input. Swift drives editor focus (focusEditor / qcEditor.focus)
+    // when the editor is actually the active surface.
 }
 
 function attachVimModeListener(v: EditorView) {
@@ -1045,17 +1222,35 @@ window.qcEditor = {
     setContent: (content: string) => mount(content),
     getContent: () => view?.state.doc.toString() ?? "",
     focus: () => view?.focus(),
-    // Split mode: a capture submitted from the input strip is inserted into the
-    // live buffer as a *targeted* transaction (not setContent/mount) so cursor,
-    // scroll, and undo survive and the insert is one undoable step. `from` is a
-    // UTF-16 offset computed Swift-side from FileWriter.insert (see ADR-0003).
-    // docChanged fires → existing scheduleSave() persists it; no suppress.
-    insertCapture: (from: number, text: string) => {
+    setFilename: (name: string) => {
+        filename = name || "inbox.md";
+        if (view) updateBadge(view);
+    },
+    // Toggle vim live by reconfiguring its compartment (placed first in the
+    // extension list, so vim's normal-mode bindings still win). Before the view
+    // mounts this just records the flag; mount() reads it.
+    setVimEnabled: (on: boolean) => {
+        vimEnabled = on;
         if (!view) return;
-        const len = view.state.doc.length;
-        const at = Math.max(0, Math.min(from, len));
-        view.dispatch({ changes: { from: at, to: at, insert: text }, scrollIntoView: false });
+        view.dispatch({ effects: vimComp.reconfigure(on ? vim() : []) });
+        if (on) attachVimModeListener(view);
+        else vimMode = "normal";
+        updateBadge(view);
+    },
+    // Flush the debounced autosave immediately. Swift calls this before leaving
+    // editor mode so the file on disk is canonical before capture mode can write
+    // (ADR-0004 — disk is the single source of truth).
+    flushSave: () => {
+        if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
+        if (view) sendToSwift({ type: "save", content: view.state.doc.toString() });
     },
 };
+
+// Follow the system appearance: swap the palette and reconfigure the theme
+// compartment when prefers-color-scheme flips.
+prefersDark.addEventListener("change", (e) => {
+    palette = e.matches ? darkPalette : lightPalette;
+    view?.dispatch({ effects: themeComp.reconfigure(themeExtensions()) });
+});
 
 sendToSwift({ type: "ready" });

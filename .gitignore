@@ -8,6 +8,9 @@ Icon?
 # Xcode — build output
 build/
 DerivedData/
+
+# Code-coverage raw profiles (emitted by test runs)
+*.profraw
 *.xcuserstate
 *.xcuserdatad
 *.xcscmblueprint
