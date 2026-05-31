@@ -374,7 +374,7 @@ struct CaptureView: View {
                 startPoint: .leading,
                 endPoint: .trailing
             )
-            .frame(width: 20)
+            .frame(width: 32)
             .allowsHitTesting(false)
         }
     }
