@@ -302,9 +302,15 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 const priority = line.text.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 if (priority && priority.index !== undefined) {
                     const level = priority[2].length;
+                    const priorityLabel = level === 3 ? "High priority (!!!)"
+                                       : level === 2 ? "Medium priority (!!)"
+                                                     : "Low priority (!)";
                     ranges.push({
                         from: line.from, to: line.from,
-                        deco: Decoration.line({ class: `cm-priority-dot cm-priority-dot-${level}` }),
+                        deco: Decoration.line({
+                            class: `cm-priority-dot cm-priority-dot-${level}`,
+                            attributes: { "data-priority-label": priorityLabel },
+                        }),
                     });
                     if (!onLine) {
                         const suffixStart = line.from + priority.index;
@@ -547,6 +553,48 @@ function makeTheme() {
     },
     ".cm-sidebar-btn:active": {
         backgroundColor: palette.accentSoft,
+    },
+    // CSS tooltip for sidebar buttons — replaces the slow native title tooltip.
+    ".cm-btn-tooltip": {
+        position: "absolute",
+        right: "calc(100% + 8px)",
+        top: "50%",
+        transform: "translateY(-50%)",
+        whiteSpace: "nowrap",
+        backgroundColor: palette.surfaceRail,
+        color: palette.soft,
+        border: `1px solid ${palette.borderSoft}`,
+        borderRadius: "6px",
+        padding: "4px 8px",
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontSize: "11px",
+        fontWeight: "600",
+        letterSpacing: "0.3px",
+        pointerEvents: "none",
+        opacity: "0",
+        transition: "opacity 0.12s ease",
+        transitionDelay: "0s",
+        zIndex: "20",
+    },
+    ".cm-sidebar-btn:hover .cm-btn-tooltip": {
+        opacity: "1",
+        transitionDelay: "200ms",
+    },
+    // Priority orb tooltip — shared div injected by the mousemove handler.
+    ".cm-priority-tooltip": {
+        position: "fixed",
+        backgroundColor: palette.surfaceRail,
+        color: palette.soft,
+        border: `1px solid ${palette.borderSoft}`,
+        borderRadius: "6px",
+        padding: "4px 8px",
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontSize: "11px",
+        fontWeight: "600",
+        letterSpacing: "0.3px",
+        pointerEvents: "none",
+        zIndex: "20",
+        display: "none",
     },
     "&.cm-focused .cm-selectionBackground, ::selection": {
         backgroundColor: palette.selection,
@@ -899,6 +947,7 @@ function ensureSidebar(view: EditorView) {
 
     sidebar.appendChild(makeSidebarButton(view, {
         title: "Move completed items to the bottom of each section (⌘')",
+        label: "Re-org ⌘'",
         svg: `
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2"
@@ -912,6 +961,7 @@ function ensureSidebar(view: EditorView) {
 
     sidebar.appendChild(makeSidebarButton(view, {
         title: "Archive completed items to <name>_archive.md",
+        label: "Archive",
         svg: `
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2"
@@ -924,17 +974,63 @@ function ensureSidebar(view: EditorView) {
     }));
 
     view.dom.appendChild(sidebar);
+
+    // Priority orb tooltip — a single shared div positioned via mousemove.
+    // The orb is a CSS ::after pseudo (not a real DOM element), so we detect
+    // proximity to the right edge of any priority-dot line instead.
+    const orbTooltip = document.createElement("div");
+    orbTooltip.className = "cm-priority-tooltip";
+    document.body.appendChild(orbTooltip);
+
+    let orbHideTimer: number | null = null;
+    view.dom.addEventListener("mousemove", (e) => {
+        const target = e.target as HTMLElement;
+        const line = target.closest(".cm-priority-dot") as HTMLElement | null;
+        if (!line) {
+            if (orbHideTimer === null) {
+                orbHideTimer = window.setTimeout(() => {
+                    orbTooltip.style.display = "none";
+                    orbHideTimer = null;
+                }, 80);
+            }
+            return;
+        }
+        if (orbHideTimer !== null) {
+            window.clearTimeout(orbHideTimer);
+            orbHideTimer = null;
+        }
+        // Only show when hovering the right ~28px where the orb lives.
+        const rect = line.getBoundingClientRect();
+        if (e.clientX < rect.right - 28) {
+            orbTooltip.style.display = "none";
+            return;
+        }
+        const label = line.getAttribute("data-priority-label") ?? "";
+        orbTooltip.textContent = label;
+        orbTooltip.style.display = "block";
+        orbTooltip.style.left = `${rect.right - orbTooltip.offsetWidth - 4}px`;
+        orbTooltip.style.top = `${rect.top - orbTooltip.offsetHeight - 6}px`;
+    });
+
+    view.dom.addEventListener("mouseleave", () => {
+        orbTooltip.style.display = "none";
+    });
 }
 
 function makeSidebarButton(
     view: EditorView,
-    opts: { title: string; svg: string; action: (v: EditorView) => void },
+    opts: { title: string; label: string; svg: string; action: (v: EditorView) => void },
 ): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "cm-sidebar-btn";
-    btn.title = opts.title;
+    btn.style.position = "relative";
     btn.innerHTML = opts.svg;
+    // CSS tooltip — faster and theme-matched vs the native title tooltip.
+    const tooltip = document.createElement("span");
+    tooltip.className = "cm-btn-tooltip";
+    tooltip.textContent = opts.label;
+    btn.appendChild(tooltip);
     // Stop mousedown from bubbling to CodeMirror, which would otherwise treat
     // the button press as the start of a drag-select — and complete the
     // selection when the user next clicks in the editor.
