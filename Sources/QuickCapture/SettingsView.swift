@@ -27,7 +27,7 @@ struct SettingsView: View {
                 }
             }
 
-            settingsCard("SHORTCUT") {
+            settingsCard("KEYBOARD SHORTCUT") {
                 settingsRow(
                     label: "Hotkey",
                     note: "Click, press your combo, Esc cancels. Needs ⌃⌥⇧⌘."
@@ -45,7 +45,7 @@ struct SettingsView: View {
                     .frame(width: 180)
                 }
                 t.border.frame(height: 1)
-                settingsRow(label: "Preview", note: nil, labelColor: t.inkSecondary) {
+                settingsRow(label: "Font sample", note: nil, labelColor: t.inkSecondary) {
                     Text("What needs doing?")
                         .font(.system(size: 17, design: appState.captureFontDesign.design))
                         .foregroundStyle(t.ink)
