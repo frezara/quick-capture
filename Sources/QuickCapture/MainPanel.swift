@@ -103,7 +103,8 @@ final class MainPanel: NSPanel {
         hasShadow = true
         isOpaque = false
         becomesKeyOnlyIfNeeded = false
-        appearance = NSAppearance(named: .aqua)
+        // Follow the system appearance (drives the Misted-Steel light/dark
+        // pair). Previously pinned to .aqua, which forced the UI light.
         collectionBehavior = [.canJoinAllSpaces, .fullScreenAuxiliary, .transient]
 
         setupContainer()
@@ -139,7 +140,7 @@ final class MainPanel: NSPanel {
         // No corners/border of its own — the SplitContainerView is now the single
         // rounded, bordered panel and clips the editor's bottom corners. The
         // steel surface fill just avoids a load flash before the web view paints.
-        editorContainer.layer?.backgroundColor = SplitContainerView.steelSurface.cgColor
+        editorContainer.applyBackground()
         editorContainer.frame = initialFrame
         editorContainer.autoresizingMask = [.width, .height]
         editorContainer.isHidden = true
@@ -660,8 +661,19 @@ private final class SplitContainerView: NSView {
     private var inputStrip: NSView?
     private var editorHost: NSView?
 
-    static let steelSurface = NSColor(srgbRed: 0xF7/255, green: 0xF9/255, blue: 0xFB/255, alpha: 1)
-    static let steelBorder  = NSColor(srgbRed: 0xC2/255, green: 0xCC/255, blue: 0xD7/255, alpha: 1)
+    // Dynamic so the joined panel's surface/border track light/dark. Layer
+    // colours are CGColors (no auto-update), so applyChrome() re-resolves them
+    // against the effective appearance, and we re-apply on appearance change.
+    static let steelSurface = NSColor(name: nil) { a in
+        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x24/255, green: 0x2C/255, blue: 0x35/255, alpha: 1)
+            : NSColor(srgbRed: 0xF7/255, green: 0xF9/255, blue: 0xFB/255, alpha: 1)
+    }
+    static let steelBorder = NSColor(name: nil) { a in
+        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(srgbRed: 0x38/255, green: 0x42/255, blue: 0x4E/255, alpha: 1)
+            : NSColor(srgbRed: 0xC2/255, green: 0xCC/255, blue: 0xD7/255, alpha: 1)
+    }
 
     var stripHeight: CGFloat = 100 { didSet { if editorVisible, stripHeight != oldValue { relayoutSplit() } } }
     var editorVisible = false {
@@ -703,14 +715,24 @@ private final class SplitContainerView: NSView {
             layer?.cornerRadius = Metrics.radiusWindow
             layer?.masksToBounds = true
             layer?.borderWidth = 1
-            layer?.borderColor = Self.steelBorder.cgColor
-            layer?.backgroundColor = Self.steelSurface.cgColor
+            // Resolve the dynamic colours against THIS view's appearance (a bare
+            // `.cgColor` resolves against NSAppearance.current, which isn't set
+            // during a layer update).
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                layer?.borderColor = Self.steelBorder.cgColor
+                layer?.backgroundColor = Self.steelSurface.cgColor
+            }
         } else {
             layer?.cornerRadius = 0
             layer?.masksToBounds = false
             layer?.borderWidth = 0
             layer?.backgroundColor = NSColor.clear.cgColor
         }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        if editorVisible { applyChrome() }   // re-resolve light/dark layer colours
     }
 
     // Only re-pin the split surfaces while the editor is open. In input-only the
@@ -744,6 +766,20 @@ private final class EditorContainerView: NSView {
         self.web = web
         addSubview(web)
         needsLayout = true
+    }
+
+    /// Steel-surface load-flash backdrop (behind the web view), re-resolved for
+    /// light/dark since layer colours don't auto-update.
+    func applyBackground() {
+        wantsLayer = true
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = SplitContainerView.steelSurface.cgColor
+        }
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        applyBackground()
     }
 
     override func layout() {

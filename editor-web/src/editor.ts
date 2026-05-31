@@ -19,10 +19,13 @@ for (const key of ["y", "Y", "p", "P", "d", "D", "x", "X", "c", "C", "s", "S"]) 
     Vim.noremap(key, `"+${key}`, "visual");
 }
 
-// "Misted Steel" palette — mirrors DesignSystem.swift (Theme.light) so the
-// editor reads as the same surface as the capture bar. Light only for now; the
-// panel forces aqua appearance. Warm colour is confined to the priority orbs.
-const palette = {
+// "Misted Steel" palettes — mirror DesignSystem.swift (Theme.light / .dark) so
+// the editor reads as the same surface as the capture bar. The active one
+// follows the system appearance (prefers-color-scheme). Warm colour is confined
+// to the priority orbs.
+type Palette = typeof lightPalette;
+
+const lightPalette = {
     surface: "#F7F9FB",
     surfaceField: "#E8EEF3",
     surfaceRail: "#EEF2F6",
@@ -43,7 +46,34 @@ const palette = {
     priLow: "#4E9E84",
 };
 
-const highlight = HighlightStyle.define([
+const darkPalette: Palette = {
+    surface: "#242C35",
+    surfaceField: "#1A212A",
+    surfaceRail: "#1E252E",
+    highlight: "#404B57",
+    text: "#EDF1F5",
+    soft: "#A2AEBB",
+    muted: "#6B7682",
+    accent: "#5AA2E0",
+    accentInk: "#8FC2EE",
+    accentSoft: "#23364A",
+    onAccent: "#161B21",
+    codeBg: "#1A212A",
+    selection: "#23364A",
+    borderSoft: "#38424E",
+    borderStrong: "#4A5663",
+    priHigh: "#F0727C",
+    priMed: "#E7B05A",
+    priLow: "#6FBBA0",
+};
+
+const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
+// Mutable so makeHighlight()/makeTheme() (below) read the active palette; the
+// appearance listener reassigns it and reconfigures the theme compartment.
+let palette: Palette = prefersDark.matches ? darkPalette : lightPalette;
+
+function makeHighlight() {
+    return HighlightStyle.define([
     // Headings — Obsidian-ish sizing curve, bumped to match the target design.
     { tag: tags.heading1, fontSize: "2.4em", fontWeight: "800", color: palette.text, lineHeight: "1.2" },
     { tag: tags.heading2, fontSize: "1.55em", fontWeight: "700", color: palette.text, lineHeight: "1.3" },
@@ -71,7 +101,8 @@ const highlight = HighlightStyle.define([
     { tag: tags.processingInstruction, color: palette.muted },
     { tag: tags.meta, color: palette.muted },
     { tag: tags.contentSeparator, color: palette.muted },
-]);
+    ]);
+}
 
 // MARK: - Live preview (Obsidian-style)
 //
@@ -327,7 +358,8 @@ const livePreview = ViewPlugin.fromClass(class {
     decorations: (v) => v.decorations,
 });
 
-const theme = EditorView.theme({
+function makeTheme() {
+    return EditorView.theme({
     "&": {
         backgroundColor: palette.surface,
         color: palette.text,
@@ -576,17 +608,18 @@ const theme = EditorView.theme({
     },
     // Colour-coded priority orbs, each with a soft same-colour halo
     // (`!!!` = high, `!!` = med, `!` = low). The only warm colour in the editor.
+    // `38` ≈ 22% alpha as an 8-digit hex, so the halo tracks the active palette.
     ".cm-line.cm-priority-dot-3::after": {
         backgroundColor: palette.priHigh,
-        boxShadow: "0 0 0 3px rgba(219, 85, 96, 0.22)",
+        boxShadow: `0 0 0 3px ${palette.priHigh}38`,
     },
     ".cm-line.cm-priority-dot-2::after": {
         backgroundColor: palette.priMed,
-        boxShadow: "0 0 0 3px rgba(217, 154, 60, 0.22)",
+        boxShadow: `0 0 0 3px ${palette.priMed}38`,
     },
     ".cm-line.cm-priority-dot-1::after": {
         backgroundColor: palette.priLow,
-        boxShadow: "0 0 0 3px rgba(78, 158, 132, 0.22)",
+        boxShadow: `0 0 0 3px ${palette.priLow}38`,
     },
     // Indent guides — thin vertical lines under each indent level on nested
     // list/task lines. Drawn via ::before + box-shadow so a single pseudo
@@ -651,7 +684,15 @@ const theme = EditorView.theme({
         paddingBottom: "4px",
         borderBottom: `1px solid ${palette.borderSoft}`,
     },
-}, { dark: false });
+    }, { dark: palette === darkPalette });
+}
+
+// Active theme + syntax highlight, swapped in a compartment when the system
+// appearance changes.
+const themeComp = new Compartment();
+function themeExtensions() {
+    return [syntaxHighlighting(makeHighlight()), makeTheme()];
+}
 
 declare global {
     interface Window {
@@ -1094,7 +1135,7 @@ function mount(content: string) {
             EditorView.lineWrapping,
             markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
             indentUnit.of("    "),   // 4-space indent matches Obsidian's defaults
-            syntaxHighlighting(highlight),
+            themeComp.of(themeExtensions()),
             livePreview,
             readModeComp.of([]),
             keymap.of([
@@ -1139,7 +1180,6 @@ function mount(content: string) {
                 ...defaultKeymap,
                 ...historyKeymap,
             ]),
-            theme,
             EditorView.updateListener.of((update) => {
                 if (update.docChanged) {
                     scheduleSave();
@@ -1202,5 +1242,12 @@ window.qcEditor = {
         view.dispatch({ changes: { from: at, to: at, insert: text }, scrollIntoView: false });
     },
 };
+
+// Follow the system appearance: swap the palette and reconfigure the theme
+// compartment when prefers-color-scheme flips.
+prefersDark.addEventListener("change", (e) => {
+    palette = e.matches ? darkPalette : lightPalette;
+    view?.dispatch({ effects: themeComp.reconfigure(themeExtensions()) });
+});
 
 sendToSwift({ type: "ready" });
