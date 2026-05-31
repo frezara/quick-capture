@@ -9,7 +9,7 @@ struct SettingsView: View {
 
     var body: some View {
         VStack(alignment: .leading, spacing: 14) {
-            settingsCard("CAPTURE FILE") {
+            settingsCard("FILE & SHORTCUT") {
                 settingsRow(
                     label: "Path",
                     note: "Items are appended as `- [ ] …` lines."
@@ -25,9 +25,7 @@ struct SettingsView: View {
                             .buttonStyle(SettingsGhostButton(t: t))
                     }
                 }
-            }
-
-            settingsCard("KEYBOARD SHORTCUT") {
+                t.border.frame(height: 1)
                 settingsRow(
                     label: "Hotkey",
                     note: "Click, press your combo, Esc cancels. Needs ⌃⌥⇧⌘."
@@ -52,25 +50,21 @@ struct SettingsView: View {
                 }
             }
 
-            settingsCard("TIMESTAMP") {
+            settingsCard("ADVANCED") {
                 settingsRow(
                     label: "Append timestamp to each capture",
                     note: "Uses Obsidian Tasks `\(FileWriter.createdMarker)` marker — `YYYY-MM-DD HH:MM`."
                 ) {
                     Toggle("", isOn: $appState.includeTimestamp).labelsHidden()
                 }
-            }
-
-            settingsCard("EDITOR") {
+                t.border.frame(height: 1)
                 settingsRow(
                     label: "Vim keybindings",
                     note: "When off, standard editing. ⌘F still toggles the editor."
                 ) {
                     Toggle("", isOn: $appState.vimEnabled).labelsHidden()
                 }
-            }
-
-            settingsCard("GENERAL") {
+                t.border.frame(height: 1)
                 settingsRow(
                     label: "Launch at Login",
                     note: "App must be in /Applications for this to take effect."
