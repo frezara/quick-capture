@@ -381,9 +381,17 @@ struct CaptureView: View {
 
     /// One steel chip treatment for every tag (no per-tag colour). The
     /// prefix-matched tag carries the `accentSoft` / `accentInk` fill.
+    /// The `cal` chip swaps the `#` for a calendar icon to signal it's special.
     private func chip(_ name: String, isMatch: Bool) -> some View {
-        HStack(spacing: 0) {
-            Text("#").foregroundStyle(isMatch ? theme.accent : theme.inkTertiary)
+        let isCal = name.lowercased() == "cal"
+        return HStack(spacing: 4) {
+            if isCal {
+                Image(systemName: "calendar")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(isMatch ? theme.accent : theme.inkTertiary)
+            } else {
+                Text("#").foregroundStyle(isMatch ? theme.accent : theme.inkTertiary)
+            }
             Text(name).foregroundStyle(isMatch ? theme.accentInk : theme.inkSecondary)
         }
         .font(TypeScale.chip)
@@ -397,6 +405,7 @@ struct CaptureView: View {
             RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
                 .strokeBorder(isMatch ? theme.accent.opacity(0.42) : theme.border, lineWidth: 1)
         )
+        .help(isCal ? "Creates a calendar event — type naturally, e.g. \"call Seb tomorrow at 2pm\"" : "")
     }
 
     // MARK: - Actions
