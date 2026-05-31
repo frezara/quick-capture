@@ -149,12 +149,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         captureItem.target = self
         menu.addItem(captureItem)
 
-        let openEditorItem = NSMenuItem(title: "Open Editor…",
-                                        action: #selector(openEditor),
-                                        keyEquivalent: "o")
-        openEditorItem.target = self
-        menu.addItem(openEditorItem)
-
         menu.addItem(.separator())
 
         let settingsItem = NSMenuItem(title: "Settings…",
@@ -291,15 +285,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
     @objc func showSettings() {
         settingsController.show()
-    }
-
-    // MARK: - Editor
-
-    /// Menu-bar "Open Editor…" — summons the shared panel straight into editor
-    /// mode (on the capture file). ⌘F then toggles back to the capture box.
-    @objc func openEditor() {
-        appState.refreshRecentTags()
-        ensurePanel().showInEditor()
     }
 
     // MARK: - Launch at login
