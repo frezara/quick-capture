@@ -252,6 +252,7 @@ final class MainPanel: NSPanel {
     /// while the window shrinks back to the centered capture box.
     func closeEditor() {
         guard editorOpen else { return }
+        flushEditorSave()   // disk canonical before capture mode can write (ADR-0004)
         editorOpen = false
         isCollapsing = true
         isMovableByWindowBackground = true
@@ -403,67 +404,35 @@ final class MainPanel: NSPanel {
 
     // MARK: - Capture routing
 
-    /// Esc: return focus to the editor when it's open, otherwise dismiss.
-    private func handleEscape() {
-        if editorOpen { focusEditor() } else { onDismiss() }
+    /// Esc from the capture box dismisses. (In editor mode, Esc is handled inside
+    /// the web view — vim, or the dismiss binding when vim is off — not here.)
+    private func handleEscape() { dismiss() }
+
+    /// Fully dismiss the panel. Flushes the editor's pending save first so disk
+    /// is current, then hands off to the dismiss closure (which hides the panel
+    /// and clears any preserved capture text).
+    private func dismiss() {
+        flushEditorSave()
+        onDismiss()
     }
 
-    /// A capture submitted from the input strip. When the editor is closed (or
-    /// the capture is a `#cal` event, which never writes a todo) it takes the
-    /// unchanged disk path. When the editor is open it routes through the live
-    /// buffer so there's only ever one writer to the file.
+    /// Esc in the editor with vim off (posted from editor.ts via the bridge).
+    fileprivate func dismissFromEditor() { dismiss() }
+
+    /// A capture submitted from the capture box. Capture and editor are mutually
+    /// exclusive (ADR-0004), so this only runs in capture mode — it always writes
+    /// straight to disk, which is the canonical copy.
     private func handleSubmit(_ text: String, _ tag: String?) {
-        let isCal = tag?.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cal"
-        if !editorOpen || isCal {
-            onSubmit(text, tag)
-            return
-        }
-        insertIntoEditorBuffer(text, tag: tag)
+        onSubmit(text, tag)
     }
 
-    /// Reuse the pure `FileWriter.insert` over the editor's current buffer, then
-    /// apply just the delta as a targeted transaction (cursor/scroll/undo
-    /// preserved). Focus is in the input here, so the buffer is stable across
-    /// the async round-trip.
-    private func insertIntoEditorBuffer(_ text: String, tag: String?) {
-        let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
-        let heading = FileWriter.sectionName(for: tag)
-        let item = FileWriter.todoLine(trimmed, includeTimestamp: appState.includeTimestamp)
-
-        webView.evaluateJavaScript("window.qcEditor.getContent()") { [weak self] result, _ in
-            guard let self, let old = result as? String else { return }
-            let new = FileWriter.insert(item: item, underHeading: heading, in: old)
-            guard let (from, inserted) = Self.singleInsertionDelta(from: old, to: new) else {
-                // Non-contiguous change (e.g. a missing `# Inbox` got prepended
-                // *and* the item inserted). Rare; fall back to a full replace.
-                NSLog("Capture insert produced a non-contiguous delta; full replace.")
-                self.pushContent(new)
-                self.focusEditor()
-                return
-            }
-            guard let payload = String(data: try! JSONEncoder().encode(inserted), encoding: .utf8) else { return }
-            self.webView.evaluateJavaScript("window.qcEditor.insertCapture(\(from), \(payload))",
-                                            completionHandler: nil)
-            self.focusEditor()
-        }
-    }
-
-    /// `old` and `new` differ by exactly one inserted run (`FileWriter.insert`
-    /// only adds). Returns the UTF-16 offset (CodeMirror indexing) and the
-    /// inserted text, or nil if the change isn't a single contiguous insertion.
-    static func singleInsertionDelta(from old: String, to new: String) -> (Int, String)? {
-        let o = Array(old.utf16), n = Array(new.utf16)
-        guard n.count > o.count else { return nil }
-        var p = 0
-        while p < o.count && o[p] == n[p] { p += 1 }
-        var s = 0
-        while s < o.count - p && o[o.count - 1 - s] == n[n.count - 1 - s] { s += 1 }
-        // What remains in `old` after stripping the shared prefix/suffix must be
-        // empty for this to be a pure insertion.
-        guard p + s == o.count else { return nil }
-        let units = Array(n[p ..< n.count - s])
-        return (p, String(utf16CodeUnits: units, count: units.count))
+    /// Flush the editor's debounced autosave so disk is current before leaving
+    /// editor mode (no-op until the editor has loaded). The call is async, but
+    /// the web view is never torn down, so the queued save still lands.
+    private func flushEditorSave() {
+        guard webViewReady else { return }
+        webView.evaluateJavaScript("window.qcEditor && window.qcEditor.flushSave && window.qcEditor.flushSave()",
+                                   completionHandler: nil)
     }
 
     // MARK: - Window overrides
@@ -471,8 +440,8 @@ final class MainPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { editorOpen }
 
-    /// Intercept ⌘F (toggle editor) and ⌘J (focus the input strip) before
-    /// CodeMirror/WebKit can claim them.
+    /// Intercept ⌘F (switch mode) and ⌘W (dismiss) before CodeMirror/WebKit or
+    /// the standard Close menu item can claim them.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else {
             return super.performKeyEquivalent(with: event)
@@ -481,8 +450,8 @@ final class MainPanel: NSPanel {
         case "f":
             toggleEditor()
             return true
-        case "j" where editorOpen:
-            focusCapture()
+        case "w":
+            dismiss()
             return true
         default:
             return super.performKeyEquivalent(with: event)
@@ -755,8 +724,8 @@ private final class EditorContainerView: NSView {
 
 // MARK: - JS → Swift bridge
 
-/// WKWebView message handler. JS posts `{ type: "ready" | "save" | "archive",
-/// content?: String }` to the `editorBridge` handler.
+/// WKWebView message handler. JS posts `{ type: "ready" | "save" | "archive" |
+/// "dismiss", content?: String }` to the `editorBridge` handler.
 final class EditorBridge: NSObject, WKScriptMessageHandler {
     weak var panel: MainPanel?
 
@@ -771,6 +740,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
             if let content = dict["content"] as? String { panel?.write(content) }
         case "archive":
             panel?.archive()
+        case "dismiss":
+            // Esc in the editor when vim is off (editor.ts decides).
+            panel?.dismissFromEditor()
         default:
             break
         }

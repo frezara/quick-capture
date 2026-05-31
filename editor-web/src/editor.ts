@@ -707,7 +707,7 @@ declare global {
             focus: () => void;
             setFilename: (name: string) => void;
             setVimEnabled: (on: boolean) => void;
-            insertCapture: (from: number, text: string) => void;
+            flushSave: () => void;
         };
     }
 }
@@ -1140,6 +1140,13 @@ function mount(content: string) {
             readModeComp.of([]),
             keymap.of([
                 {
+                    // Esc dismisses the panel. This only fires when vim is OFF —
+                    // with vim on, its keymap (loaded earlier) owns Escape, so
+                    // this never runs. See ADR-0004.
+                    key: "Escape",
+                    run: () => { sendToSwift({ type: "dismiss" }); return true; },
+                },
+                {
                     key: "Mod-e",
                     run: (v) => { setReadMode(v, !readMode); return true; },
                 },
@@ -1230,16 +1237,12 @@ window.qcEditor = {
         else vimMode = "normal";
         updateBadge(view);
     },
-    // Split mode: a capture submitted from the input strip is inserted into the
-    // live buffer as a *targeted* transaction (not setContent/mount) so cursor,
-    // scroll, and undo survive and the insert is one undoable step. `from` is a
-    // UTF-16 offset computed Swift-side from FileWriter.insert (see ADR-0003).
-    // docChanged fires → existing scheduleSave() persists it; no suppress.
-    insertCapture: (from: number, text: string) => {
-        if (!view) return;
-        const len = view.state.doc.length;
-        const at = Math.max(0, Math.min(from, len));
-        view.dispatch({ changes: { from: at, to: at, insert: text }, scrollIntoView: false });
+    // Flush the debounced autosave immediately. Swift calls this before leaving
+    // editor mode so the file on disk is canonical before capture mode can write
+    // (ADR-0004 — disk is the single source of truth).
+    flushSave: () => {
+        if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
+        if (view) sendToSwift({ type: "save", content: view.state.doc.toString() });
     },
 };
 
