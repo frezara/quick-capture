@@ -1,5 +1,6 @@
 import AppKit
 import Darwin
+import ImageIO
 import SwiftUI
 import WebKit
 
@@ -588,6 +589,39 @@ final class MainPanel: NSPanel {
         }
     }
 
+    /// The editor asked for an attachment's bytes (its file read-access is
+    /// scoped to the app bundle, so it can't load capture-folder images
+    /// itself). Replies with a data URL — downscaled so a 6K Retina PNG
+    /// doesn't ship a multi-MB string over evaluateJavaScript — or null when
+    /// the file is missing, which the editor renders as a missing state.
+    fileprivate func sendAttachment(relativePath: String) {
+        guard webViewReady else { return }
+        let baseDir = loadedFileURL.deletingLastPathComponent().standardizedFileURL
+        let resolved = baseDir.appendingPathComponent(relativePath).standardizedFileURL
+
+        var payload = "null"
+        // The link is user-editable text — only serve files inside the capture
+        // file's folder, so a stray `../../…` path can't read elsewhere.
+        if resolved.path.hasPrefix(baseDir.path + "/") {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 1200,
+            ]
+            if let source = CGImageSourceCreateWithURL(resolved as CFURL, nil),
+               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
+               let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
+                payload = "\"data:image/png;base64,\(png.base64EncodedString())\""
+            }
+        }
+
+        guard let pathJSON = String(data: try! JSONEncoder().encode(relativePath), encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.attachmentLoaded(\(pathJSON), \(payload))",
+            completionHandler: nil
+        )
+    }
+
     private func pushContent(_ text: String) {
         lastSyncedContent = text
         guard let encoded = String(data: try! JSONEncoder().encode(text), encoding: .utf8) else { return }
@@ -775,7 +809,8 @@ private final class EditorContainerView: NSView {
 // MARK: - JS → Swift bridge
 
 /// WKWebView message handler. JS posts `{ type: "ready" | "save" | "archive" |
-/// "dismiss", content?: String }` to the `editorBridge` handler.
+/// "dismiss" | "attachment", content?: String, path?: String }` to the
+/// `editorBridge` handler.
 final class EditorBridge: NSObject, WKScriptMessageHandler {
     weak var panel: MainPanel?
 
@@ -793,6 +828,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
         case "dismiss":
             // Esc in the editor when vim is off (editor.ts decides).
             panel?.dismissFromEditor()
+        case "attachment":
+            // The editor wants an image's bytes for the expanded preview.
+            if let path = dict["path"] as? String { panel?.sendAttachment(relativePath: path) }
         default:
             break
         }

@@ -166,6 +166,117 @@ function selectionOverlaps(state: EditorState, from: number, to: number): boolea
     return false;
 }
 
+// MARK: - Attachment image lines (folded preview)
+//
+// An indented `![label](path)` child line (written under a todo by the
+// capture flow) renders as a compact folded pill; clicking it expands an
+// inline preview. Image bytes come over the JS↔Swift bridge as a data URL —
+// the web view's file read-access is scoped to the app bundle, so a relative
+// <img src> could never resolve against the capture file's folder.
+
+/// Expansion is view-local by design: reloads (external file changes) reset
+/// to folded. Keyed by the link's relative path.
+const expandedAttachments = new Set<string>();
+/// path → data URL, or null when Swift reported the file missing.
+const attachmentCache = new Map<string, string | null>();
+
+class ImageWidget extends WidgetType {
+    constructor(readonly path: string, readonly label: string) { super(); }
+
+    toDOM(): HTMLElement {
+        const wrap = document.createElement("span");
+        wrap.className = "cm-attachment";
+        wrap.dataset.path = this.path;
+        wrap.dataset.label = this.label;
+        renderAttachment(wrap, this.path, this.label);
+        // Keep CodeMirror from treating the click as a cursor placement —
+        // a cursor on the line would reveal the raw markdown and replace the
+        // widget mid-click.
+        wrap.addEventListener("mousedown", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+        });
+        wrap.addEventListener("click", (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            if (expandedAttachments.has(this.path)) {
+                expandedAttachments.delete(this.path);
+            } else {
+                expandedAttachments.add(this.path);
+                requestAttachmentIfNeeded(this.path);
+            }
+            for (const el of attachmentElements(this.path)) {
+                renderAttachment(el, this.path, this.label);
+            }
+            view?.requestMeasure();
+        });
+        return wrap;
+    }
+
+    eq(other: WidgetType): boolean {
+        return other instanceof ImageWidget
+            && other.path === this.path
+            && other.label === this.label;
+    }
+
+    ignoreEvent(): boolean { return true; }
+}
+
+function attachmentElements(path: string): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(".cm-attachment"))
+        .filter((el) => el.dataset.path === path);
+}
+
+function requestAttachmentIfNeeded(path: string) {
+    if (attachmentCache.has(path)) return;
+    sendToSwift({ type: "attachment", path });
+}
+
+function renderAttachment(el: HTMLElement, path: string, label: string) {
+    const expanded = expandedAttachments.has(path);
+    el.classList.toggle("cm-attachment--expanded", expanded);
+    el.innerHTML = "";
+    if (!expanded) {
+        el.appendChild(makeAttachmentPill(label, "folded"));
+        return;
+    }
+    const data = attachmentCache.get(path);
+    if (data === undefined) {
+        el.appendChild(makeAttachmentPill("Loading…", "loading"));
+    } else if (data === null) {
+        el.appendChild(makeAttachmentPill("Attachment not found", "missing"));
+    } else {
+        const img = document.createElement("img");
+        img.className = "cm-attachment-img";
+        img.src = data;
+        img.addEventListener("load", () => view?.requestMeasure());
+        el.appendChild(img);
+    }
+}
+
+function makeAttachmentPill(text: string, kind: "folded" | "loading" | "missing"): HTMLElement {
+    const pill = document.createElement("span");
+    pill.className = `cm-attachment-pill cm-attachment-pill--${kind}`;
+    pill.innerHTML = kind === "missing"
+        ? `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+               <rect x="3" y="3" width="18" height="18" rx="2"/>
+               <line x1="3" y1="3" x2="21" y2="21"/>
+           </svg>`
+        : `<svg width="12" height="12" viewBox="0 0 24 24" fill="none"
+                stroke="currentColor" stroke-width="2"
+                stroke-linecap="round" stroke-linejoin="round">
+               <rect x="3" y="3" width="18" height="18" rx="2"/>
+               <circle cx="8.5" cy="8.5" r="1.5"/>
+               <path d="M21 15l-5-5L5 21"/>
+           </svg>`;
+    const span = document.createElement("span");
+    span.textContent = text;
+    pill.appendChild(span);
+    return pill;
+}
+
 /// The accent "#" glyph that stands in for the H1 mark — a small filled accent
 /// box with a white hash, matching the editor mockup. H2–H6 marks stay hidden.
 
@@ -263,6 +374,22 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     from: line.from, to: line.from,
                     deco: Decoration.line({ class: `cm-indented cm-indent-${level}` }),
                 });
+            }
+
+            // Attachment image child line — fold to a pill (or the expanded
+            // preview) unless the cursor is on the line, which reveals the
+            // raw markdown like every other live-preview element.
+            const imageMatch = line.text.match(/^(\s+)!\[[^\]]*\]\((\S+?)\)\s*$/);
+            if (imageMatch) {
+                if (readMode || !selectionOverlaps(view.state, line.from, line.to)) {
+                    const path = imageMatch[2];
+                    const label = decodeURIComponent(path.split("/").pop() ?? "screenshot");
+                    ranges.push({
+                        from: line.from + imageMatch[1].length, to: line.to,
+                        deco: Decoration.replace({ widget: new ImageWidget(path, label) }),
+                    });
+                }
+                continue;
             }
 
             const match = line.text.match(/^(\s*)([-*+]\s+)(\[[\sxX]\])/);
@@ -620,6 +747,40 @@ function makeTheme() {
         padding: "1px 6px",
         margin: "0 1px",
     },
+    // Attachment image line — folded pill / expanded inline preview.
+    ".cm-attachment": {
+        cursor: "pointer",
+    },
+    ".cm-attachment-pill": {
+        display: "inline-flex",
+        alignItems: "center",
+        gap: "6px",
+        padding: "2px 10px",
+        borderRadius: "6px",
+        backgroundColor: palette.surfaceField,
+        border: `1px solid ${palette.borderSoft}`,
+        color: palette.muted,
+        fontSize: "12px",
+        lineHeight: "1.5",
+        verticalAlign: "1px",
+        transition: "border-color 0.12s ease, color 0.12s ease",
+    },
+    ".cm-attachment:hover .cm-attachment-pill": {
+        borderColor: palette.accent,
+        color: palette.soft,
+    },
+    ".cm-attachment-pill--missing": {
+        fontStyle: "italic",
+    },
+    ".cm-attachment-img": {
+        display: "block",
+        maxWidth: "min(560px, 92%)",
+        maxHeight: "360px",
+        margin: "4px 0",
+        borderRadius: "8px",
+        border: `1px solid ${palette.borderSoft}`,
+        boxShadow: "0 12px 28px -16px rgba(28, 42, 60, 0.45)",
+    },
     // Completed task label — struck through and muted (the checkbox keeps its
     // accent fill). Applied only when the checkbox widget is rendered (cursor
     // off the line), so editing the raw markdown reads normally.
@@ -748,6 +909,7 @@ declare global {
             setFilename: (name: string) => void;
             setVimEnabled: (on: boolean) => void;
             flushSave: () => void;
+            attachmentLoaded: (path: string, dataURL: string | null) => void;
         };
     }
 }
@@ -1348,6 +1510,15 @@ window.qcEditor = {
     flushSave: () => {
         if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
         if (view) sendToSwift({ type: "save", content: view.state.doc.toString() });
+    },
+    // Swift's reply to an `attachment` bridge request: a data URL, or null
+    // when the file is missing (R22 — render the missing state, never hang).
+    attachmentLoaded: (path: string, dataURL: string | null) => {
+        attachmentCache.set(path, dataURL);
+        for (const el of attachmentElements(path)) {
+            renderAttachment(el, path, el.dataset.label ?? "screenshot");
+        }
+        view?.requestMeasure();
     },
 };
 
