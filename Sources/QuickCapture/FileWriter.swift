@@ -168,10 +168,9 @@ enum FileWriter {
                     }
                     i += 1
                     // Same child rule as extractCompletedItems and the editor
-                    // (2+ spaces or a tab) so all three sites agree on what
-                    // travels with a parent task.
+                    // so all three sites agree on what travels with a parent task.
                     while i < lines.count,
-                          lines[i].range(of: #"^( {2,}|\t)\S"#, options: .regularExpression) != nil {
+                          lines[i].range(of: childContinuationPattern, options: .regularExpression) != nil {
                         i += 1
                     }
                     continue
@@ -223,6 +222,12 @@ enum FileWriter {
         return line.range(of: #"^[-*+]\s+\["#, options: .regularExpression) != nil
     }
 
+    /// Matches a line that is an indented continuation of its parent task:
+    /// 2+ spaces or a tab before a non-space character. The same rule lives in
+    /// editor-web/src/editor.ts (child grouping + image-line matching) and must
+    /// stay in sync with it.
+    private static let childContinuationPattern = #"^( {2,}|\t)\S"#
+
     // MARK: - Archive
 
     /// Moves every `- [x]` line from `sourceURL` into a sibling `_archive`
@@ -264,9 +269,11 @@ enum FileWriter {
 
     /// Splits `content` into the file body with every `- [x]` line removed,
     /// plus a list of those removed items with their containing section name.
-    /// A checked task's trailing indented continuation lines (e.g. an
-    /// attachment image link) move with it, so the archive never strands a
-    /// child in the source file.
+    /// A checked task's trailing indented continuation lines that are NOT
+    /// themselves task lines (e.g. attachment image links, notes) move with it,
+    /// so the archive never strands a child in the source file. Indented task
+    /// lines are left for the main loop to handle (checked ones are extracted
+    /// individually and flattened; unchecked ones remain in the source).
     static func extractCompletedItems(from content: String) -> (remaining: String, items: [ArchivedItem]) {
         let lines = content.components(separatedBy: "\n")
         var items: [ArchivedItem] = []
@@ -285,8 +292,13 @@ enum FileWriter {
                 let unindented = line.replacingOccurrences(of: #"^\s+"#, with: "", options: .regularExpression)
                 var children: [String] = []
                 var j = i + 1
+                // Collect only indented continuation lines (notes, image links).
+                // Stop at any indented task line — the main loop handles nested
+                // tasks individually (checked ones get extracted and flattened;
+                // unchecked ones stay in the source).
                 while j < lines.count,
-                      lines[j].range(of: #"^( {2,}|\t)\S"#, options: .regularExpression) != nil {
+                      lines[j].range(of: childContinuationPattern, options: .regularExpression) != nil,
+                      lines[j].range(of: #"^\s*[-*+]\s+\["#, options: .regularExpression) == nil {
                     // The parent flattens to top level, so children normalize
                     // to a 2-space indent under it.
                     let body = lines[j].replacingOccurrences(of: #"^\s+"#, with: "", options: .regularExpression)

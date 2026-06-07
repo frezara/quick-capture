@@ -206,7 +206,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         let panel = MainPanel(
             appState: appState,
             onSubmit: { [weak self] text, tag, attachment in
-                self?.handleCapture(text, tag: tag, attachment: attachment)
+                self?.handleCapture(text, tag: tag, attachment: attachment) ?? false
             },
             onDismiss: { [weak self] in self?.hideCapture() }
         )
@@ -225,16 +225,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: .capturePanelDidHide, object: nil)
     }
 
-    private func handleCapture(_ text: String, tag: String?, attachment: URL? = nil) {
+    @discardableResult
+    private func handleCapture(_ text: String, tag: String?, attachment: URL? = nil) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
 
         if tag?.lowercased() == "cal" {
             // Calendar captures never touch the markdown file; the capture UI
             // disables the chip in #cal mode, so any attachment is dropped here
             // with the user already informed.
-            handleCalendarCapture(trimmed)
-            return
+            return handleCalendarCapture(trimmed)
         }
 
         // Copy the image BEFORE writing the markdown (R16): a failed copy must
@@ -246,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             do {
                 attachmentLink = try AttachmentStore.copy(attachment, besideFile: appState.captureFileURL)
             } catch {
-                guard confirmSaveWithoutAttachment(error) else { return }
+                guard confirmSaveWithoutAttachment(error) else { return false }
             }
         }
 
@@ -259,12 +259,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 attachmentLink: attachmentLink
             )
             hideCapture()
+            return true
         } catch {
             let alert = NSAlert()
             alert.messageText = "Couldn't save"
             alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
             alert.runModal()
+            return false
         }
     }
 
@@ -283,20 +285,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     /// `#cal` branch: parse the text as a calendar event, hand the resulting
     /// `.ics` to the default handler (Calendar.app shows its own confirmation
     /// sheet). The markdown todo file is NOT touched for these captures.
-    private func handleCalendarCapture(_ text: String) {
+    /// Returns true when the .ics was opened and the panel dismissed.
+    @discardableResult
+    private func handleCalendarCapture(_ text: String) -> Bool {
         switch EventParser.parse(text) {
         case .success(let event):
             do {
                 let url = try ICSWriter.writeTempFile(for: event)
                 NSWorkspace.shared.open(url)
                 hideCapture()
+                return true
             } catch {
                 showCalendarError(message: "Couldn't create calendar event",
                                   detail: error.localizedDescription)
+                return false
             }
         case .failure(let error):
             showCalendarError(message: "Couldn't create calendar event",
                               detail: error.localizedDescription)
+            return false
         }
     }
 

@@ -1,4 +1,4 @@
-import { EditorState, RangeSetBuilder, Compartment } from "@codemirror/state";
+import { EditorState, RangeSetBuilder, Compartment, StateEffect } from "@codemirror/state";
 import {
     EditorView, keymap, drawSelection, highlightActiveLine,
     WidgetType, Decoration, DecorationSet, ViewPlugin, ViewUpdate,
@@ -179,6 +179,10 @@ function selectionOverlaps(state: EditorState, from: number, to: number): boolea
 const expandedAttachments = new Set<string>();
 /// path → data URL, or null when Swift reported the file missing.
 const attachmentCache = new Map<string, string | null>();
+// An empty dispatch does not satisfy the livePreview update guard, so
+// attachment state changes (cache fill, expansion toggle) carry an explicit
+// effect — livePreview checks for it and rebuilds decorations deterministically.
+const attachmentStateChanged = StateEffect.define<null>();
 
 class ImageWidget extends WidgetType {
     constructor(readonly path: string, readonly label: string) { super(); }
@@ -208,6 +212,9 @@ class ImageWidget extends WidgetType {
             for (const el of attachmentElements(this.path)) {
                 renderAttachment(el, this.path, this.label);
             }
+            // Expansion state changed — carry an explicit effect so the
+            // livePreview update guard fires and decorations are reconciled.
+            view?.dispatch({ effects: attachmentStateChanged.of(null) });
             view?.requestMeasure();
         });
         return wrap;
@@ -379,11 +386,14 @@ function buildLivePreview(view: EditorView): DecorationSet {
             // Attachment image child line — fold to a pill (or the expanded
             // preview) unless the cursor is on the line, which reveals the
             // raw markdown like every other live-preview element.
-            const imageMatch = line.text.match(/^(\s+)!\[[^\]]*\]\((\S+?)\)\s*$/);
+            const imageMatch = line.text.match(/^( {2,}|\t)!\[[^\]]*\]\((\S+?)\)\s*$/);
             if (imageMatch) {
                 if (readMode || !selectionOverlaps(view.state, line.from, line.to)) {
                     const path = imageMatch[2];
-                    const label = decodeURIComponent(path.split("/").pop() ?? "screenshot");
+                    const rawName = path.split("/").pop() ?? "screenshot";
+                    let label: string;
+                    try { label = decodeURIComponent(rawName); }
+                    catch { label = rawName; }   // malformed %-sequences (e.g. 100%done.png) must not throw inside a ViewPlugin update
                     ranges.push({
                         from: line.from + imageMatch[1].length, to: line.to,
                         deco: Decoration.replace({ widget: new ImageWidget(path, label) }),
@@ -467,7 +477,8 @@ const livePreview = ViewPlugin.fromClass(class {
     }
 
     update(update: ViewUpdate) {
-        if (update.docChanged || update.viewportChanged || update.selectionSet) {
+        if (update.docChanged || update.viewportChanged || update.selectionSet
+            || update.transactions.some(tr => tr.effects.some(e => e.is(attachmentStateChanged)))) {
             this.decorations = buildLivePreview(update.view);
         }
     }
@@ -1384,6 +1395,11 @@ function mount(content: string) {
     const parent = document.getElementById("editor")!;
     suppressNextSave = true;
 
+    // Reload = fresh disk truth: the cache may be stale (file replaced on disk)
+    // and fold state resets to folded by design.
+    expandedAttachments.clear();
+    attachmentCache.clear();
+
     if (view) {
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } });
         return;
@@ -1518,6 +1534,9 @@ window.qcEditor = {
         for (const el of attachmentElements(path)) {
             renderAttachment(el, path, el.dataset.label ?? "screenshot");
         }
+        // Dispatch the effect so decoration rebuilds reuse fresh cache state;
+        // an empty dispatch alone would not satisfy the update guard.
+        view?.dispatch({ effects: attachmentStateChanged.of(null) });
         view?.requestMeasure();
     },
 };

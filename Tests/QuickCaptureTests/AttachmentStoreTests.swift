@@ -84,6 +84,31 @@ final class AttachmentStoreTests: XCTestCase {
                        "timestamp should be YYYY-MM-DD-HHMMSS; got \(s)")
     }
 
+    func testCopyThirdCollisionGetsDashThree() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let captureFile = dir.appendingPathComponent("inbox.md")
+        let source = try makeScreenshot(in: dir, named: "Screenshot.png", contents: "first")
+        let fixed = Date(timeIntervalSince1970: 1_700_000_000)
+        try FileManager.default.setAttributes([.creationDate: fixed], ofItemAtPath: source.path)
+
+        let first = try AttachmentStore.copy(source, besideFile: captureFile)
+        try "second".write(to: source, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.creationDate: fixed], ofItemAtPath: source.path)
+        let second = try AttachmentStore.copy(source, besideFile: captureFile)
+        try "third".write(to: source, atomically: true, encoding: .utf8)
+        try FileManager.default.setAttributes([.creationDate: fixed], ofItemAtPath: source.path)
+        let third = try AttachmentStore.copy(source, besideFile: captureFile)
+
+        XCTAssertTrue(third.hasSuffix("-3.png"), "third collision should get a -3 suffix; got \(third)")
+        let firstContents = try String(contentsOf: dir.appendingPathComponent(first), encoding: .utf8)
+        let secondContents = try String(contentsOf: dir.appendingPathComponent(second), encoding: .utf8)
+        let thirdContents = try String(contentsOf: dir.appendingPathComponent(third), encoding: .utf8)
+        XCTAssertEqual(firstContents, "first", "first file must be untouched; got \(firstContents)")
+        XCTAssertEqual(secondContents, "second", "second file must be untouched; got \(secondContents)")
+        XCTAssertEqual(thirdContents, "third", "third file must preserve its distinct contents; got \(thirdContents)")
+    }
+
     // MARK: - Helpers
 
     private func makeTempDir() throws -> URL {

@@ -49,6 +49,40 @@ final class ScreenshotLocatorTests: XCTestCase {
         XCTAssertFalse(ScreenshotLocator.isScreenshotFile(URL(fileURLWithPath: "/x/holiday.png")))
     }
 
+    func testIsScreenshotFileMatchesConfiguredName() {
+        // A file whose prefix matches configuredName should be detected.
+        XCTAssertTrue(
+            ScreenshotLocator.isScreenshotFile(
+                URL(fileURLWithPath: "/x/Grab 2026-06-07.png"),
+                configuredName: "Grab"
+            ),
+            "file prefixed with configured name should be recognised as a screenshot"
+        )
+        // Same path with no configuredName: "Grab" is not a built-in prefix, so it must not match.
+        XCTAssertFalse(
+            ScreenshotLocator.isScreenshotFile(
+                URL(fileURLWithPath: "/x/Grab 2026-06-07.png"),
+                configuredName: nil
+            ),
+            "file with non-standard prefix must not match when configuredName is nil"
+        )
+        // When configuredName is "Grab", the built-in "Screenshot…" names must still match.
+        XCTAssertTrue(
+            ScreenshotLocator.isScreenshotFile(
+                URL(fileURLWithPath: "/x/Screenshot 2026-06-07 at 14.30.12.png"),
+                configuredName: "Grab"
+            ),
+            "default Screenshot prefix must still match even when a custom configuredName is set"
+        )
+        XCTAssertTrue(
+            ScreenshotLocator.isScreenshotFile(
+                URL(fileURLWithPath: "/x/Screen Shot 2021-01-01 at 09.00.00.png"),
+                configuredName: "Grab"
+            ),
+            "legacy Screen Shot prefix must still match even when a custom configuredName is set"
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeTempDir() throws -> URL {

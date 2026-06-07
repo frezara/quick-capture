@@ -3,7 +3,7 @@ import SwiftUI
 
 struct CaptureView: View {
     @ObservedObject var appState: AppState
-    let onSubmit: (String, String?, URL?) -> Void
+    let onSubmit: (String, String?, URL?) -> Bool
     let onClose: () -> Void
     let onToggleEditor: () -> Void
     let onEscape: () -> Void
@@ -546,7 +546,10 @@ struct CaptureView: View {
         // Calendar captures never write markdown, so the attachment has
         // nowhere to go — the chip is visibly disabled in that mode (R21).
         let attachment = isCalendarMode ? nil : appState.pendingAttachment
-        onSubmit(trimmedText, tag, attachment)
+        let saved = onSubmit(trimmedText, tag, attachment)
+        // On a failed or user-declined save, leave the typed text and chip
+        // intact so the user can retry without retyping.
+        guard saved else { return }
         todoText = ""
         tagText = ""
         appState.pendingAttachment = nil
@@ -716,7 +719,7 @@ private extension AppState {
 #Preview("Capture · standalone") {
     CaptureView(
         appState: .previewSeeded(),
-        onSubmit: { _, _, _ in }, onClose: {}, onToggleEditor: {},
+        onSubmit: { _, _, _ in true }, onClose: {}, onToggleEditor: {},
         onEscape: {}, onContentSizeChange: { _ in }
     )
     .frame(width: 600)
@@ -727,7 +730,7 @@ private extension AppState {
 #Preview("Capture · dark") {
     CaptureView(
         appState: .previewSeeded(),
-        onSubmit: { _, _, _ in }, onClose: {}, onToggleEditor: {},
+        onSubmit: { _, _, _ in true }, onClose: {}, onToggleEditor: {},
         onEscape: {}, onContentSizeChange: { _ in }
     )
     .frame(width: 600)

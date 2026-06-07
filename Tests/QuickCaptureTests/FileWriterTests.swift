@@ -486,6 +486,133 @@ final class FileWriterTests: XCTestCase {
         XCTAssertTrue(archived.contains("## work"))
     }
 
+    // MARK: - extractCompletedItems: subtask semantics
+
+    func testArchiveKeepsUncheckedSubtaskOfCheckedParent() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] done
+          - [ ] open sub
+        - [ ] top
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertTrue(remaining.contains("  - [ ] open sub"),
+                      "unchecked subtask of checked parent must stay in source; got:\n\(remaining)")
+        XCTAssertTrue(remaining.contains("- [ ] top"),
+                      "sibling open task must stay in source; got:\n\(remaining)")
+        XCTAssertEqual(items, [
+            FileWriter.ArchivedItem(text: "- [x] done", section: "work")
+        ], "parent must archive with no children (subtask line stops child collection)")
+    }
+
+    func testArchiveExtractsNestedCheckedSubtaskAsOwnItem() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] parent
+          - [x] done sub
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertFalse(remaining.contains("- [x] parent"),
+                       "checked parent must not remain in source; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("- [x] done sub"),
+                       "checked sub-task must not remain in source; got:\n\(remaining)")
+        XCTAssertEqual(items.count, 2,
+                       "both checked items must be extracted as separate flat items; got:\n\(items)")
+        // Neither item should carry the other as a child.
+        XCTAssertTrue(items[0].children.isEmpty,
+                      "parent's children must be empty (sub-task must not appear there); got:\n\(items[0].children)")
+        XCTAssertTrue(items[1].children.isEmpty,
+                      "sub-task's children must be empty; got:\n\(items[1].children)")
+        let texts = items.map(\.text)
+        XCTAssertTrue(texts.contains("- [x] parent"), "parent must appear as a flat archived item")
+        XCTAssertTrue(texts.contains("- [x] done sub"), "sub-task must appear as its own flat archived item")
+    }
+
+    func testExtractCompletedCarriesMultipleNonTaskChildren() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] done with extras
+          ![screenshot](attachments/a.png)
+          continuation note
+        - [ ] open
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertFalse(remaining.contains("![screenshot]"),
+                       "image child must not remain in source; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("continuation note"),
+                       "note child must not remain in source; got:\n\(remaining)")
+        XCTAssertTrue(remaining.contains("- [ ] open"),
+                      "unrelated open task must stay in source; got:\n\(remaining)")
+        XCTAssertEqual(items, [
+            FileWriter.ArchivedItem(
+                text: "- [x] done with extras",
+                section: "work",
+                children: [
+                    "  ![screenshot](attachments/a.png)",
+                    "  continuation note"
+                ]
+            )
+        ], "both non-task children must travel with the parent in order; got:\n\(items)")
+    }
+
+    func testExtractCompletedTwoConsecutivePairs() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] done1
+          ![screenshot](attachments/a.png)
+        - [x] done2
+          ![screenshot](attachments/b.png)
+        - [ ] open
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertTrue(remaining.contains("- [ ] open"),
+                      "remaining must keep the open task; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("- [x]"),
+                       "remaining must contain no checked tasks; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("![screenshot]"),
+                       "remaining must contain no attachment lines; got:\n\(remaining)")
+        XCTAssertEqual(items.count, 2,
+                       "exactly two archived items; got:\n\(items)")
+        XCTAssertEqual(items[0].text, "- [x] done1")
+        XCTAssertEqual(items[0].children, ["  ![screenshot](attachments/a.png)"],
+                       "first item must carry only its own child; got:\n\(items[0].children)")
+        XCTAssertEqual(items[1].text, "- [x] done2")
+        XCTAssertEqual(items[1].children, ["  ![screenshot](attachments/b.png)"],
+                       "second item must carry only its own child; got:\n\(items[1].children)")
+    }
+
+    // MARK: - insert: multiple child lines
+
+    func testInsertMultipleChildLinesLandTogether() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] existing plain
+        """
+        let result = FileWriter.insert(
+            item: "- [ ] fix layout !!",
+            childLines: [
+                "  ![screenshot](attachments/a.png)",
+                "  second child line"
+            ],
+            underHeading: "work",
+            in: content
+        )
+        XCTAssertTrue(
+            result.contains("- [ ] fix layout !!\n  ![screenshot](attachments/a.png)\n  second child line\n- [ ] existing plain"),
+            "both child lines must land consecutively after the parent in order; got:\n\(result)"
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeTempFile() -> URL {

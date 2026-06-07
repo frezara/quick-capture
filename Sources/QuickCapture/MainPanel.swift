@@ -23,7 +23,7 @@ import WebKit
 ///   written to disk directly. Closed → captures write the file as before.
 final class MainPanel: NSPanel {
     private let appState: AppState
-    private let onSubmit: (String, String?, URL?) -> Void
+    private let onSubmit: (String, String?, URL?) -> Bool
     private let onDismiss: () -> Void
 
     private(set) var editorOpen = false
@@ -64,6 +64,9 @@ final class MainPanel: NSPanel {
     /// True for the duration of the editor→capture collapse animation, so
     /// `captureContentDidChange` defers window geometry to the animation.
     private var isCollapsing = false
+    /// Incremented on every fresh summon or ⌘⇧S; completion blocks capture it
+    /// so stale completions from a prior summon cannot resurrect a detached chip.
+    private var attachLookupGeneration = 0
 
     private let splitWidth: CGFloat = 1000
     private let captureWidth: CGFloat = 600
@@ -74,7 +77,7 @@ final class MainPanel: NSPanel {
     }
 
     init(appState: AppState,
-         onSubmit: @escaping (String, String?, URL?) -> Void,
+         onSubmit: @escaping (String, String?, URL?) -> Bool,
          onDismiss: @escaping () -> Void) {
         self.appState = appState
         self.onSubmit = onSubmit
@@ -154,7 +157,7 @@ final class MainPanel: NSPanel {
             appState: appState,
             // Capture and editor are mutually exclusive (ADR-0004), so a
             // submit always writes straight to disk, the canonical copy.
-            onSubmit: { [weak self] text, tag, attachment in self?.onSubmit(text, tag, attachment) },
+            onSubmit: { [weak self] text, tag, attachment in self?.onSubmit(text, tag, attachment) ?? false },
             onClose: { [weak self] in self?.onDismiss() },
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
@@ -433,12 +436,14 @@ final class MainPanel: NSPanel {
     /// Detection runs only on a fresh summon (R20) — never on the ⌘F return —
     /// so a detached chip stays detached for the rest of the capture session.
     private func detectRecentScreenshot() {
+        attachLookupGeneration += 1
+        let generation = attachLookupGeneration
         appState.pendingAttachment = nil
         appState.recentScreenshotExists = false
         appState.attachFeedback = nil
         let window = appState.screenshotAttachWindow
         ScreenshotLocator.mostRecent { [weak self] shot in
-            guard let self, let shot else { return }
+            guard let self, generation == self.attachLookupGeneration, let shot else { return }
             let age = Date().timeIntervalSince(shot.createdAt)
             if window < 0 || age <= window {
                 self.appState.pendingAttachment = shot.url
@@ -450,8 +455,10 @@ final class MainPanel: NSPanel {
 
     /// ⌘⇧S — attach the most recent screenshot regardless of age (R4).
     private func attachMostRecentScreenshot() {
+        attachLookupGeneration += 1
+        let generation = attachLookupGeneration
         ScreenshotLocator.mostRecent { [weak self] shot in
-            guard let self else { return }
+            guard let self, generation == self.attachLookupGeneration else { return }
             if let shot {
                 self.appState.pendingAttachment = shot.url
             } else {
@@ -588,25 +595,40 @@ final class MainPanel: NSPanel {
     /// itself). Replies with a data URL — downscaled so a 6K Retina PNG
     /// doesn't ship a multi-MB string over evaluateJavaScript — or null when
     /// the file is missing, which the editor renders as a missing state.
+    /// The JS side shows a Loading state while the reply is in flight, so
+    /// the async reply is safe.
     fileprivate func sendAttachment(relativePath: String) {
         guard webViewReady else { return }
         let baseDir = loadedFileURL.deletingLastPathComponent().standardizedFileURL
         let resolved = baseDir.appendingPathComponent(relativePath).standardizedFileURL
 
-        var payload = "null"
         // The link is user-editable text — only serve files inside the capture
         // file's folder, so a stray `../../…` path can't read elsewhere.
-        if resolved.path.hasPrefix(baseDir.path + "/"),
-           let cg = AttachmentStore.thumbnail(at: resolved, maxPixelSize: 1200),
-           let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
-            payload = "\"data:image/png;base64,\(png.base64EncodedString())\""
+        guard resolved.path.hasPrefix(baseDir.path + "/") else {
+            guard let pathJSON = String(data: try! JSONEncoder().encode(relativePath), encoding: .utf8) else { return }
+            webView.evaluateJavaScript(
+                "window.qcEditor && window.qcEditor.attachmentLoaded(\(pathJSON), null)",
+                completionHandler: nil
+            )
+            return
         }
 
-        guard let pathJSON = String(data: try! JSONEncoder().encode(relativePath), encoding: .utf8) else { return }
-        webView.evaluateJavaScript(
-            "window.qcEditor && window.qcEditor.attachmentLoaded(\(pathJSON), \(payload))",
-            completionHandler: nil
-        )
+        // Thumbnail decode + PNG encode + base64 are CPU/IO-heavy; run them off
+        // the main thread so the message-handler callback returns immediately.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var payload = "null"
+            if let cg = AttachmentStore.thumbnail(at: resolved, maxPixelSize: 1200),
+               let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
+                payload = "\"data:image/png;base64,\(png.base64EncodedString())\""
+            }
+            guard let pathJSON = String(data: try! JSONEncoder().encode(relativePath), encoding: .utf8) else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.webView.evaluateJavaScript(
+                    "window.qcEditor && window.qcEditor.attachmentLoaded(\(pathJSON), \(payload))",
+                    completionHandler: nil
+                )
+            }
+        }
     }
 
     private func pushContent(_ text: String) {
