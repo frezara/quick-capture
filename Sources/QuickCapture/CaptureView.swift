@@ -1,5 +1,4 @@
 import AppKit
-import ImageIO
 import SwiftUI
 
 struct CaptureView: View {
@@ -379,8 +378,7 @@ struct CaptureView: View {
                 attachmentChip
             }
             tagChipsScroll
-            if appState.pendingAttachment == nil,
-               let hint = attachHintText {
+            if let hint = attachHintText {
                 Text(hint)
                     .font(TypeScale.chip)
                     .foregroundStyle(theme.inkTertiary)
@@ -418,9 +416,10 @@ struct CaptureView: View {
     // MARK: - Attachment chip
 
     /// Pull-in feedback wins over the standing hint; the hint only shows when
-    /// a screenshot actually exists to pull in, so the footer stays quiet on
-    /// summons with nothing to offer.
+    /// a screenshot actually exists to pull in and no chip is attached, so the
+    /// footer stays quiet on summons with nothing to offer.
     private var attachHintText: String? {
+        guard appState.pendingAttachment == nil else { return nil }
         if let feedback = appState.attachFeedback { return feedback }
         if appState.recentScreenshotExists { return "⌘⇧S to attach screenshot" }
         return nil
@@ -473,7 +472,6 @@ struct CaptureView: View {
                 .strokeBorder(theme.border, lineWidth: 1)
         )
         .opacity(isCalendarMode ? 0.55 : 1)
-        .onAppear { loadChipThumbnail(for: appState.pendingAttachment) }
     }
 
     /// Detach is sticky for the capture session — nothing re-attaches until a
@@ -490,14 +488,7 @@ struct CaptureView: View {
         chipThumbnail = nil
         guard let url else { return }
         DispatchQueue.global(qos: .userInitiated).async {
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 120,
-            ]
-            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
-                  let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
-            else { return }
+            guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 120) else { return }
             let image = NSImage(cgImage: cg, size: .zero)
             DispatchQueue.main.async {
                 if appState.pendingAttachment == url { chipThumbnail = image }

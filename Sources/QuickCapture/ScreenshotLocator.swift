@@ -45,8 +45,11 @@ enum ScreenshotLocator {
             options: [.skipsHiddenFiles]
         ) else { return nil }
 
+        // Resolve the configured base name once — CFPreferences is an IPC
+        // round-trip, and a Desktop can hold a lot of files.
+        let configuredName = CFPreferencesCopyAppValue("name" as CFString, "com.apple.screencapture" as CFString) as? String
         return urls
-            .filter { isScreenshotFile($0) }
+            .filter { isScreenshotFile($0, configuredName: configuredName) }
             .compactMap { url -> Screenshot? in
                 guard let date = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate else { return nil }
                 return Screenshot(url: url, createdAt: date)
@@ -58,11 +61,10 @@ enum ScreenshotLocator {
     /// (`com.apple.screencapture name`, default "Screenshot") plus an image
     /// extension. English-only by content; localized names are covered by the
     /// Spotlight path, this scan only backstops indexing lag.
-    static func isScreenshotFile(_ url: URL) -> Bool {
+    static func isScreenshotFile(_ url: URL, configuredName: String? = nil) -> Bool {
         let imageExtensions: Set<String> = ["png", "jpg", "jpeg", "tiff", "heic"]
         guard imageExtensions.contains(url.pathExtension.lowercased()) else { return false }
 
-        let configuredName = CFPreferencesCopyAppValue("name" as CFString, "com.apple.screencapture" as CFString) as? String
         let prefixes = [configuredName, "Screenshot", "Screen Shot"].compactMap { $0 }
         let name = url.lastPathComponent
         return prefixes.contains { name.range(of: $0, options: [.caseInsensitive, .anchored]) != nil }

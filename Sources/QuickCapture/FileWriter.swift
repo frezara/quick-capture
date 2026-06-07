@@ -167,8 +167,11 @@ enum FileWriter {
                         break
                     }
                     i += 1
+                    // Same child rule as extractCompletedItems and the editor
+                    // (2+ spaces or a tab) so all three sites agree on what
+                    // travels with a parent task.
                     while i < lines.count,
-                          lines[i].range(of: #"^\s+\S"#, options: .regularExpression) != nil {
+                          lines[i].range(of: #"^( {2,}|\t)\S"#, options: .regularExpression) != nil {
                         i += 1
                     }
                     continue

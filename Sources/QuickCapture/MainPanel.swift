@@ -1,6 +1,5 @@
 import AppKit
 import Darwin
-import ImageIO
 import SwiftUI
 import WebKit
 
@@ -153,7 +152,9 @@ final class MainPanel: NSPanel {
     private func makeCaptureView() -> CaptureView {
         CaptureView(
             appState: appState,
-            onSubmit: { [weak self] text, tag, attachment in self?.handleSubmit(text, tag, attachment) },
+            // Capture and editor are mutually exclusive (ADR-0004), so a
+            // submit always writes straight to disk, the canonical copy.
+            onSubmit: { [weak self] text, tag, attachment in self?.onSubmit(text, tag, attachment) },
             onClose: { [weak self] in self?.onDismiss() },
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
@@ -427,13 +428,6 @@ final class MainPanel: NSPanel {
     /// Esc in the editor with vim off (posted from editor.ts via the bridge).
     fileprivate func dismissFromEditor() { dismiss() }
 
-    /// A capture submitted from the capture box. Capture and editor are mutually
-    /// exclusive (ADR-0004), so this only runs in capture mode — it always writes
-    /// straight to disk, which is the canonical copy.
-    private func handleSubmit(_ text: String, _ tag: String?, _ attachment: URL?) {
-        onSubmit(text, tag, attachment)
-    }
-
     // MARK: - Screenshot attach
 
     /// Detection runs only on a fresh summon (R20) — never on the ⌘F return —
@@ -602,17 +596,10 @@ final class MainPanel: NSPanel {
         var payload = "null"
         // The link is user-editable text — only serve files inside the capture
         // file's folder, so a stray `../../…` path can't read elsewhere.
-        if resolved.path.hasPrefix(baseDir.path + "/") {
-            let options: [CFString: Any] = [
-                kCGImageSourceCreateThumbnailFromImageAlways: true,
-                kCGImageSourceCreateThumbnailWithTransform: true,
-                kCGImageSourceThumbnailMaxPixelSize: 1200,
-            ]
-            if let source = CGImageSourceCreateWithURL(resolved as CFURL, nil),
-               let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary),
-               let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
-                payload = "\"data:image/png;base64,\(png.base64EncodedString())\""
-            }
+        if resolved.path.hasPrefix(baseDir.path + "/"),
+           let cg = AttachmentStore.thumbnail(at: resolved, maxPixelSize: 1200),
+           let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
+            payload = "\"data:image/png;base64,\(png.base64EncodedString())\""
         }
 
         guard let pathJSON = String(data: try! JSONEncoder().encode(relativePath), encoding: .utf8) else { return }

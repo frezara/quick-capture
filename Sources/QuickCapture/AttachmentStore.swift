@@ -1,4 +1,5 @@
 import Foundation
+import ImageIO
 
 enum AttachmentStore {
     enum CopyError: LocalizedError {
@@ -43,9 +44,25 @@ enum AttachmentStore {
 
     /// `YYYY-MM-DD-HHMMSS` in the local timezone, POSIX locale for stable digits.
     static func timestamp(_ date: Date) -> String {
+        return formatter.string(from: date)
+    }
+
+    private static let formatter: DateFormatter = {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = "yyyy-MM-dd-HHmmss"
-        return f.string(from: date)
+        return f
+    }()
+
+    /// Downscaled decode shared by the capture chip (small) and the editor's
+    /// bridge-served preview (large). One home for the ImageIO options dance.
+    static func thumbnail(at url: URL, maxPixelSize: Int) -> CGImage? {
+        let options: [CFString: Any] = [
+            kCGImageSourceCreateThumbnailFromImageAlways: true,
+            kCGImageSourceCreateThumbnailWithTransform: true,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
+        ]
+        guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
+        return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
     }
 }
