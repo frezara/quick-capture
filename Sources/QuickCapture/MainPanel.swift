@@ -3,24 +3,23 @@ import Darwin
 import SwiftUI
 import WebKit
 
-/// The single floating panel that hosts both app surfaces. The capture **input
-/// strip** is always pinned to the top; on ⌘F the panel grows downward and the
-/// CodeMirror markdown **editor** opens *beneath* it (a "split"), and ⌘F again
-/// collapses it away. Both surfaces are stacked at once — they are no longer
-/// mutually-exclusive crossfaded modes. See ADR-0003.
+/// The single floating panel that hosts both app surfaces — the capture box and
+/// the CodeMirror markdown editor — as **mutually-exclusive modes** (ADR-0004).
+/// Both stay mounted (the editor's web view is kept warm); ⌘F crossfades
+/// between them while animating the window frame, so exactly one is visible.
 ///
 /// Behaviors keyed to whether the editor is open (`editorOpen`):
-/// - **Click-away / ⌘Tab dismiss** fires in both capture and editor modes
-///   (`resignKey`); `canDismissOnBlur` guards against false fires during transitions.
+/// - **Click-away dismiss** only fires in capture mode (`resignKey`); the
+///   editor survives losing focus so you can copy from other apps.
+///   `canDismissOnBlur` guards against false fires during transitions.
 /// - **⌘F** is intercepted in `performKeyEquivalent` *before* it reaches
-///   CodeMirror/WebKit (which would treat it as "find"), toggling the editor.
-///   **⌘J** jumps focus to the input strip while the editor is open.
+///   CodeMirror/WebKit (which would treat it as "find"), toggling the mode.
 /// - **Activation policy** is `.regular` while the editor is open so the
 ///   standard menu bar (⌘C/V/Z…) works, then `.accessory` when collapsed.
-/// - **Single writer:** while the editor is open its in-memory buffer is the
-///   canonical copy of the file; a capture is inserted into the buffer (reusing
-///   `FileWriter.insert` + a targeted CodeMirror transaction) rather than
-///   written to disk directly. Closed → captures write the file as before.
+/// - **Disk is canonical, one writer by mutual exclusion:** capture-mode
+///   submits write straight to disk via `FileWriter`; the editor flushes its
+///   debounced save (`flushEditorSave`) before leaving editor mode, and the
+///   file watcher reloads the warm editor on external changes.
 final class MainPanel: NSPanel {
     private let appState: AppState
     private let onSubmit: (String, String?, URL?) -> Bool

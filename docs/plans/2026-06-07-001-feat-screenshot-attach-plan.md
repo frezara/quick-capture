@@ -1,7 +1,7 @@
 ---
 title: "feat: Attach recent screenshots to quick captures"
 type: feat
-status: active
+status: completed
 date: 2026-06-07
 origin: docs/brainstorms/2026-06-07-screenshot-attach-requirements.md
 ---
