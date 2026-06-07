@@ -23,7 +23,7 @@ import WebKit
 ///   written to disk directly. Closed → captures write the file as before.
 final class MainPanel: NSPanel {
     private let appState: AppState
-    private let onSubmit: (String, String?) -> Void
+    private let onSubmit: (String, String?, URL?) -> Void
     private let onDismiss: () -> Void
 
     private(set) var editorOpen = false
@@ -74,7 +74,7 @@ final class MainPanel: NSPanel {
     }
 
     init(appState: AppState,
-         onSubmit: @escaping (String, String?) -> Void,
+         onSubmit: @escaping (String, String?, URL?) -> Void,
          onDismiss: @escaping () -> Void) {
         self.appState = appState
         self.onSubmit = onSubmit
@@ -152,7 +152,7 @@ final class MainPanel: NSPanel {
     private func makeCaptureView() -> CaptureView {
         CaptureView(
             appState: appState,
-            onSubmit: { [weak self] text, tag in self?.handleSubmit(text, tag) },
+            onSubmit: { [weak self] text, tag, attachment in self?.handleSubmit(text, tag, attachment) },
             onClose: { [weak self] in self?.onDismiss() },
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
@@ -166,6 +166,7 @@ final class MainPanel: NSPanel {
     /// the capture box.
     func show() {
         collapseStateReset()
+        detectRecentScreenshot()
         if let screen = currentScreenVisibleFrame() {
             anchorCenterY = screen.midY
             var f = frame
@@ -428,8 +429,40 @@ final class MainPanel: NSPanel {
     /// A capture submitted from the capture box. Capture and editor are mutually
     /// exclusive (ADR-0004), so this only runs in capture mode — it always writes
     /// straight to disk, which is the canonical copy.
-    private func handleSubmit(_ text: String, _ tag: String?) {
-        onSubmit(text, tag)
+    private func handleSubmit(_ text: String, _ tag: String?, _ attachment: URL?) {
+        onSubmit(text, tag, attachment)
+    }
+
+    // MARK: - Screenshot attach
+
+    /// Detection runs only on a fresh summon (R20) — never on the ⌘F return —
+    /// so a detached chip stays detached for the rest of the capture session.
+    private func detectRecentScreenshot() {
+        appState.pendingAttachment = nil
+        appState.recentScreenshotExists = false
+        appState.attachFeedback = nil
+        let window = appState.screenshotAttachWindow
+        ScreenshotLocator.mostRecent { [weak self] shot in
+            guard let self, let shot else { return }
+            let age = Date().timeIntervalSince(shot.createdAt)
+            if window < 0 || age <= window {
+                self.appState.pendingAttachment = shot.url
+            } else {
+                self.appState.recentScreenshotExists = true
+            }
+        }
+    }
+
+    /// ⌘⇧S — attach the most recent screenshot regardless of age (R4).
+    private func attachMostRecentScreenshot() {
+        ScreenshotLocator.mostRecent { [weak self] shot in
+            guard let self else { return }
+            if let shot {
+                self.appState.pendingAttachment = shot.url
+            } else {
+                self.appState.attachFeedback = "No screenshots found"
+            }
+        }
     }
 
     /// Flush the editor's debounced autosave so disk is current before leaving
@@ -446,13 +479,24 @@ final class MainPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { editorOpen }
 
-    /// Intercept ⌘F (switch mode) and ⌘W (dismiss) before CodeMirror/WebKit or
-    /// the standard Close menu item can claim them.
+    /// Intercept ⌘F (switch mode), ⌘W (dismiss), and ⌘⇧S (attach screenshot)
+    /// before CodeMirror/WebKit or the standard menu items can claim them.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else {
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased()
+
+        // ⌘⇧S carries [.command, .shift], so it must be matched before the
+        // exact-Command guard below would bounce it to super. Capture mode
+        // only — the chip is a capture-surface affordance.
+        if mods == [.command, .shift], key == "s", !editorOpen {
+            attachMostRecentScreenshot()
+            return true
+        }
+
+        guard mods == .command else {
             return super.performKeyEquivalent(with: event)
         }
-        switch event.charactersIgnoringModifiers?.lowercased() {
+        switch key {
         case "f":
             toggleEditor()
             return true

@@ -205,7 +205,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let panel = mainPanel { return panel }
         let panel = MainPanel(
             appState: appState,
-            onSubmit: { [weak self] text, tag in self?.handleCapture(text, tag: tag) },
+            onSubmit: { [weak self] text, tag, attachment in
+                self?.handleCapture(text, tag: tag, attachment: attachment)
+            },
             onDismiss: { [weak self] in self?.hideCapture() }
         )
         mainPanel = panel
@@ -223,13 +225,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: .capturePanelDidHide, object: nil)
     }
 
-    private func handleCapture(_ text: String, tag: String?) {
+    private func handleCapture(_ text: String, tag: String?, attachment: URL? = nil) {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return }
 
         if tag?.lowercased() == "cal" {
+            // Calendar captures never touch the markdown file; the capture UI
+            // disables the chip in #cal mode, so any attachment is dropped here
+            // with the user already informed.
             handleCalendarCapture(trimmed)
             return
+        }
+
+        // Copy the image BEFORE writing the markdown (R16): a failed copy must
+        // never leave a dangling image link in the file. The attachments folder
+        // and relative link resolve against the capture file path as it is
+        // right now, not as it was at attach time (R18).
+        var attachmentLink: String? = nil
+        if let attachment {
+            do {
+                attachmentLink = try AttachmentStore.copy(attachment, besideFile: appState.captureFileURL)
+            } catch {
+                guard confirmSaveWithoutAttachment(error) else { return }
+            }
         }
 
         do {
@@ -237,7 +255,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 trimmed,
                 tag: tag,
                 to: appState.captureFileURL,
-                includeTimestamp: appState.includeTimestamp
+                includeTimestamp: appState.includeTimestamp,
+                attachmentLink: attachmentLink
             )
             hideCapture()
         } catch {
@@ -247,6 +266,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
             alert.alertStyle = .warning
             alert.runModal()
         }
+    }
+
+    /// The screenshot couldn't be copied (deleted since attach, unwritable
+    /// destination, …). Never silently drop it — offer saving the todo plain.
+    private func confirmSaveWithoutAttachment(_ error: Error) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Couldn't attach screenshot"
+        alert.informativeText = "\(error.localizedDescription)\n\nSave the todo without it?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Save Without Screenshot")
+        alert.addButton(withTitle: "Don't Save")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// `#cal` branch: parse the text as a calendar event, hand the resulting

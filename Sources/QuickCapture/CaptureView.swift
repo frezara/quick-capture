@@ -1,9 +1,10 @@
 import AppKit
+import ImageIO
 import SwiftUI
 
 struct CaptureView: View {
     @ObservedObject var appState: AppState
-    let onSubmit: (String, String?) -> Void
+    let onSubmit: (String, String?, URL?) -> Void
     let onClose: () -> Void
     let onToggleEditor: () -> Void
     let onEscape: () -> Void
@@ -13,6 +14,10 @@ struct CaptureView: View {
     @State private var tagText = ""
     @State private var shakeTrigger = 0
     @State private var isShaking = false
+    /// Decoded chip thumbnail. Loaded off the main thread (a 6K Retina PNG
+    /// decoded inline would jank the summon); the chip frame shows immediately
+    /// and the image fills in.
+    @State private var chipThumbnail: NSImage?
     /// Sticky tag-suggestions visibility. Driven off `focused` transitions
     /// rather than read live, so a *transient* `focused == nil` (which AppKit
     /// briefly produces while the panel resizes) doesn't collapse the footer
@@ -120,6 +125,19 @@ struct CaptureView: View {
             tagText = ""
             tagFieldActive = false
             focused = .todo
+            appState.pendingAttachment = nil
+            appState.recentScreenshotExists = false
+            appState.attachFeedback = nil
+            chipThumbnail = nil
+        }
+        .onChange(of: appState.pendingAttachment) { _, newValue in
+            loadChipThumbnail(for: newValue)
+        }
+        .onChange(of: appState.attachFeedback) { _, newValue in
+            guard newValue != nil else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                appState.attachFeedback = nil
+            }
         }
     }
 
@@ -168,7 +186,8 @@ struct CaptureView: View {
                     set: { if $0 { focused = .todo } }
                 ),
                 onSubmit: { submit() },
-                onTab: { focused = .tag }
+                onTab: { focused = .tag },
+                onEmptyDelete: { detachChipIfPresent() }
             )
         }
         .padding(.horizontal, 15)
@@ -352,9 +371,27 @@ struct CaptureView: View {
         return "\(hours) hr \(remainder) min"
     }
 
-    // MARK: - Footer (tag pills left, hints right)
+    // MARK: - Footer (attachment chip, tag pills, screenshot hint)
 
     private var footer: some View {
+        HStack(spacing: Metrics.s2) {
+            if appState.pendingAttachment != nil {
+                attachmentChip
+            }
+            tagChipsScroll
+            if appState.pendingAttachment == nil,
+               let hint = attachHintText {
+                Text(hint)
+                    .font(TypeScale.chip)
+                    .foregroundStyle(theme.inkTertiary)
+                    .fixedSize()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: appState.attachFeedback)
+    }
+
+    private var tagChipsScroll: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Metrics.s1) {
                 ForEach(displayedTags, id: \.self) { tag in
@@ -375,6 +412,96 @@ struct CaptureView: View {
             )
             .frame(width: 32)
             .allowsHitTesting(false)
+        }
+    }
+
+    // MARK: - Attachment chip
+
+    /// Pull-in feedback wins over the standing hint; the hint only shows when
+    /// a screenshot actually exists to pull in, so the footer stays quiet on
+    /// summons with nothing to offer.
+    private var attachHintText: String? {
+        if let feedback = appState.attachFeedback { return feedback }
+        if appState.recentScreenshotExists { return "⌘⇧S to attach screenshot" }
+        return nil
+    }
+
+    /// Thumbnail chip for the attached screenshot. In `#cal` mode the chip is
+    /// disabled — a calendar capture never writes markdown, so the attachment
+    /// isn't kept, and the chip says so rather than silently dropping it.
+    private var attachmentChip: some View {
+        HStack(spacing: Metrics.s1) {
+            Group {
+                if let thumb = chipThumbnail {
+                    Image(nsImage: thumb)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(theme.inkTertiary)
+                }
+            }
+            .frame(width: 28, height: 19)
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+
+            Text(isCalendarMode ? "Not used for calendar captures" : "Screenshot")
+                .font(TypeScale.chip)
+                .foregroundStyle(isCalendarMode ? theme.inkTertiary : theme.inkSecondary)
+                .lineLimit(1)
+
+            if !isCalendarMode {
+                Button {
+                    detachChipIfPresent()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(theme.inkTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Remove screenshot (⌫ on empty input)")
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .fill(theme.surfaceField)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .strokeBorder(theme.border, lineWidth: 1)
+        )
+        .opacity(isCalendarMode ? 0.55 : 1)
+        .onAppear { loadChipThumbnail(for: appState.pendingAttachment) }
+    }
+
+    /// Detach is sticky for the capture session — nothing re-attaches until a
+    /// fresh summon or an explicit ⌘⇧S.
+    @discardableResult
+    private func detachChipIfPresent() -> Bool {
+        guard appState.pendingAttachment != nil else { return false }
+        appState.pendingAttachment = nil
+        chipThumbnail = nil
+        return true
+    }
+
+    private func loadChipThumbnail(for url: URL?) {
+        chipThumbnail = nil
+        guard let url else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            let options: [CFString: Any] = [
+                kCGImageSourceCreateThumbnailFromImageAlways: true,
+                kCGImageSourceCreateThumbnailWithTransform: true,
+                kCGImageSourceThumbnailMaxPixelSize: 120,
+            ]
+            guard let source = CGImageSourceCreateWithURL(url as CFURL, nil),
+                  let cg = CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
+            else { return }
+            let image = NSImage(cgImage: cg, size: .zero)
+            DispatchQueue.main.async {
+                if appState.pendingAttachment == url { chipThumbnail = image }
+            }
         }
     }
 
@@ -425,9 +552,14 @@ struct CaptureView: View {
         }
         let trimmedTag = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
         let tag: String? = trimmedTag.isEmpty ? nil : trimmedTag
-        onSubmit(trimmedText, tag)
+        // Calendar captures never write markdown, so the attachment has
+        // nowhere to go — the chip is visibly disabled in that mode (R21).
+        let attachment = isCalendarMode ? nil : appState.pendingAttachment
+        onSubmit(trimmedText, tag, attachment)
         todoText = ""
         tagText = ""
+        appState.pendingAttachment = nil
+        chipThumbnail = nil
     }
 
     private func chipTapped(_ tag: String) {
@@ -467,6 +599,9 @@ struct TodoTextEditor: NSViewRepresentable {
     @Binding var isFocused: Bool
     let onSubmit: () -> Void
     let onTab: () -> Void
+    /// ⌫ with the field already empty. Returns true when consumed (e.g. the
+    /// attachment chip was detached) so the delete doesn't also beep.
+    var onEmptyDelete: () -> Bool = { false }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -564,6 +699,9 @@ struct TodoTextEditor: NSViewRepresentable {
             case #selector(NSResponder.insertTab(_:)):
                 parent.onTab()
                 return true
+            case #selector(NSResponder.deleteBackward(_:)):
+                guard tv.string.isEmpty else { return false }
+                return parent.onEmptyDelete()
             default:
                 return false
             }
@@ -587,7 +725,7 @@ private extension AppState {
 #Preview("Capture · standalone") {
     CaptureView(
         appState: .previewSeeded(),
-        onSubmit: { _, _ in }, onClose: {}, onToggleEditor: {},
+        onSubmit: { _, _, _ in }, onClose: {}, onToggleEditor: {},
         onEscape: {}, onContentSizeChange: { _ in }
     )
     .frame(width: 600)
@@ -598,7 +736,7 @@ private extension AppState {
 #Preview("Capture · dark") {
     CaptureView(
         appState: .previewSeeded(),
-        onSubmit: { _, _ in }, onClose: {}, onToggleEditor: {},
+        onSubmit: { _, _, _ in }, onClose: {}, onToggleEditor: {},
         onEscape: {}, onContentSizeChange: { _ in }
     )
     .frame(width: 600)

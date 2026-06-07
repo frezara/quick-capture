@@ -36,12 +36,17 @@ enum CaptureFontDesign: String, CaseIterable, Identifiable {
 
 final class AppState: ObservableObject {
     private enum Keys {
-        static let captureFilePath    = "captureFilePath"
-        static let hotKey             = "hotKey"
-        static let includeTimestamp   = "includeTimestamp"
-        static let captureFontDesign  = "captureFontDesign"
-        static let vimEnabled         = "vimEnabled"
+        static let captureFilePath        = "captureFilePath"
+        static let hotKey                 = "hotKey"
+        static let includeTimestamp       = "includeTimestamp"
+        static let captureFontDesign      = "captureFontDesign"
+        static let vimEnabled             = "vimEnabled"
+        static let screenshotAttachWindow = "screenshotAttachWindow"
     }
+
+    /// Sentinel for "Any" in the auto-attach window picker — the most recent
+    /// screenshot attaches regardless of age.
+    static let attachWindowAny: Double = -1
 
     @Published var captureFilePath: String {
         didSet {
@@ -82,9 +87,31 @@ final class AppState: ObservableObject {
         }
     }
 
+    /// How recent (seconds) a screenshot must be to pre-attach when the capture
+    /// panel is summoned. `attachWindowAny` (-1) disables the age check.
+    @Published var screenshotAttachWindow: Double {
+        didSet {
+            UserDefaults.standard.set(screenshotAttachWindow, forKey: Keys.screenshotAttachWindow)
+        }
+    }
+
     /// Tags discovered in the capture file's `## headings`, excluding the
     /// default `## Quick capture` section. Refreshed via `refreshRecentTags()`.
     @Published var recentTags: [String] = []
+
+    // Capture-session state (not persisted). Lives here rather than in
+    // CaptureView @State so MainPanel (detection, ⌘⇧S pull-in) and the view
+    // share it; it survives the ⌘F editor round-trip and is cleared on the
+    // `.capturePanelDidHide` notification alongside the typed text.
+
+    /// Screenshot currently attached to the capture box as a chip.
+    @Published var pendingAttachment: URL?
+    /// A screenshot exists on disk but is outside the auto-attach window —
+    /// drives the "⌘⇧S to attach screenshot" hint.
+    @Published var recentScreenshotExists = false
+    /// Transient feedback for the pull-in keystroke (e.g. "No screenshots
+    /// found"). CaptureView clears it after a beat.
+    @Published var attachFeedback: String?
 
     func refreshRecentTags() {
         let url = captureFileURL
@@ -162,6 +189,13 @@ final class AppState: ObservableObject {
             self.vimEnabled = true
         } else {
             self.vimEnabled = UserDefaults.standard.bool(forKey: Keys.vimEnabled)
+        }
+
+        // 2 minutes by default — "I just took this" territory.
+        if UserDefaults.standard.object(forKey: Keys.screenshotAttachWindow) == nil {
+            self.screenshotAttachWindow = 120
+        } else {
+            self.screenshotAttachWindow = UserDefaults.standard.double(forKey: Keys.screenshotAttachWindow)
         }
     }
 }
