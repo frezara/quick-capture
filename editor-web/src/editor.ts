@@ -651,6 +651,60 @@ function makeTheme() {
         opacity: "1",
         transform: "translateY(0)",
     },
+    // Cursor-anchored refile dropdown (⌘R). A small surface card listing the
+    // configured refile targets; arrow keys navigate, Enter selects, Esc cancels.
+    ".cm-refile-dropdown": {
+        position: "fixed",
+        zIndex: "30",
+        minWidth: "180px",
+        maxWidth: "320px",
+        padding: "4px",
+        borderRadius: "10px",
+        backgroundColor: palette.surfaceField,
+        border: `1px solid ${palette.accent}33`,
+        boxShadow: "0 8px 28px rgba(0,0,0,0.28)",
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontSize: "12px",
+        color: palette.text,
+        overflow: "hidden",
+    },
+    ".cm-refile-item": {
+        padding: "6px 10px",
+        borderRadius: "6px",
+        whiteSpace: "nowrap",
+        overflow: "hidden",
+        textOverflow: "ellipsis",
+        cursor: "pointer",
+    },
+    ".cm-refile-item--selected": {
+        backgroundColor: palette.accentSoft,
+        color: palette.accentInk,
+    },
+    // Transient refile toast (success / off-item / empty-targets), centred at
+    // the bottom above the status bar. Distinct from the ⌘S "Saved" badge.
+    ".cm-refile-toast": {
+        position: "absolute",
+        left: "50%",
+        bottom: "52px",
+        transform: "translateX(-50%) translateY(6px)",
+        padding: "6px 14px",
+        borderRadius: "9px",
+        backgroundColor: palette.surfaceField,
+        border: `1px solid ${palette.accent}33`,
+        boxShadow: "0 6px 20px rgba(0,0,0,0.22)",
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontSize: "11px",
+        letterSpacing: "0.4px",
+        color: palette.text,
+        opacity: "0",
+        transition: "opacity 0.18s ease, transform 0.18s ease",
+        pointerEvents: "none",
+        zIndex: "20",
+    },
+    ".cm-refile-toast--visible": {
+        opacity: "1",
+        transform: "translateX(-50%) translateY(0)",
+    },
     // Floating action cluster, bottom-right (replaces the old left rail). A
     // small surface card holding the reorg + archive buttons; clears the
     // status bar.
@@ -921,6 +975,8 @@ declare global {
             setVimEnabled: (on: boolean) => void;
             flushSave: () => void;
             attachmentLoaded: (path: string, dataURL: string | null) => void;
+            setRefileTargets: (names: string[]) => void;
+            refileDidComplete: (targetName: string) => void;
         };
     }
 }
@@ -928,6 +984,11 @@ declare global {
 let view: EditorView | null = null;
 let saveTimer: number | null = null;
 let suppressNextSave = false;
+
+// Refile targets pushed from Swift (display names, dropdown order). The editor
+// can't read settings, so it relies on this being kept current (R35).
+let refileTargets: string[] = [];
+let refileOpen = false;
 
 // Compartment for the read-mode extensions so Cmd+E can toggle them at runtime.
 // Reconfiguring a Compartment is the supported way to swap a group of
@@ -1345,6 +1406,159 @@ function sendToSwift(message: Record<string, unknown>) {
     window.webkit?.messageHandlers?.editorBridge?.postMessage(message);
 }
 
+// MARK: - Refile (⌘R)
+//
+// Resolve the subtree under the cursor with the SAME child-indent rule mirrored
+// from FileWriter (`/^( {2,}|\t)\S/`, here via indent-width comparison), open a
+// cursor-anchored arrow-key dropdown of the pushed targets, and post a `refile`
+// message with the exact subtree text + its 0-based line range. The byte-for-
+// byte verification on the Swift side doubles as a check that both sides agree
+// on the span (issue #32).
+
+function refileIndentWidth(text: string): number {
+    let w = 0;
+    for (const ch of text) {
+        if (ch === " ") w += 1;
+        else if (ch === "\t") w += 4;
+        else break;
+    }
+    return w;
+}
+
+function isRefileItemLine(text: string): boolean {
+    return /^\s*[-*+]\s/.test(text);
+}
+
+interface SubtreeSpan { from: number; to: number; text: string }
+
+/// Resolve the subtree owning `pos`: the item line plus every more-indented
+/// line below it, with a cursor on a child/continuation line resolving up to
+/// its owning item. Returns 0-based half-open line indices (matching Swift's
+/// `\n`-split indexing) and the exact slice text, or null when off-item.
+function resolveSubtreeSpan(state: EditorState, pos: number): SubtreeSpan | null {
+    const doc = state.doc;
+    const total = doc.lines;
+    const lineText = (i0: number) => doc.line(i0 + 1).text;
+    const cur = doc.lineAt(pos).number - 1;
+
+    let root = cur;
+    if (!isRefileItemLine(lineText(cur))) {
+        const trimmed = lineText(cur).trim();
+        if (trimmed === "" || trimmed.startsWith("#")) return null;
+        const childWidth = refileIndentWidth(lineText(cur));
+        let i = cur - 1;
+        root = -1;
+        while (i >= 0) {
+            const t = lineText(i).trim();
+            if (t === "" || t.startsWith("#")) break;
+            if (isRefileItemLine(lineText(i)) && refileIndentWidth(lineText(i)) < childWidth) { root = i; break; }
+            i--;
+        }
+        if (root < 0) return null;
+    }
+
+    const rootWidth = refileIndentWidth(lineText(root));
+    let end = root + 1;
+    while (end < total) {
+        const t = lineText(end).trim();
+        if (t === "") break;
+        if (t.startsWith("#")) break;
+        if (refileIndentWidth(lineText(end)) <= rootWidth) break;
+        end++;
+    }
+
+    const fromPos = doc.line(root + 1).from;
+    const toPos = doc.line(end).to;   // `end` 0-based exclusive → 1-based last included line
+    return { from: root, to: end, text: doc.sliceString(fromPos, toPos) };
+}
+
+function startRefile(v: EditorView): boolean {
+    if (refileOpen) return true;
+    const span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
+    if (!span) { showRefileToast(v, "Put the cursor on an item to refile."); return true; }
+    if (refileTargets.length === 0) { showRefileToast(v, "Add refile targets in Settings (⌘,)."); return true; }
+    openRefileDropdown(v, span);
+    return true;
+}
+
+function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
+    refileOpen = true;
+    const menu = document.createElement("div");
+    menu.className = "cm-refile-dropdown";
+
+    let selected = 0;
+    const items = refileTargets.map((name, i) => {
+        const el = document.createElement("div");
+        el.className = "cm-refile-item";
+        el.textContent = name;
+        el.addEventListener("mousedown", (e) => { e.preventDefault(); selected = i; commit(); });
+        menu.appendChild(el);
+        return el;
+    });
+    const render = () =>
+        items.forEach((el, i) => el.classList.toggle("cm-refile-item--selected", i === selected));
+    render();
+
+    const coords = v.coordsAtPos(v.state.selection.main.head);
+    if (coords) {
+        menu.style.left = `${Math.round(coords.left)}px`;
+        menu.style.top = `${Math.round(coords.bottom + 4)}px`;
+    }
+    document.body.appendChild(menu);
+
+    const close = () => {
+        if (!refileOpen) return;
+        refileOpen = false;
+        document.removeEventListener("keydown", onKey, true);
+        document.removeEventListener("mousedown", onOutside, true);
+        menu.remove();
+        v.focus();
+    };
+
+    const commit = () => {
+        const target = selected;
+        close();
+        // Flush the current content to disk (no "Saved" badge — the refile toast
+        // is the feedback) so the file matches the snapshot whose range we send.
+        if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
+        sendToSwift({ type: "save", content: v.state.doc.toString() });
+        sendToSwift({ type: "refile", target, fromLine: span.from, toLine: span.to, subtree: span.text });
+    };
+
+    const onKey = (e: KeyboardEvent) => {
+        // Modal while open: swallow every key so nothing edits the doc beneath.
+        e.preventDefault();
+        e.stopPropagation();
+        if (e.key === "ArrowDown") { selected = (selected + 1) % items.length; render(); }
+        else if (e.key === "ArrowUp") { selected = (selected - 1 + items.length) % items.length; render(); }
+        else if (e.key === "Enter") { commit(); }
+        else if (e.key === "Escape") { close(); }
+    };
+    const onOutside = (e: MouseEvent) => {
+        if (!menu.contains(e.target as Node)) close();
+    };
+    document.addEventListener("keydown", onKey, true);
+    document.addEventListener("mousedown", onOutside, true);
+}
+
+let refileToastTimer: number | null = null;
+function showRefileToast(v: EditorView, message: string) {
+    let toast = v.dom.querySelector(".cm-refile-toast") as HTMLDivElement | null;
+    if (!toast) {
+        toast = document.createElement("div");
+        toast.className = "cm-refile-toast";
+        v.dom.appendChild(toast);
+    }
+    toast.textContent = message;
+    // Force a reflow so the transition replays on a re-shown toast.
+    void toast.offsetWidth;
+    toast.classList.add("cm-refile-toast--visible");
+    if (refileToastTimer) window.clearTimeout(refileToastTimer);
+    refileToastTimer = window.setTimeout(() => {
+        toast!.classList.remove("cm-refile-toast--visible");
+    }, 1800);
+}
+
 function scheduleSave() {
     if (suppressNextSave) {
         suppressNextSave = false;
@@ -1448,6 +1662,13 @@ function mount(content: string) {
                     key: "Mod-'",
                     run: (v) => { moveCompletedToBottom(v); return true; },
                 },
+                {
+                    // Cmd+R — refile the subtree under the cursor into a chosen
+                    // target inbox. Falls through MainPanel.performKeyEquivalent
+                    // to CodeMirror cleanly (⌘R isn't intercepted at the window).
+                    key: "Mod-r",
+                    run: (v) => startRefile(v),
+                },
                 // Obsidian-style Tab / Shift-Tab: indent or outdent a list/task
                 // line when the cursor is on one; otherwise fall back to a real
                 // tab character so prose lines aren't intercepted.
@@ -1538,6 +1759,13 @@ window.qcEditor = {
         // an empty dispatch alone would not satisfy the update guard.
         view?.dispatch({ effects: attachmentStateChanged.of(null) });
         view?.requestMeasure();
+    },
+    // Swift pushes the effective refile-target display names (dropdown order).
+    setRefileTargets: (names: string[]) => { refileTargets = Array.isArray(names) ? names : []; },
+    // Swift's success ack after the disk move — flash the confirmation toast
+    // (the file watcher separately reloads the editor without the subtree).
+    refileDidComplete: (targetName: string) => {
+        if (view) showRefileToast(view, `Refiled to ${targetName}`);
     },
 };
 

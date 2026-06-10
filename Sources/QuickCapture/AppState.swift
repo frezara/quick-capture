@@ -2,9 +2,10 @@ import Foundation
 import SwiftUI
 
 extension Notification.Name {
-    static let hotKeyDidChange      = Notification.Name("QuickCapture.hotKeyDidChange")
-    static let capturePanelDidHide  = Notification.Name("QuickCapture.capturePanelDidHide")
-    static let vimModeDidChange     = Notification.Name("QuickCapture.vimModeDidChange")
+    static let hotKeyDidChange       = Notification.Name("QuickCapture.hotKeyDidChange")
+    static let capturePanelDidHide   = Notification.Name("QuickCapture.capturePanelDidHide")
+    static let vimModeDidChange      = Notification.Name("QuickCapture.vimModeDidChange")
+    static let refileTargetsDidChange = Notification.Name("QuickCapture.refileTargetsDidChange")
 }
 
 /// Font design applied to the capture panel's todo input. Maps directly onto
@@ -42,6 +43,7 @@ final class AppState: ObservableObject {
         static let captureFontDesign      = "captureFontDesign"
         static let vimEnabled             = "vimEnabled"
         static let screenshotAttachWindow = "screenshotAttachWindow"
+        static let refileTargets          = "refileTargets"
     }
 
     /// Sentinel for "Any" in the auto-attach window picker — the most recent
@@ -93,6 +95,25 @@ final class AppState: ObservableObject {
         didSet {
             UserDefaults.standard.set(screenshotAttachWindow, forKey: Keys.screenshotAttachWindow)
         }
+    }
+
+    /// Ordered list of refile destinations (issue #32). The editor can't read
+    /// settings directly, so `MainPanel` pushes the effective list into the web
+    /// layer on editor entry and whenever this changes — hence the broadcast.
+    @Published var refileTargets: [RefileTarget] {
+        didSet {
+            guard refileTargets != oldValue else { return }
+            if let data = try? JSONEncoder().encode(refileTargets) {
+                UserDefaults.standard.set(data, forKey: Keys.refileTargets)
+            }
+            NotificationCenter.default.post(name: .refileTargetsDidChange, object: nil)
+        }
+    }
+
+    /// The refile targets actually offered in the editor: the capture file's own
+    /// folder and any missing folders filtered out (R17/R18).
+    var effectiveRefileTargets: [RefileTarget] {
+        RefileTarget.effective(refileTargets, captureFolder: captureFileURL.deletingLastPathComponent())
     }
 
     /// Tags discovered in the capture file's `## headings`, excluding the
@@ -200,6 +221,13 @@ final class AppState: ObservableObject {
             self.screenshotAttachWindow = 120
         } else {
             self.screenshotAttachWindow = UserDefaults.standard.double(forKey: Keys.screenshotAttachWindow)
+        }
+
+        if let data = UserDefaults.standard.data(forKey: Keys.refileTargets),
+           let decoded = try? JSONDecoder().decode([RefileTarget].self, from: data) {
+            self.refileTargets = decoded
+        } else {
+            self.refileTargets = []
         }
     }
 }

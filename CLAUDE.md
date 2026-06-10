@@ -46,9 +46,12 @@ Sources/QuickCapture/
                                    ⌘F intercept, frame/crossfade animation, file watcher, JS↔Swift bridge
   CaptureView.swift                SwiftUI capture UI (multi-line input, tag field, shake-on-empty)
   KeyRecorderView.swift            Settings widget for re-binding the global hotkey
-  SettingsView.swift               SwiftUI Settings form (file path, hotkey, font, timestamp)
+  SettingsView.swift               SwiftUI Settings form (file path, hotkey, font, timestamp, refile targets)
   SettingsWindowController.swift   Plain NSWindow fallback path for Settings (menu-bar item route)
-  FileWriter.swift                 Append/insert/archive logic — priority-aware, indentation-aware
+  FileWriter.swift                 Append/insert/archive logic + refile core (subtree span,
+                                   verify-and-remove, dedent, attachment-paths, append-under-inbox)
+  RefileService.swift              ⌘R disk pipeline: verify→copy→rewrite/dedent→write target→write source→delete
+  RefileTarget.swift               Settings model for a refile destination folder + effective-list filtering
   EventParser.swift                "#cal" NL → calendar event parser
   ICSWriter.swift                  Calendar event → temp .ics file
   TagColor.swift                   Hue palette for tag chips
@@ -59,6 +62,10 @@ editor-web/
   dist/                            Bundled HTML/JS shipped inside the .app (folder reference in project.yml)
 Tests/QuickCaptureTests/
   FileWriterTests.swift            Insertion + priority + archive behavior
+  FileWriterRefileTests.swift      Refile core: subtree span, verify-and-remove, dedent, paths, append
+  RefileServiceTests.swift         Refile pipeline over temp dirs (happy path, scaffold, drift, failure intact)
+  AttachmentStoreRefileTests.swift Copy-preserving-name, shared-path-safe delete
+  RefileTargetTests.swift          Target persistence + effective-list filtering
   EventParserTests.swift
   ICSWriterTests.swift
 ```
@@ -154,6 +161,20 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   (FLIP-animated, focus preserved), sorts unchecked items by priority bucket
   (`!!!` → `!!` → `!` → plain), and strips priority markers from checked
   items so they read as plain done items.
+- **Refile (`⌘R`).** Editor-only. Moves the subtree under the cursor (item +
+  attachments + nested children, resolved by the shared child-indent rule, a
+  cursor-on-child resolving up) into a chosen **refile target**'s `inbox.md`,
+  appended at top level (dedented) in arrival order, with its screenshots. The
+  editor resolves the span and posts `{ type: "refile", target, fromLine,
+  toLine, subtree }`; `RefileService` does the disk surgery and the file watcher
+  reloads the editor — same pattern as archive. The source file is written
+  **last** so any failure leaves it byte-for-byte intact (the item never
+  vanishes); a byte-for-byte verify of the editor's subtree against disk guards
+  against the file drifting between flush and move. Targets are configured in
+  Settings (folders, optional labels, reorderable); Swift **pushes** the
+  effective list into the editor (it can't read settings) on entry and on
+  change. `⌘R` is *not* intercepted in `MainPanel.performKeyEquivalent` — it
+  falls through to the editor's `Mod-r` keymap.
 
 ## When you're asked to…
 

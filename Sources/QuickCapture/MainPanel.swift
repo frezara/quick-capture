@@ -64,6 +64,7 @@ final class MainPanel: NSPanel {
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var fileDescriptor: CInt = -1
     private var vimObserver: NSObjectProtocol?
+    private var refileTargetsObserver: NSObjectProtocol?
     /// True for the duration of the editor→capture collapse animation, so
     /// `captureContentDidChange` defers window geometry to the animation.
     private var isCollapsing = false
@@ -77,6 +78,7 @@ final class MainPanel: NSPanel {
     deinit {
         stopWatching()
         if let vimObserver { NotificationCenter.default.removeObserver(vimObserver) }
+        if let refileTargetsObserver { NotificationCenter.default.removeObserver(refileTargetsObserver) }
     }
 
     init(appState: AppState,
@@ -122,6 +124,13 @@ final class MainPanel: NSPanel {
         vimObserver = NotificationCenter.default.addObserver(
             forName: .vimModeDidChange, object: nil, queue: .main
         ) { [weak self] _ in self?.pushVimSetting() }
+
+        // Refile targets edited in Settings take effect in the editor's ⌘R
+        // dropdown without a restart (R35) — the editor can't read settings, so
+        // we re-push the effective list whenever it changes.
+        refileTargetsObserver = NotificationCenter.default.addObserver(
+            forName: .refileTargetsDidChange, object: nil, queue: .main
+        ) { [weak self] _ in self?.pushRefileTargets() }
     }
 
     private func setupContainer() {
@@ -615,6 +624,7 @@ final class MainPanel: NSPanel {
         webViewReady = true
         // Set vim before content so the first mount() picks up the right mode.
         pushVimSetting()
+        pushRefileTargets()
         let text = (try? String(contentsOf: loadedFileURL, encoding: .utf8)) ?? ""
         pushContent(text)
         startWatching()
@@ -632,6 +642,53 @@ final class MainPanel: NSPanel {
             "window.qcEditor && window.qcEditor.setVimEnabled(\(appState.vimEnabled))",
             completionHandler: nil
         )
+    }
+
+    /// Push the effective refile targets (display names) into the editor so the
+    /// ⌘R dropdown can render them. The editor refers to a target by its index
+    /// in this list when it posts a `refile` message. Pushed on editor entry and
+    /// whenever Settings change the list.
+    private func pushRefileTargets() {
+        guard webViewReady else { return }
+        let names = appState.effectiveRefileTargets.map(\.displayName)
+        guard let json = try? JSONEncoder().encode(names),
+              let jsonString = String(data: json, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.setRefileTargets(\(jsonString))",
+            completionHandler: nil
+        )
+    }
+
+    /// Move the editor's subtree at `[fromLine, toLine)` into the chosen refile
+    /// target's inbox. The disk surgery lives in `RefileService`; the file
+    /// watcher reloads the editor afterwards (same pattern as archive). On
+    /// success the editor flashes a toast; on any failure the source is left
+    /// intact and an `NSAlert` explains why (the failure contract, R29).
+    fileprivate func refile(targetIndex: Int, fromLine: Int, toLine: Int, subtree: String) {
+        let targets = appState.effectiveRefileTargets
+        guard targets.indices.contains(targetIndex) else { return }
+        let target = targets[targetIndex]
+        do {
+            try RefileService.refile(
+                subtree: subtree,
+                range: fromLine..<toLine,
+                from: loadedFileURL,
+                toFolder: target.folderURL
+            )
+            let name = target.displayName
+            guard let nameJSON = try? JSONEncoder().encode(name),
+                  let nameString = String(data: nameJSON, encoding: .utf8) else { return }
+            webView.evaluateJavaScript(
+                "window.qcEditor && window.qcEditor.refileDidComplete(\(nameString))",
+                completionHandler: nil
+            )
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t refile"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
     }
 
     /// Re-point the editor at the current capture file if it changed (path edit
@@ -892,7 +949,8 @@ private final class EditorContainerView: NSView {
 // MARK: - JS → Swift bridge
 
 /// WKWebView message handler. JS posts `{ type: "ready" | "save" | "archive" |
-/// "dismiss" | "attachment", content?: String, path?: String }` to the
+/// "dismiss" | "attachment" | "refile", content?: String, path?: String,
+/// target?: Int, fromLine?: Int, toLine?: Int, subtree?: String }` to the
 /// `editorBridge` handler.
 final class EditorBridge: NSObject, WKScriptMessageHandler {
     weak var panel: MainPanel?
@@ -914,6 +972,14 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
         case "attachment":
             // The editor wants an image's bytes for the expanded preview.
             if let path = dict["path"] as? String { panel?.sendAttachment(relativePath: path) }
+        case "refile":
+            // Move the subtree at [fromLine, toLine) into the chosen target.
+            if let target = dict["target"] as? Int,
+               let fromLine = dict["fromLine"] as? Int,
+               let toLine = dict["toLine"] as? Int,
+               let subtree = dict["subtree"] as? String {
+                panel?.refile(targetIndex: target, fromLine: fromLine, toLine: toLine, subtree: subtree)
+            }
         default:
             break
         }

@@ -88,6 +88,27 @@ struct SettingsView: View {
                     Toggle("", isOn: launchAtLoginBinding).labelsHidden()
                 }
             }
+
+            settingsCard("REFILE TARGETS") {
+                if appState.refileTargets.isEmpty {
+                    settingsRow(
+                        label: "No targets yet",
+                        note: "⌘R in the editor files the item under your cursor into a target's inbox.md."
+                    ) {
+                        Button("Add Folder…", action: addRefileTarget)
+                            .buttonStyle(SettingsGhostButton(t: t))
+                    }
+                } else {
+                    ForEach(appState.refileTargets.indices, id: \.self) { index in
+                        refileTargetRow(index: index)
+                        t.border.frame(height: 1)
+                    }
+                    settingsRow(label: "Add another destination", note: nil) {
+                        Button("Add Folder…", action: addRefileTarget)
+                            .buttonStyle(SettingsGhostButton(t: t))
+                    }
+                }
+            }
         }
         .padding(Metrics.s3)
         .frame(width: 480)
@@ -137,6 +158,89 @@ struct SettingsView: View {
         }
         .padding(.horizontal, Metrics.s3)
         .padding(.vertical, 12)
+    }
+
+    // MARK: - Refile targets
+
+    private func refileTargetRow(index: Int) -> some View {
+        let target = appState.refileTargets[index]
+        return HStack(alignment: .center, spacing: Metrics.s2) {
+            VStack(alignment: .leading, spacing: 3) {
+                Text(target.displayName)
+                    .font(TypeScale.body)
+                    .foregroundStyle(t.ink)
+                Text(target.path)
+                    .font(TypeScale.caption)
+                    .foregroundStyle(t.inkTertiary)
+                    .truncationMode(.head)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: Metrics.s2)
+            TextField("Label", text: labelBinding(index))
+                .textFieldStyle(.plain)
+                .font(Typeface.mono(12))
+                .foregroundStyle(t.ink)
+                .multilineTextAlignment(.trailing)
+                .frame(width: 84)
+            Button { moveRefileTarget(from: index, to: index - 1) } label: {
+                Image(systemName: "chevron.up")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(t.accent)
+            .disabled(index == 0)
+            Button { moveRefileTarget(from: index, to: index + 1) } label: {
+                Image(systemName: "chevron.down")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(t.accent)
+            .disabled(index == appState.refileTargets.count - 1)
+            Button { removeRefileTarget(at: index) } label: {
+                Image(systemName: "xmark")
+            }
+            .buttonStyle(.plain)
+            .foregroundStyle(t.inkTertiary)
+        }
+        .padding(.horizontal, Metrics.s3)
+        .padding(.vertical, 12)
+    }
+
+    /// Maps the target's optional label to a non-optional text binding; a blank
+    /// value clears the label (so the dropdown falls back to the basename).
+    private func labelBinding(_ index: Int) -> Binding<String> {
+        Binding(
+            get: { appState.refileTargets.indices.contains(index) ? (appState.refileTargets[index].label ?? "") : "" },
+            set: { newValue in
+                guard appState.refileTargets.indices.contains(index) else { return }
+                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
+                appState.refileTargets[index].label = trimmed.isEmpty ? nil : newValue
+            }
+        )
+    }
+
+    private func addRefileTarget() {
+        let panel = NSOpenPanel()
+        panel.canChooseFiles = false
+        panel.canChooseDirectories = true
+        panel.allowsMultipleSelection = false
+        panel.canCreateDirectories = true
+        panel.message = "Choose a folder whose inbox.md should receive refiled items"
+        guard panel.runModal() == .OK, let url = panel.url else { return }
+        let standardized = url.standardizedFileURL
+        guard !appState.refileTargets.contains(where: { $0.folderURL.standardizedFileURL == standardized }) else { return }
+        appState.refileTargets.append(RefileTarget(path: url.path, label: nil))
+    }
+
+    private func removeRefileTarget(at index: Int) {
+        guard appState.refileTargets.indices.contains(index) else { return }
+        appState.refileTargets.remove(at: index)
+    }
+
+    private func moveRefileTarget(from: Int, to: Int) {
+        var targets = appState.refileTargets
+        guard targets.indices.contains(from), to >= 0, to < targets.count else { return }
+        let item = targets.remove(at: from)
+        targets.insert(item, at: to)
+        appState.refileTargets = targets
     }
 
     // MARK: - Actions

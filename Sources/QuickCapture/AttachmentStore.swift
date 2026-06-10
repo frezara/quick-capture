@@ -42,6 +42,58 @@ enum AttachmentStore {
         return "\(folderName)/\(candidate)"
     }
 
+    // MARK: - Refile relocation (issue #32)
+
+    /// Copy an in-folder attachment (referenced as `relativePath`, e.g.
+    /// `attachments/a.png`, beside `sourceFile`) into the `attachments/` folder
+    /// beside `targetFile`, **preserving its basename**. On a name collision in
+    /// the target a `-2`/`-3`/… suffix is added (the existing file is never
+    /// overwritten) and the renamed relative path is returned, so the caller can
+    /// rewrite the link only when a rename actually happened. Returns nil when
+    /// the source is missing — best-effort: there's nothing to move and the link
+    /// text is carried verbatim (issue #32 R26).
+    static func copyForRefile(_ relativePath: String, from sourceFile: URL, to targetFile: URL) throws -> String? {
+        let fm = FileManager.default
+        let sourceURL = sourceFile.deletingLastPathComponent().appendingPathComponent(relativePath)
+        guard fm.fileExists(atPath: sourceURL.path) else {
+            NSLog("Refile: attachment missing at \(sourceURL.path); carrying link text verbatim")
+            return nil
+        }
+
+        let dir = targetFile.deletingLastPathComponent().appendingPathComponent(folderName, isDirectory: true)
+        try fm.createDirectory(at: dir, withIntermediateDirectories: true)
+
+        let name = (relativePath as NSString).lastPathComponent
+        let base = (name as NSString).deletingPathExtension
+        let ext = (name as NSString).pathExtension
+
+        var candidate = name
+        var n = 2
+        while fm.fileExists(atPath: dir.appendingPathComponent(candidate).path) {
+            candidate = ext.isEmpty ? "\(base)-\(n)" : "\(base)-\(n).\(ext)"
+            n += 1
+        }
+
+        try fm.copyItem(at: sourceURL, to: dir.appendingPathComponent(candidate))
+        return "\(folderName)/\(candidate)"
+    }
+
+    /// Delete a refiled source attachment after a successful move — but only if
+    /// the post-removal source content no longer references that exact relative
+    /// path (the shared-path safety check, issue #32 R28), so a move never
+    /// breaks an item that stayed behind. Missing file or a still-referenced
+    /// path is a no-op. Never throws — best-effort cleanup is logged, not
+    /// surfaced.
+    static func removeRefiledOriginal(_ relativePath: String, besideFile sourceFile: URL, ifNotReferencedIn remaining: String) {
+        guard !remaining.contains("](\(relativePath))") else { return }
+        let url = sourceFile.deletingLastPathComponent().appendingPathComponent(relativePath)
+        do {
+            try FileManager.default.removeItem(at: url)
+        } catch {
+            NSLog("Refile: could not remove moved original \(url.path): \(error)")
+        }
+    }
+
     /// `YYYY-MM-DD-HHMMSS` in the local timezone, POSIX locale for stable digits.
     static func timestamp(_ date: Date) -> String {
         return formatter.string(from: date)

@@ -316,6 +316,160 @@ enum FileWriter {
         return (kept.joined(separator: "\n"), items)
     }
 
+    // MARK: - Refile (issue #32)
+
+    enum RefileError: LocalizedError {
+        /// The on-disk lines at the supplied range no longer match the editor's
+        /// subtree text — the file changed underneath us, so refusing to move
+        /// the wrong item.
+        case contentDrifted
+        var errorDescription: String? {
+            switch self {
+            case .contentDrifted:
+                return "The file changed since you pressed ⌘R. Refile again."
+            }
+        }
+    }
+
+    /// The leading-whitespace width of a line, tabs counted as 4 columns to
+    /// match the editor's `indentUnit.of("    ")`. Used to compare nesting depth
+    /// when resolving a subtree span.
+    static func indentWidth(_ line: String) -> Int {
+        var width = 0
+        for ch in line {
+            if ch == " " { width += 1 }
+            else if ch == "\t" { width += 4 }
+            else { break }
+        }
+        return width
+    }
+
+    private static func isItemLine(_ line: String) -> Bool {
+        return line.range(of: #"^\s*[-*+]\s"#, options: .regularExpression) != nil
+    }
+
+    /// Resolve the line range of the subtree that owns `atLine` — the item
+    /// itself plus every more-indented line that belongs to it (attachment
+    /// children, notes, nested child items), bounded by the next line at the
+    /// item's own indent or a heading or EOF. A cursor on a child/continuation
+    /// line resolves *up* to the owning item. Returns nil when the line isn't
+    /// on (or under) an item — a blank line or a heading — so the caller can
+    /// show the off-item hint. Range is a half-open `start..<end` over the
+    /// document's `\n`-split lines.
+    static func subtreeRange(in content: String, atLine line: Int) -> Range<Int>? {
+        let lines = content.components(separatedBy: "\n")
+        guard line >= 0, line < lines.count else { return nil }
+
+        // Resolve up to the owning item: from the cursor line, walk back over
+        // more-indented continuation lines to the nearest item line.
+        var root = line
+        if !isItemLine(lines[root]) {
+            let trimmed = lines[root].trimmingCharacters(in: .whitespaces)
+            if trimmed.isEmpty || trimmed.hasPrefix("#") { return nil }
+            let childWidth = indentWidth(lines[root])
+            var i = root - 1
+            root = -1
+            while i >= 0 {
+                let t = lines[i].trimmingCharacters(in: .whitespaces)
+                if t.isEmpty || t.hasPrefix("#") { break }
+                if isItemLine(lines[i]), indentWidth(lines[i]) < childWidth {
+                    root = i
+                    break
+                }
+                i -= 1
+            }
+            if root < 0 { return nil }
+        }
+
+        let rootWidth = indentWidth(lines[root])
+        var end = root + 1
+        while end < lines.count {
+            let t = lines[end].trimmingCharacters(in: .whitespaces)
+            if t.isEmpty { break }
+            if t.hasPrefix("#") { break }
+            if indentWidth(lines[end]) <= rootWidth { break }
+            end += 1
+        }
+        return root..<end
+    }
+
+    /// Content-addressed identity guard. Confirm the `range` of lines in
+    /// `content` equals `subtree` byte-for-byte, then return `content` with that
+    /// range removed. Throws `RefileError.contentDrifted` (removing nothing) if
+    /// the file changed underneath the editor's snapshot.
+    static func verifyAndRemove(subtree: String, at range: Range<Int>, in content: String) throws -> String {
+        var lines = content.components(separatedBy: "\n")
+        guard range.lowerBound >= 0, range.upperBound <= lines.count else {
+            throw RefileError.contentDrifted
+        }
+        let actual = lines[range].joined(separator: "\n")
+        guard actual == subtree else { throw RefileError.contentDrifted }
+        lines.removeSubrange(range)
+        return lines.joined(separator: "\n")
+    }
+
+    /// Shift a subtree left so its top item sits at column 0, every descendant
+    /// shifted by the same delta so relative nesting is preserved. A subtree
+    /// already at column 0 is returned unchanged. The delta is measured from the
+    /// first line's leading whitespace; each line drops up to that many leading
+    /// whitespace characters (lines indented with fewer simply lose what they
+    /// have — they cannot exist in a well-formed subtree).
+    static func dedent(_ subtree: String) -> String {
+        let lines = subtree.components(separatedBy: "\n")
+        guard let first = lines.first else { return subtree }
+        let rootPrefix = first.prefix { $0 == " " || $0 == "\t" }
+        guard !rootPrefix.isEmpty else { return subtree }
+        let drop = rootPrefix.count
+        let shifted = lines.map { line -> String in
+            var i = line.startIndex
+            var dropped = 0
+            while dropped < drop, i < line.endIndex, line[i] == " " || line[i] == "\t" {
+                i = line.index(after: i)
+                dropped += 1
+            }
+            return String(line[i...])
+        }
+        return shifted.joined(separator: "\n")
+    }
+
+    /// The in-folder relative `attachments/…` image paths referenced by a
+    /// subtree, in document order, used to plan the attachment move. Only
+    /// markdown image links (`![…](…)`) whose target is a relative
+    /// `attachments/…` path count — URLs, absolute paths, and non-image
+    /// (`[…](…)` without the leading `!`) links are ignored. Duplicates are
+    /// collapsed so a path referenced twice is moved once.
+    static func attachmentPaths(in subtree: String) -> [String] {
+        let pattern = #"!\[[^\]]*\]\(([^)]+)\)"#
+        guard let regex = try? NSRegularExpression(pattern: pattern) else { return [] }
+        var result: [String] = []
+        for line in subtree.components(separatedBy: "\n") {
+            let range = NSRange(line.startIndex..., in: line)
+            for match in regex.matches(in: line, range: range) {
+                guard let r = Range(match.range(at: 1), in: line) else { continue }
+                let path = String(line[r])
+                guard path.hasPrefix("\(AttachmentStore.folderName)/") else { continue }
+                if !result.contains(path) { result.append(path) }
+            }
+        }
+        return result
+    }
+
+    /// Append a (already dedented) subtree at end-of-file under the target's
+    /// `# Inbox` H1, scaffolding a bare `# Inbox` when the target is empty/new.
+    /// Items land in arrival order (FIFO) — refile targets are flat inboxes with
+    /// no fixed sections (issue #32). Reuses `ensureDocumentHeading`.
+    static func appendUnderInbox(subtree: String, to content: String) -> String {
+        var base = ensureDocumentHeading(in: content)
+        while base.hasSuffix("\n") { base.removeLast() }
+        // A heading-only target wants a blank line before its first item; an
+        // inbox that already has items wants the subtree on the very next line.
+        let hasBody = base.components(separatedBy: "\n").dropFirst().contains {
+            !$0.trimmingCharacters(in: .whitespaces).isEmpty
+        }
+        let separator = hasBody ? "\n" : "\n\n"
+        return base + separator + subtree + "\n"
+    }
+
     /// Sibling URL with `_archive` inserted before the extension.
     /// e.g. `inbox.md` → `inbox_archive.md`, `notes` → `notes_archive`.
     static func archiveURL(for source: URL) -> URL {
