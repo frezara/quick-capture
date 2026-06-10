@@ -66,6 +66,22 @@ struct SettingsView: View {
                 }
                 t.border.frame(height: 1)
                 settingsRow(
+                    label: "Auto-attach screenshot window",
+                    note: "Screenshots newer than this pre-attach to the capture box. ⌘⇧S pulls in the latest anytime."
+                ) {
+                    Picker("", selection: $appState.screenshotAttachWindow) {
+                        Text("30 seconds").tag(30.0)
+                        Text("1 minute").tag(60.0)
+                        Text("2 minutes").tag(120.0)
+                        Text("5 minutes").tag(300.0)
+                        Text("10 minutes").tag(600.0)
+                        Text("Any age").tag(AppState.attachWindowAny)
+                    }
+                    .labelsHidden()
+                    .frame(width: 140)
+                }
+                t.border.frame(height: 1)
+                settingsRow(
                     label: "Launch at Login",
                     note: "App must be in /Applications for this to take effect."
                 ) {

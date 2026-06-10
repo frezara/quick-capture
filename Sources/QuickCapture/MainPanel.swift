@@ -3,30 +3,33 @@ import Darwin
 import SwiftUI
 import WebKit
 
-/// The single floating panel that hosts both app surfaces. The capture **input
-/// strip** is always pinned to the top; on ⌘F the panel grows downward and the
-/// CodeMirror markdown **editor** opens *beneath* it (a "split"), and ⌘F again
-/// collapses it away. Both surfaces are stacked at once — they are no longer
-/// mutually-exclusive crossfaded modes. See ADR-0003.
+/// The single floating panel that hosts both app surfaces — the capture box and
+/// the CodeMirror markdown editor — as **mutually-exclusive modes** (ADR-0004).
+/// Both stay mounted (the editor's web view is kept warm); ⌘F crossfades
+/// between them while animating the window frame, so exactly one is visible.
 ///
 /// Behaviors keyed to whether the editor is open (`editorOpen`):
-/// - **Click-away / ⌘Tab dismiss** fires in both capture and editor modes
-///   (`resignKey`); `canDismissOnBlur` guards against false fires during transitions.
+/// - **Click-away dismiss** only fires in capture mode (`resignKey`); the
+///   editor survives losing focus so you can copy from other apps.
+///   `canDismissOnBlur` guards against false fires during transitions.
 /// - **⌘F** is intercepted in `performKeyEquivalent` *before* it reaches
-///   CodeMirror/WebKit (which would treat it as "find"), toggling the editor.
-///   **⌘J** jumps focus to the input strip while the editor is open.
+///   CodeMirror/WebKit (which would treat it as "find"), toggling the mode.
 /// - **Activation policy** is `.regular` while the editor is open so the
 ///   standard menu bar (⌘C/V/Z…) works, then `.accessory` when collapsed.
-/// - **Single writer:** while the editor is open its in-memory buffer is the
-///   canonical copy of the file; a capture is inserted into the buffer (reusing
-///   `FileWriter.insert` + a targeted CodeMirror transaction) rather than
-///   written to disk directly. Closed → captures write the file as before.
+/// - **Disk is canonical, one writer by mutual exclusion:** capture-mode
+///   submits write straight to disk via `FileWriter`; the editor flushes its
+///   debounced save (`flushEditorSave`) before leaving editor mode, and the
+///   file watcher reloads the warm editor on external changes.
 final class MainPanel: NSPanel {
     private let appState: AppState
-    private let onSubmit: (String, String?) -> Void
+    private let onSubmit: (String, String?, URL?) -> Bool
     private let onDismiss: () -> Void
 
     private(set) var editorOpen = false
+    /// True while the screenshot picker takeover surface is shown (a large
+    /// centered frame, capture inputs hidden — same window, like editor mode).
+    /// Guards `captureContentDidChange` from fighting the fixed picker frame.
+    private(set) var pickerOpen = false
 
     // MARK: Surfaces
 
@@ -64,6 +67,9 @@ final class MainPanel: NSPanel {
     /// True for the duration of the editor→capture collapse animation, so
     /// `captureContentDidChange` defers window geometry to the animation.
     private var isCollapsing = false
+    /// Incremented on every fresh summon or ⌘⇧S; completion blocks capture it
+    /// so stale completions from a prior summon cannot resurrect a detached chip.
+    private var attachLookupGeneration = 0
 
     private let splitWidth: CGFloat = 1000
     private let captureWidth: CGFloat = 600
@@ -74,7 +80,7 @@ final class MainPanel: NSPanel {
     }
 
     init(appState: AppState,
-         onSubmit: @escaping (String, String?) -> Void,
+         onSubmit: @escaping (String, String?, URL?) -> Bool,
          onDismiss: @escaping () -> Void) {
         self.appState = appState
         self.onSubmit = onSubmit
@@ -152,11 +158,15 @@ final class MainPanel: NSPanel {
     private func makeCaptureView() -> CaptureView {
         CaptureView(
             appState: appState,
-            onSubmit: { [weak self] text, tag in self?.handleSubmit(text, tag) },
+            // Capture and editor are mutually exclusive (ADR-0004), so a
+            // submit always writes straight to disk, the canonical copy.
+            onSubmit: { [weak self] text, tag, attachment in self?.onSubmit(text, tag, attachment) ?? false },
             onClose: { [weak self] in self?.onDismiss() },
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
-            onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) }
+            onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
+            onPickerAttach: { [weak self] url in self?.closePickerSurface(attaching: url) },
+            onPickerCancel: { [weak self] in self?.closePickerSurface(attaching: nil) }
         )
     }
 
@@ -166,6 +176,7 @@ final class MainPanel: NSPanel {
     /// the capture box.
     func show() {
         collapseStateReset()
+        detectRecentScreenshot()
         if let screen = currentScreenVisibleFrame() {
             anchorCenterY = screen.midY
             var f = frame
@@ -234,6 +245,11 @@ final class MainPanel: NSPanel {
     func openEditor() {
         guard !editorOpen else { return }
         editorOpen = true
+        // The picker is a capture-surface affordance; ⌘F into the editor closes
+        // it. editorOpen is set first so the capture re-measure this triggers is
+        // already guarded; openEditor's own animateFrame places the geometry.
+        pickerOpen = false
+        appState.screenshotPickerItems = nil
         isMovableByWindowBackground = false
         promoteToRegular()
         NSApp.activate(ignoringOtherApps: true)
@@ -312,6 +328,7 @@ final class MainPanel: NSPanel {
 
     private func collapseStateReset() {
         editorOpen = false
+        pickerOpen = false
         isCollapsing = false   // a fresh summon cancels any in-flight collapse
         container.editorActive = false
         editorContainer.isHidden = true
@@ -335,6 +352,10 @@ final class MainPanel: NSPanel {
     /// recorded size so it dissolves in place on the next switch.
     private func captureContentDidChange(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
+        // The picker takeover fills the window with a fixed centered frame.
+        // Ignore its size entirely — recording it would clobber the saved
+        // capture height that closePickerSurface uses to restore the box.
+        guard !pickerOpen else { return }
         captureContentSize = size
         container.captureHeight = size.height
         guard !editorOpen else { return }
@@ -425,11 +446,99 @@ final class MainPanel: NSPanel {
     /// Esc in the editor with vim off (posted from editor.ts via the bridge).
     fileprivate func dismissFromEditor() { dismiss() }
 
-    /// A capture submitted from the capture box. Capture and editor are mutually
-    /// exclusive (ADR-0004), so this only runs in capture mode — it always writes
-    /// straight to disk, which is the canonical copy.
-    private func handleSubmit(_ text: String, _ tag: String?) {
-        onSubmit(text, tag)
+    // MARK: - Screenshot attach
+
+    /// Detection runs only on a fresh summon (R20) — never on the ⌘F return —
+    /// so a detached chip stays detached for the rest of the capture session.
+    private func detectRecentScreenshot() {
+        attachLookupGeneration += 1
+        let generation = attachLookupGeneration
+        appState.pendingAttachment = nil
+        appState.recentScreenshotExists = false
+        appState.attachFeedback = nil
+        appState.screenshotPickerItems = nil
+        let window = appState.screenshotAttachWindow
+        ScreenshotLocator.mostRecent { [weak self] shot in
+            guard let self, generation == self.attachLookupGeneration, let shot else { return }
+            let age = Date().timeIntervalSince(shot.createdAt)
+            if window < 0 || age <= window {
+                self.appState.pendingAttachment = shot.url
+            } else {
+                self.appState.recentScreenshotExists = true
+            }
+        }
+    }
+
+    /// ⌘⇧S — open the screenshot picker takeover surface with the 10 most
+    /// recent screenshots (newest pre-highlighted). Picking one attaches it as
+    /// the chip; Esc closes without changing the attachment. No screenshots →
+    /// the transient "No screenshots found" feedback instead of an empty panel.
+    private func openScreenshotPicker() {
+        attachLookupGeneration += 1
+        let generation = attachLookupGeneration
+        ScreenshotLocator.recent(limit: 10) { [weak self] shots in
+            guard let self, generation == self.attachLookupGeneration, !self.editorOpen else { return }
+            if shots.isEmpty {
+                self.appState.screenshotPickerItems = nil
+                self.appState.attachFeedback = "No screenshots found"
+            } else {
+                self.appState.screenshotPickerItems = shots
+                self.enterPickerSurface()
+            }
+        }
+    }
+
+    /// Editor-style geometry for the picker: a comfortable centered panel, wider
+    /// than the capture box and a generous fraction of the screen height.
+    private func pickerFrame(in screen: NSRect) -> NSRect {
+        let width: CGFloat = min(860, screen.width - 80)
+        let height: CGFloat = min(560, screen.height * 0.82)
+        return NSRect(x: screen.midX - width / 2,
+                      y: screen.midY - height / 2,
+                      width: width, height: height)
+    }
+
+    /// Grow the window to the centered picker frame. The capture host stays the
+    /// active surface (CaptureView swaps its own content to the picker), so no
+    /// crossfade host is involved — just the frame animation.
+    private func enterPickerSurface() {
+        guard !pickerOpen, !editorOpen, let screen = currentScreenVisibleFrame() else { return }
+        pickerOpen = true
+        canDismissOnBlur = false
+        let target = pickerFrame(in: screen)
+        anchorCenterY = target.midY
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.24
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.canDismissOnBlur = true }
+        })
+    }
+
+    /// Close the picker surface, optionally attaching `url` as the chip, and
+    /// shrink back to the centered capture box. `pickerOpen` stays true until the
+    /// shrink finishes so the capture re-measure (CaptureView swaps back the
+    /// moment items clear) can't fire a competing non-animated setFrame.
+    private func closePickerSurface(attaching url: URL?) {
+        if let url { appState.pendingAttachment = url }
+        appState.screenshotPickerItems = nil
+        guard pickerOpen, let screen = currentScreenVisibleFrame() else { pickerOpen = false; return }
+        canDismissOnBlur = false
+        anchorCenterY = screen.midY
+        let target = NSRect(x: screen.midX - captureWidth / 2,
+                            y: screen.midY - captureContentSize.height / 2,
+                            width: captureWidth, height: captureContentSize.height)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.24
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            self.pickerOpen = false
+            self.focusCapture()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.canDismissOnBlur = true }
+        })
     }
 
     /// Flush the editor's debounced autosave so disk is current before leaving
@@ -446,13 +555,24 @@ final class MainPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { editorOpen }
 
-    /// Intercept ⌘F (switch mode) and ⌘W (dismiss) before CodeMirror/WebKit or
-    /// the standard Close menu item can claim them.
+    /// Intercept ⌘F (switch mode), ⌘W (dismiss), and ⌘⇧S (attach screenshot)
+    /// before CodeMirror/WebKit or the standard menu items can claim them.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command else {
+        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let key = event.charactersIgnoringModifiers?.lowercased()
+
+        // ⌘⇧S carries [.command, .shift], so it must be matched before the
+        // exact-Command guard below would bounce it to super. Capture mode
+        // only — the chip is a capture-surface affordance.
+        if mods == [.command, .shift], key == "s", !editorOpen {
+            openScreenshotPicker()
+            return true
+        }
+
+        guard mods == .command else {
             return super.performKeyEquivalent(with: event)
         }
-        switch event.charactersIgnoringModifiers?.lowercased() {
+        switch key {
         case "f":
             toggleEditor()
             return true
@@ -541,6 +661,47 @@ final class MainPanel: NSPanel {
             try FileWriter.archiveCompleted(at: loadedFileURL)
         } catch {
             NSLog("Editor archive failed for \(loadedFileURL.path): \(error)")
+        }
+    }
+
+    /// The editor asked for an attachment's bytes (its file read-access is
+    /// scoped to the app bundle, so it can't load capture-folder images
+    /// itself). Replies with a data URL — downscaled so a 6K Retina PNG
+    /// doesn't ship a multi-MB string over evaluateJavaScript — or null when
+    /// the file is missing, which the editor renders as a missing state.
+    /// The JS side shows a Loading state while the reply is in flight, so
+    /// the async reply is safe.
+    fileprivate func sendAttachment(relativePath: String) {
+        guard webViewReady else { return }
+        let baseDir = loadedFileURL.deletingLastPathComponent().standardizedFileURL
+        let resolved = baseDir.appendingPathComponent(relativePath).standardizedFileURL
+
+        // The link is user-editable text — only serve files inside the capture
+        // file's folder, so a stray `../../…` path can't read elsewhere.
+        guard resolved.path.hasPrefix(baseDir.path + "/") else {
+            guard let pathJSON = String(data: try! JSONEncoder().encode(relativePath), encoding: .utf8) else { return }
+            webView.evaluateJavaScript(
+                "window.qcEditor && window.qcEditor.attachmentLoaded(\(pathJSON), null)",
+                completionHandler: nil
+            )
+            return
+        }
+
+        // Thumbnail decode + PNG encode + base64 are CPU/IO-heavy; run them off
+        // the main thread so the message-handler callback returns immediately.
+        DispatchQueue.global(qos: .userInitiated).async { [weak self] in
+            var payload = "null"
+            if let cg = AttachmentStore.thumbnail(at: resolved, maxPixelSize: 1200),
+               let png = NSBitmapImageRep(cgImage: cg).representation(using: .png, properties: [:]) {
+                payload = "\"data:image/png;base64,\(png.base64EncodedString())\""
+            }
+            guard let pathJSON = String(data: try! JSONEncoder().encode(relativePath), encoding: .utf8) else { return }
+            DispatchQueue.main.async { [weak self] in
+                self?.webView.evaluateJavaScript(
+                    "window.qcEditor && window.qcEditor.attachmentLoaded(\(pathJSON), \(payload))",
+                    completionHandler: nil
+                )
+            }
         }
     }
 
@@ -731,7 +892,8 @@ private final class EditorContainerView: NSView {
 // MARK: - JS → Swift bridge
 
 /// WKWebView message handler. JS posts `{ type: "ready" | "save" | "archive" |
-/// "dismiss", content?: String }` to the `editorBridge` handler.
+/// "dismiss" | "attachment", content?: String, path?: String }` to the
+/// `editorBridge` handler.
 final class EditorBridge: NSObject, WKScriptMessageHandler {
     weak var panel: MainPanel?
 
@@ -749,6 +911,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
         case "dismiss":
             // Esc in the editor when vim is off (editor.ts decides).
             panel?.dismissFromEditor()
+        case "attachment":
+            // The editor wants an image's bytes for the expanded preview.
+            if let path = dict["path"] as? String { panel?.sendAttachment(relativePath: path) }
         default:
             break
         }

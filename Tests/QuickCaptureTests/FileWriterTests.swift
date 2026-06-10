@@ -256,6 +256,363 @@ final class FileWriterTests: XCTestCase {
         XCTAssertEqual(FileWriter.sectionName(for: "   "), FileWriter.untaggedSection)
     }
 
+    // MARK: - Attachment child lines (insert)
+
+    func testInsertPairLandsTogetherAbovePlainItems() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] existing plain
+        """
+        let result = FileWriter.insert(
+            item: "- [ ] fix layout !!",
+            childLines: ["  ![screenshot](attachments/shot.png)"],
+            underHeading: "work",
+            in: content
+        )
+        XCTAssertTrue(
+            result.contains("- [ ] fix layout !!\n  ![screenshot](attachments/shot.png)\n- [ ] existing plain"),
+            "todo + image child must land together, above plain items; got:\n\(result)"
+        )
+    }
+
+    func testInsertDoesNotSplitExistingAttachmentPair() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] with image !!
+          ![screenshot](attachments/shot.png)
+        - [ ] plain
+        """
+        let result = FileWriter.insert(item: "- [ ] urgent !!!", underHeading: "work", in: content)
+        XCTAssertTrue(
+            result.contains("- [ ] with image !!\n  ![screenshot](attachments/shot.png)"),
+            "a later insert must never split an existing todo + image pair; got:\n\(result)"
+        )
+        XCTAssertTrue(
+            result.contains("## work\n- [ ] urgent !!!\n- [ ] with image !!"),
+            "!!! item should land above the !! pair; got:\n\(result)"
+        )
+    }
+
+    func testInsertMediumPriorityStepsOverPairAndLandsBeforeLower() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] hot !!!
+          ![screenshot](attachments/hot.png)
+        - [ ] low !
+        """
+        let result = FileWriter.insert(item: "- [ ] med !!", underHeading: "work", in: content)
+        XCTAssertTrue(
+            result.contains("- [ ] hot !!!\n  ![screenshot](attachments/hot.png)\n- [ ] med !!\n- [ ] low !"),
+            "insert must step over the pair as a unit; got:\n\(result)"
+        )
+    }
+
+    func testInsertPairIntoMissingHeadingCreatesSectionWithBothLines() {
+        let result = FileWriter.insert(
+            item: "- [ ] buy milk",
+            childLines: ["  ![screenshot](attachments/milk.png)"],
+            underHeading: "home",
+            in: ""
+        )
+        XCTAssertEqual(result, "## home\n- [ ] buy milk\n  ![screenshot](attachments/milk.png)\n")
+    }
+
+    // MARK: - Attachment child lines (appendTodo integration)
+
+    func testAppendTodoWritesAttachmentChildLine() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try FileWriter.appendTodo("fix layout !!", tag: "work", to: url, attachmentLink: "attachments/shot.png")
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(
+            content.contains("- [ ] fix layout !!\n  ![screenshot](attachments/shot.png)"),
+            "attachment child line must directly follow the todo, leaving trailing priority markers on the todo line; got:\n\(content)"
+        )
+    }
+
+    func testAppendTodoUntaggedPairLandsUnderQuickCapture() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try FileWriter.appendTodo("buy milk", to: url, attachmentLink: "attachments/milk.png")
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(
+            content.contains("## Quick capture\n- [ ] buy milk\n  ![screenshot](attachments/milk.png)"),
+            "untagged pair routes under ## Quick capture; got:\n\(content)"
+        )
+    }
+
+    func testAppendTodoTimestampedPairStillClassifiesPriority() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fixed = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try FileWriter.appendTodo("plain task", tag: "work", to: url)
+        try FileWriter.appendTodo(
+            "urgent !!!",
+            tag: "work",
+            to: url,
+            includeTimestamp: true,
+            now: fixed,
+            attachmentLink: "attachments/urgent.png"
+        )
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        let urgentIndex = content.range(of: "- [ ] urgent !!!")!.lowerBound
+        let childIndex = content.range(of: "![screenshot](attachments/urgent.png)")!.lowerBound
+        let plainIndex = content.range(of: "- [ ] plain task")!.lowerBound
+        XCTAssertTrue(
+            urgentIndex < childIndex && childIndex < plainIndex,
+            "timestamped !!! pair must classify on the parent line and land above plain items; got:\n\(content)"
+        )
+    }
+
+    // MARK: - attachmentChildLine
+
+    func testAttachmentChildLineFormat() {
+        XCTAssertEqual(
+            FileWriter.attachmentChildLine("attachments/shot.png"),
+            "  ![screenshot](attachments/shot.png)"
+        )
+    }
+
+    // MARK: - Archive carries attachment children
+
+    func testExtractCompletedMovesChildWithCheckedParent() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] done task
+          ![screenshot](attachments/done.png)
+        - [ ] open task
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertFalse(remaining.contains("![screenshot]"),
+                       "child line must not be stranded in the source; got:\n\(remaining)")
+        XCTAssertTrue(remaining.contains("- [ ] open task"))
+        XCTAssertEqual(items, [
+            FileWriter.ArchivedItem(
+                text: "- [x] done task",
+                section: "work",
+                children: ["  ![screenshot](attachments/done.png)"]
+            )
+        ])
+    }
+
+    func testExtractCompletedLeavesUncheckedParentsChildAlone() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] open task
+          ![screenshot](attachments/open.png)
+        - [x] done plain
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertTrue(remaining.contains("- [ ] open task\n  ![screenshot](attachments/open.png)"),
+                      "unchecked parent keeps its child; got:\n\(remaining)")
+        XCTAssertEqual(items, [FileWriter.ArchivedItem(text: "- [x] done plain", section: "work")])
+    }
+
+    func testExtractCompletedPairAtEndOfFileWithoutTrailingNewline() {
+        let content = "# Inbox\n\n## work\n- [x] last\n  ![screenshot](attachments/last.png)"
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertTrue(remaining.contains("## work"), "section heading survives; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("![screenshot]"))
+        XCTAssertEqual(items, [
+            FileWriter.ArchivedItem(
+                text: "- [x] last",
+                section: "work",
+                children: ["  ![screenshot](attachments/last.png)"]
+            )
+        ])
+    }
+
+    func testExtractCompletedReindentsChildOfIndentedCheckedParent() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] parent
+            - [x] nested done
+              ![screenshot](attachments/nested.png)
+        """
+        let (_, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertEqual(items, [
+            FileWriter.ArchivedItem(
+                text: "- [x] nested done",
+                section: "work",
+                children: ["  ![screenshot](attachments/nested.png)"]
+            )
+        ], "parent flattens, child normalizes to a 2-space indent")
+    }
+
+    func testArchiveCompletedWritesPairToArchiveFile() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let archive = FileWriter.archiveURL(for: url)
+        defer { try? FileManager.default.removeItem(at: archive) }
+
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] shipped !!
+          ![screenshot](attachments/shipped.png)
+        - [ ] still open
+        """
+        try content.write(to: url, atomically: true, encoding: .utf8)
+
+        try FileWriter.archiveCompleted(at: url)
+
+        let source = try String(contentsOf: url, encoding: .utf8)
+        let archived = try String(contentsOf: archive, encoding: .utf8)
+        XCTAssertFalse(source.contains("![screenshot]"), "source must not strand the child; got:\n\(source)")
+        XCTAssertTrue(source.contains("- [ ] still open"))
+        XCTAssertTrue(
+            archived.contains("- [x] shipped !!\n  ![screenshot](attachments/shipped.png)"),
+            "archive must keep the pair adjacent under the section; got:\n\(archived)"
+        )
+        XCTAssertTrue(archived.contains("## work"))
+    }
+
+    // MARK: - extractCompletedItems: subtask semantics
+
+    func testArchiveKeepsUncheckedSubtaskOfCheckedParent() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] done
+          - [ ] open sub
+        - [ ] top
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertTrue(remaining.contains("  - [ ] open sub"),
+                      "unchecked subtask of checked parent must stay in source; got:\n\(remaining)")
+        XCTAssertTrue(remaining.contains("- [ ] top"),
+                      "sibling open task must stay in source; got:\n\(remaining)")
+        XCTAssertEqual(items, [
+            FileWriter.ArchivedItem(text: "- [x] done", section: "work")
+        ], "parent must archive with no children (subtask line stops child collection)")
+    }
+
+    func testArchiveExtractsNestedCheckedSubtaskAsOwnItem() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] parent
+          - [x] done sub
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertFalse(remaining.contains("- [x] parent"),
+                       "checked parent must not remain in source; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("- [x] done sub"),
+                       "checked sub-task must not remain in source; got:\n\(remaining)")
+        XCTAssertEqual(items.count, 2,
+                       "both checked items must be extracted as separate flat items; got:\n\(items)")
+        // Neither item should carry the other as a child.
+        XCTAssertTrue(items[0].children.isEmpty,
+                      "parent's children must be empty (sub-task must not appear there); got:\n\(items[0].children)")
+        XCTAssertTrue(items[1].children.isEmpty,
+                      "sub-task's children must be empty; got:\n\(items[1].children)")
+        let texts = items.map(\.text)
+        XCTAssertTrue(texts.contains("- [x] parent"), "parent must appear as a flat archived item")
+        XCTAssertTrue(texts.contains("- [x] done sub"), "sub-task must appear as its own flat archived item")
+    }
+
+    func testExtractCompletedCarriesMultipleNonTaskChildren() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] done with extras
+          ![screenshot](attachments/a.png)
+          continuation note
+        - [ ] open
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertFalse(remaining.contains("![screenshot]"),
+                       "image child must not remain in source; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("continuation note"),
+                       "note child must not remain in source; got:\n\(remaining)")
+        XCTAssertTrue(remaining.contains("- [ ] open"),
+                      "unrelated open task must stay in source; got:\n\(remaining)")
+        XCTAssertEqual(items, [
+            FileWriter.ArchivedItem(
+                text: "- [x] done with extras",
+                section: "work",
+                children: [
+                    "  ![screenshot](attachments/a.png)",
+                    "  continuation note"
+                ]
+            )
+        ], "both non-task children must travel with the parent in order; got:\n\(items)")
+    }
+
+    func testExtractCompletedTwoConsecutivePairs() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] done1
+          ![screenshot](attachments/a.png)
+        - [x] done2
+          ![screenshot](attachments/b.png)
+        - [ ] open
+        """
+        let (remaining, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertTrue(remaining.contains("- [ ] open"),
+                      "remaining must keep the open task; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("- [x]"),
+                       "remaining must contain no checked tasks; got:\n\(remaining)")
+        XCTAssertFalse(remaining.contains("![screenshot]"),
+                       "remaining must contain no attachment lines; got:\n\(remaining)")
+        XCTAssertEqual(items.count, 2,
+                       "exactly two archived items; got:\n\(items)")
+        XCTAssertEqual(items[0].text, "- [x] done1")
+        XCTAssertEqual(items[0].children, ["  ![screenshot](attachments/a.png)"],
+                       "first item must carry only its own child; got:\n\(items[0].children)")
+        XCTAssertEqual(items[1].text, "- [x] done2")
+        XCTAssertEqual(items[1].children, ["  ![screenshot](attachments/b.png)"],
+                       "second item must carry only its own child; got:\n\(items[1].children)")
+    }
+
+    // MARK: - insert: multiple child lines
+
+    func testInsertMultipleChildLinesLandTogether() {
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] existing plain
+        """
+        let result = FileWriter.insert(
+            item: "- [ ] fix layout !!",
+            childLines: [
+                "  ![screenshot](attachments/a.png)",
+                "  second child line"
+            ],
+            underHeading: "work",
+            in: content
+        )
+        XCTAssertTrue(
+            result.contains("- [ ] fix layout !!\n  ![screenshot](attachments/a.png)\n  second child line\n- [ ] existing plain"),
+            "both child lines must land consecutively after the parent in order; got:\n\(result)"
+        )
+    }
+
     // MARK: - Helpers
 
     private func makeTempFile() -> URL {

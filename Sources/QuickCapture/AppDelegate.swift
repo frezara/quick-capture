@@ -205,7 +205,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let panel = mainPanel { return panel }
         let panel = MainPanel(
             appState: appState,
-            onSubmit: { [weak self] text, tag in self?.handleCapture(text, tag: tag) },
+            onSubmit: { [weak self] text, tag, attachment in
+                self?.handleCapture(text, tag: tag, attachment: attachment) ?? false
+            },
             onDismiss: { [weak self] in self?.hideCapture() }
         )
         mainPanel = panel
@@ -223,13 +225,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         NotificationCenter.default.post(name: .capturePanelDidHide, object: nil)
     }
 
-    private func handleCapture(_ text: String, tag: String?) {
+    @discardableResult
+    private func handleCapture(_ text: String, tag: String?, attachment: URL? = nil) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmed.isEmpty else { return }
+        guard !trimmed.isEmpty else { return false }
 
         if tag?.lowercased() == "cal" {
-            handleCalendarCapture(trimmed)
-            return
+            // Calendar captures never touch the markdown file; the capture UI
+            // disables the chip in #cal mode, so any attachment is dropped here
+            // with the user already informed.
+            return handleCalendarCapture(trimmed)
+        }
+
+        // Copy the image BEFORE writing the markdown (R16): a failed copy must
+        // never leave a dangling image link in the file. The attachments folder
+        // and relative link resolve against the capture file path as it is
+        // right now, not as it was at attach time (R18).
+        var attachmentLink: String? = nil
+        if let attachment {
+            do {
+                attachmentLink = try AttachmentStore.copy(attachment, besideFile: appState.captureFileURL)
+            } catch {
+                guard confirmSaveWithoutAttachment(error) else { return false }
+            }
         }
 
         do {
@@ -237,35 +255,55 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 trimmed,
                 tag: tag,
                 to: appState.captureFileURL,
-                includeTimestamp: appState.includeTimestamp
+                includeTimestamp: appState.includeTimestamp,
+                attachmentLink: attachmentLink
             )
             hideCapture()
+            return true
         } catch {
             let alert = NSAlert()
             alert.messageText = "Couldn't save"
             alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
             alert.runModal()
+            return false
         }
+    }
+
+    /// The screenshot couldn't be copied (deleted since attach, unwritable
+    /// destination, …). Never silently drop it — offer saving the todo plain.
+    private func confirmSaveWithoutAttachment(_ error: Error) -> Bool {
+        let alert = NSAlert()
+        alert.messageText = "Couldn't attach screenshot"
+        alert.informativeText = "\(error.localizedDescription)\n\nSave the todo without it?"
+        alert.alertStyle = .warning
+        alert.addButton(withTitle: "Save Without Screenshot")
+        alert.addButton(withTitle: "Don't Save")
+        return alert.runModal() == .alertFirstButtonReturn
     }
 
     /// `#cal` branch: parse the text as a calendar event, hand the resulting
     /// `.ics` to the default handler (Calendar.app shows its own confirmation
     /// sheet). The markdown todo file is NOT touched for these captures.
-    private func handleCalendarCapture(_ text: String) {
+    /// Returns true when the .ics was opened and the panel dismissed.
+    @discardableResult
+    private func handleCalendarCapture(_ text: String) -> Bool {
         switch EventParser.parse(text) {
         case .success(let event):
             do {
                 let url = try ICSWriter.writeTempFile(for: event)
                 NSWorkspace.shared.open(url)
                 hideCapture()
+                return true
             } catch {
                 showCalendarError(message: "Couldn't create calendar event",
                                   detail: error.localizedDescription)
+                return false
             }
         case .failure(let error):
             showCalendarError(message: "Couldn't create calendar event",
                               detail: error.localizedDescription)
+            return false
         }
     }
 

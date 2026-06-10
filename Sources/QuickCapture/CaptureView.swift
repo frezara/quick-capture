@@ -3,25 +3,39 @@ import SwiftUI
 
 struct CaptureView: View {
     @ObservedObject var appState: AppState
-    let onSubmit: (String, String?) -> Void
+    let onSubmit: (String, String?, URL?) -> Bool
     let onClose: () -> Void
     let onToggleEditor: () -> Void
     let onEscape: () -> Void
     let onContentSizeChange: (CGSize) -> Void
+    /// Attach the chosen screenshot and dismiss the picker surface (MainPanel
+    /// shrinks the window back to the capture box).
+    var onPickerAttach: (URL) -> Void = { _ in }
+    /// Dismiss the picker surface without attaching.
+    var onPickerCancel: () -> Void = {}
 
     @State private var todoText = ""
     @State private var tagText = ""
     @State private var shakeTrigger = 0
     @State private var isShaking = false
+    /// Decoded chip thumbnail. Loaded off the main thread (a 6K Retina PNG
+    /// decoded inline would jank the summon); the chip frame shows immediately
+    /// and the image fills in.
+    @State private var chipThumbnail: NSImage?
     /// Sticky tag-suggestions visibility. Driven off `focused` transitions
     /// rather than read live, so a *transient* `focused == nil` (which AppKit
     /// briefly produces while the panel resizes) doesn't collapse the footer
     /// and start a resize⇄focus oscillation. Only an explicit move to the todo
     /// field hides it.
     @State private var tagFieldActive = false
+    /// Highlighted row in the ⌘⇧S screenshot picker (0 = newest).
+    @State private var pickerIndex = 0
+    /// Decoded previews for the picker, keyed by screenshot URL. Loaded off the
+    /// main thread like the chip thumbnail.
+    @State private var pickerPreviews: [URL: NSImage] = [:]
     @FocusState private var focused: Field?
 
-    enum Field: Hashable { case todo, tag }
+    enum Field: Hashable { case todo, tag, picker }
 
     // "Misted Steel" palette resolved from system appearance (see DesignSystem).
     // The panel follows the system colour scheme — dark mode renders Theme.dark.
@@ -33,25 +47,13 @@ struct CaptureView: View {
     private var tagActive: Bool { focused == .tag || !tagText.isEmpty }
 
     var body: some View {
-        VStack(spacing: 0) {
-            inputsRow
-            if shouldShowExtras {
-                // Symmetric: gap above the rule (from the inputs) and below it
-                // (to the chips), so the separator doesn't get squashed against
-                // the input row.
-                VStack(spacing: 0) {
-                    Rectangle().fill(theme.border).frame(height: 1)
-                        .padding(.top, Metrics.s3)
-                    Group {
-                        if isCalendarMode {
-                            calendarPreview
-                        } else {
-                            footer
-                        }
-                    }
-                    .padding(.top, Metrics.s3)
-                }
-                .transition(.opacity)
+        Group {
+            if let items = appState.screenshotPickerItems {
+                // ⌘⇧S takeover: a large centered panel (same window, like the
+                // editor) that fills the surface while you pick.
+                screenshotPickerSurface(items)
+            } else {
+                captureColumn
             }
         }
         .padding(Metrics.s3)
@@ -60,10 +62,12 @@ struct CaptureView: View {
         // smooth and symmetric both ways.
         .animation(.easeInOut(duration: 0.18), value: shouldShowExtras)
         .animation(.easeInOut(duration: 0.18), value: isCalendarMode)
+        .animation(.easeInOut(duration: 0.18), value: pickerOpen)
         // Pin the root to its intrinsic height — otherwise NSHostingView's fixed
         // frame can squash the VStack when the todo field grows mid-resize,
-        // clipping the header.
-        .fixedSize(horizontal: false, vertical: true)
+        // clipping the header. The picker surface, by contrast, fills the large
+        // window (MainPanel owns that fixed frame), so it must NOT be height-pinned.
+        .fixedSize(horizontal: false, vertical: !pickerOpen)
         // Report intrinsic content size up to MainPanel so it can resize the
         // window to fit. We call back directly from the GeometryReader's
         // onAppear/onChange rather than via a PreferenceKey: on macOS 14 the
@@ -106,20 +110,89 @@ struct CaptureView: View {
                 }
             }
         }
-        .onExitCommand { onEscape() }
+        // Esc closes the picker first (it's a transient surface); only a plain
+        // Esc with no picker open dismisses the whole panel.
+        .onExitCommand {
+            if pickerOpen { onPickerCancel() } else { onEscape() }
+        }
         // Global Enter handler — guarantees that pressing Enter saves the todo
         // no matter where focus is (chip, suggestion area, transient nil).
-        // Children's own Enter handlers (TextField.onSubmit, chip onKeyPress)
-        // fire first and return .handled, so this only runs as a fallback.
+        // Children's own Enter handlers (TextField.onSubmit) fire first and
+        // return .handled, so this only runs as a fallback. While the picker is
+        // open it owns Enter (attach) and the arrows (navigate): a plain
+        // `.focusable()` view doesn't reliably receive `.onKeyPress(.return)`
+        // (Return is reserved for default-button activation), so the picker's
+        // keys are handled here at the root where the events actually land.
         .onKeyPress(.return) {
+            if pickerOpen { attachPicked(); return .handled }
             submit()
             return .handled
         }
+        .onKeyPress(.upArrow)    { pickerOpen ? { movePicker(-1); return .handled }() : .ignored }
+        .onKeyPress(.downArrow)  { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
+        .onKeyPress(.leftArrow)  { pickerOpen ? { movePicker(-1); return .handled }() : .ignored }
+        .onKeyPress(.rightArrow) { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
         .onReceive(NotificationCenter.default.publisher(for: .capturePanelDidHide)) { _ in
             todoText = ""
             tagText = ""
             tagFieldActive = false
             focused = .todo
+            appState.pendingAttachment = nil
+            appState.recentScreenshotExists = false
+            appState.attachFeedback = nil
+            appState.screenshotPickerItems = nil
+            chipThumbnail = nil
+            pickerPreviews = [:]
+        }
+        .onChange(of: appState.pendingAttachment) { _, newValue in
+            loadChipThumbnail(for: newValue)
+        }
+        // The picker's item set changing (open, or ⌘⇧S re-query) resets the
+        // highlight to the newest and (re)loads previews; opening also moves
+        // keyboard focus onto the picker so arrows/Enter reach it, and closing
+        // hands focus back to the todo field.
+        .onChange(of: pickerItemsKey) { _, _ in
+            guard let items = appState.screenshotPickerItems else {
+                if focused == .picker { focused = .todo }
+                return
+            }
+            pickerIndex = 0
+            loadPickerPreviews(items)
+            // Defer focus a runloop — the focusable picker view is installed in
+            // this same render pass, and focusing it synchronously can miss.
+            DispatchQueue.main.async { focused = .picker }
+        }
+        .onChange(of: appState.attachFeedback) { _, newValue in
+            guard newValue != nil else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
+                appState.attachFeedback = nil
+            }
+        }
+    }
+
+    /// The capture box layout (inputs + tag chips / calendar preview). Shown
+    /// whenever the picker surface isn't taking over the window.
+    private var captureColumn: some View {
+        VStack(spacing: 0) {
+            inputsRow
+            if shouldShowExtras {
+                // Symmetric: gap above the rule (from the inputs) and below it
+                // (to the chips), so the separator doesn't get squashed against
+                // the input row.
+                VStack(spacing: 0) {
+                    Rectangle().fill(theme.border).frame(height: 1)
+                        .padding(.top, Metrics.s3)
+                    Group {
+                        if isCalendarMode {
+                            calendarPreview
+                        } else {
+                            footer
+                        }
+                    }
+                    .padding(.top, Metrics.s3)
+                }
+                .transition(.opacity)
+            }
         }
     }
 
@@ -168,7 +241,8 @@ struct CaptureView: View {
                     set: { if $0 { focused = .todo } }
                 ),
                 onSubmit: { submit() },
-                onTab: { focused = .tag }
+                onTab: { focused = .tag },
+                onEmptyDelete: { detachChipIfPresent() }
             )
         }
         .padding(.horizontal, 15)
@@ -352,9 +426,26 @@ struct CaptureView: View {
         return "\(hours) hr \(remainder) min"
     }
 
-    // MARK: - Footer (tag pills left, hints right)
+    // MARK: - Footer (attachment chip, tag pills, screenshot hint)
 
     private var footer: some View {
+        HStack(spacing: Metrics.s2) {
+            if appState.pendingAttachment != nil {
+                attachmentChip
+            }
+            tagChipsScroll
+            if let hint = attachHintText {
+                Text(hint)
+                    .font(TypeScale.chip)
+                    .foregroundStyle(theme.inkTertiary)
+                    .fixedSize()
+                    .transition(.opacity)
+            }
+        }
+        .animation(.easeInOut(duration: 0.15), value: appState.attachFeedback)
+    }
+
+    private var tagChipsScroll: some View {
         ScrollView(.horizontal, showsIndicators: false) {
             HStack(spacing: Metrics.s1) {
                 ForEach(displayedTags, id: \.self) { tag in
@@ -376,6 +467,259 @@ struct CaptureView: View {
             .frame(width: 32)
             .allowsHitTesting(false)
         }
+    }
+
+    // MARK: - Attachment chip
+
+    /// Pull-in feedback wins over the standing hint; the hint only shows when
+    /// a screenshot actually exists to pull in and no chip is attached, so the
+    /// footer stays quiet on summons with nothing to offer.
+    private var attachHintText: String? {
+        guard appState.pendingAttachment == nil else { return nil }
+        if let feedback = appState.attachFeedback { return feedback }
+        if appState.recentScreenshotExists { return "⌘⇧S to attach screenshot" }
+        return nil
+    }
+
+    /// Thumbnail chip for the attached screenshot. In `#cal` mode the chip is
+    /// disabled — a calendar capture never writes markdown, so the attachment
+    /// isn't kept, and the chip says so rather than silently dropping it.
+    private var attachmentChip: some View {
+        HStack(spacing: Metrics.s1) {
+            Group {
+                if let thumb = chipThumbnail {
+                    Image(nsImage: thumb)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 10, weight: .semibold))
+                        .foregroundStyle(theme.inkTertiary)
+                }
+            }
+            .frame(width: 28, height: 19)
+            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+
+            Text(isCalendarMode ? "Not used for calendar captures" : "Screenshot")
+                .font(TypeScale.chip)
+                .foregroundStyle(isCalendarMode ? theme.inkTertiary : theme.inkSecondary)
+                .lineLimit(1)
+
+            if !isCalendarMode {
+                Button {
+                    detachChipIfPresent()
+                } label: {
+                    Image(systemName: "xmark")
+                        .font(.system(size: 9, weight: .bold))
+                        .foregroundStyle(theme.inkTertiary)
+                }
+                .buttonStyle(.plain)
+                .help("Remove screenshot (⌫ on empty input)")
+            }
+        }
+        .padding(.horizontal, 9)
+        .padding(.vertical, 5)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .fill(theme.surfaceField)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .strokeBorder(theme.border, lineWidth: 1)
+        )
+        .opacity(isCalendarMode ? 0.55 : 1)
+    }
+
+    /// Detach is sticky for the capture session — nothing re-attaches until a
+    /// fresh summon or an explicit ⌘⇧S.
+    @discardableResult
+    private func detachChipIfPresent() -> Bool {
+        guard appState.pendingAttachment != nil else { return false }
+        appState.pendingAttachment = nil
+        chipThumbnail = nil
+        return true
+    }
+
+    private func loadChipThumbnail(for url: URL?) {
+        chipThumbnail = nil
+        guard let url else { return }
+        DispatchQueue.global(qos: .userInitiated).async {
+            guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 120) else { return }
+            let image = NSImage(cgImage: cg, size: .zero)
+            DispatchQueue.main.async {
+                if appState.pendingAttachment == url { chipThumbnail = image }
+            }
+        }
+    }
+
+    // MARK: - Screenshot picker (⌘⇧S)
+
+    private var pickerOpen: Bool { appState.screenshotPickerItems != nil }
+
+    /// Stable identity for the current picker item set. Drives the focus /
+    /// highlight / preview resets when the picker opens, closes, or is
+    /// re-queried by a second ⌘⇧S.
+    private var pickerItemsKey: String {
+        (appState.screenshotPickerItems ?? []).map(\.url.path).joined(separator: "|")
+    }
+
+    /// The ⌘⇧S takeover surface: a large centered panel (like the editor) with a
+    /// scrollable vertical list of recent screenshots on the left and a big live
+    /// preview of the highlighted one on the right. It's `.focusable()` and grabs
+    /// focus while open, so arrows / Enter reach the root key handlers instead of
+    /// the todo field; Esc is routed to `onPickerCancel()` from the root.
+    private func screenshotPickerSurface(_ items: [ScreenshotLocator.Screenshot]) -> some View {
+        let selected = items.indices.contains(pickerIndex) ? items[pickerIndex] : items.first
+        return VStack(alignment: .leading, spacing: Metrics.s3) {
+            HStack(spacing: Metrics.s2) {
+                Text("Recent screenshots")
+                    .font(TypeScale.h2)
+                    .foregroundStyle(theme.ink)
+                Spacer(minLength: 0)
+                Text("↑↓ navigate · ⏎ attach · esc cancel")
+                    .font(TypeScale.chip)
+                    .foregroundStyle(theme.inkTertiary)
+            }
+
+            HStack(alignment: .top, spacing: Metrics.s3) {
+                ScrollViewReader { proxy in
+                    ScrollView(.vertical, showsIndicators: false) {
+                        VStack(spacing: 4) {
+                            ForEach(Array(items.enumerated()), id: \.element.url) { idx, shot in
+                                pickerRow(shot, isSelected: idx == pickerIndex)
+                                    .id(idx)
+                                    .contentShape(Rectangle())
+                                    .onTapGesture {
+                                        pickerIndex = idx
+                                        attachPicked()
+                                    }
+                            }
+                        }
+                    }
+                    .onChange(of: pickerIndex) { _, idx in
+                        withAnimation(.easeInOut(duration: 0.15)) { proxy.scrollTo(idx, anchor: .center) }
+                    }
+                }
+                .frame(width: 240)
+
+                pickerPreview(selected)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+            .frame(maxWidth: .infinity, maxHeight: .infinity)
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        // Anchors keyboard focus inside the panel while the picker is open so
+        // the root key handlers (arrows / Enter) receive events; the actual
+        // handling lives at the root (see body) because a focusable view
+        // doesn't reliably get `.onKeyPress(.return)`. The focus ring is dropped
+        // — the row highlight already shows selection.
+        .focusable()
+        .focused($focused, equals: .picker)
+        .focusEffectDisabled()
+    }
+
+    private func pickerRow(_ shot: ScreenshotLocator.Screenshot, isSelected: Bool) -> some View {
+        HStack(spacing: Metrics.s2) {
+            Group {
+                if let thumb = pickerPreviews[shot.url] {
+                    Image(nsImage: thumb)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 12, weight: .semibold))
+                        .foregroundStyle(theme.inkTertiary)
+                }
+            }
+            .frame(width: 52, height: 34)
+            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+            VStack(alignment: .leading, spacing: 1) {
+                Text(screenshotTime(shot))
+                    .font(TypeScale.chip)
+                    .foregroundStyle(isSelected ? theme.accentInk : theme.inkSecondary)
+                    .lineLimit(1)
+                Text(screenshotDay(shot))
+                    .font(TypeScale.caption)
+                    .foregroundStyle(theme.inkTertiary)
+                    .lineLimit(1)
+            }
+            Spacer(minLength: 0)
+        }
+        .padding(.horizontal, 8)
+        .padding(.vertical, 7)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .fill(isSelected ? theme.accentSoft : Color.clear)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .strokeBorder(isSelected ? theme.accent.opacity(0.42) : .clear, lineWidth: 1)
+        )
+    }
+
+    private func pickerPreview(_ shot: ScreenshotLocator.Screenshot?) -> some View {
+        Group {
+            if let shot, let img = pickerPreviews[shot.url] {
+                Image(nsImage: img)
+                    .resizable()
+                    .aspectRatio(contentMode: .fit)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+                    .padding(Metrics.s2)
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 28, weight: .regular))
+                    .foregroundStyle(theme.inkTertiary)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            }
+        }
+        .frame(maxWidth: .infinity, maxHeight: .infinity)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                .fill(theme.surfaceField)
+        )
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous))
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                .strokeBorder(theme.border, lineWidth: 1)
+        )
+    }
+
+    /// Wrap-around so ↑ from the newest lands on the oldest and vice versa —
+    /// friendlier than a hard stop on a five-item list.
+    private func movePicker(_ delta: Int) {
+        guard let count = appState.screenshotPickerItems?.count, count > 0 else { return }
+        pickerIndex = (pickerIndex + delta + count) % count
+    }
+
+    /// Attach the highlighted screenshot as the chip and close the surface.
+    /// MainPanel (via `onPickerAttach`) sets `pendingAttachment` and shrinks the
+    /// window; the existing `onChange(of: pendingAttachment)` decodes the chip.
+    private func attachPicked() {
+        guard let items = appState.screenshotPickerItems,
+              items.indices.contains(pickerIndex) else { onPickerCancel(); return }
+        onPickerAttach(items[pickerIndex].url)
+    }
+
+    private func loadPickerPreviews(_ items: [ScreenshotLocator.Screenshot]) {
+        for url in items.map(\.url) where pickerPreviews[url] == nil {
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 1000) else { return }
+                let image = NSImage(cgImage: cg, size: .zero)
+                DispatchQueue.main.async { pickerPreviews[url] = image }
+            }
+        }
+    }
+
+    private func screenshotTime(_ shot: ScreenshotLocator.Screenshot) -> String {
+        posixFormatted(shot.createdAt, "h:mm a")
+    }
+
+    private func screenshotDay(_ shot: ScreenshotLocator.Screenshot) -> String {
+        let cal = Calendar.current
+        if cal.isDateInToday(shot.createdAt) { return "Today" }
+        if cal.isDateInYesterday(shot.createdAt) { return "Yesterday" }
+        return posixFormatted(shot.createdAt, "EEE, MMM d")
     }
 
     /// One steel chip treatment for every tag (no per-tag colour). The
@@ -425,9 +769,17 @@ struct CaptureView: View {
         }
         let trimmedTag = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
         let tag: String? = trimmedTag.isEmpty ? nil : trimmedTag
-        onSubmit(trimmedText, tag)
+        // Calendar captures never write markdown, so the attachment has
+        // nowhere to go — the chip is visibly disabled in that mode (R21).
+        let attachment = isCalendarMode ? nil : appState.pendingAttachment
+        let saved = onSubmit(trimmedText, tag, attachment)
+        // On a failed or user-declined save, leave the typed text and chip
+        // intact so the user can retry without retyping.
+        guard saved else { return }
         todoText = ""
         tagText = ""
+        appState.pendingAttachment = nil
+        chipThumbnail = nil
     }
 
     private func chipTapped(_ tag: String) {
@@ -467,6 +819,9 @@ struct TodoTextEditor: NSViewRepresentable {
     @Binding var isFocused: Bool
     let onSubmit: () -> Void
     let onTab: () -> Void
+    /// ⌫ with the field already empty. Returns true when consumed (e.g. the
+    /// attachment chip was detached) so the delete doesn't also beep.
+    var onEmptyDelete: () -> Bool = { false }
 
     func makeCoordinator() -> Coordinator { Coordinator(parent: self) }
 
@@ -564,6 +919,9 @@ struct TodoTextEditor: NSViewRepresentable {
             case #selector(NSResponder.insertTab(_:)):
                 parent.onTab()
                 return true
+            case #selector(NSResponder.deleteBackward(_:)):
+                guard tv.string.isEmpty else { return false }
+                return parent.onEmptyDelete()
             default:
                 return false
             }
@@ -587,7 +945,7 @@ private extension AppState {
 #Preview("Capture · standalone") {
     CaptureView(
         appState: .previewSeeded(),
-        onSubmit: { _, _ in }, onClose: {}, onToggleEditor: {},
+        onSubmit: { _, _, _ in true }, onClose: {}, onToggleEditor: {},
         onEscape: {}, onContentSizeChange: { _ in }
     )
     .frame(width: 600)
@@ -598,7 +956,7 @@ private extension AppState {
 #Preview("Capture · dark") {
     CaptureView(
         appState: .previewSeeded(),
-        onSubmit: { _, _ in }, onClose: {}, onToggleEditor: {},
+        onSubmit: { _, _, _ in true }, onClose: {}, onToggleEditor: {},
         onEscape: {}, onContentSizeChange: { _ in }
     )
     .frame(width: 600)

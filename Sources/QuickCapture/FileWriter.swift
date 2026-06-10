@@ -30,19 +30,30 @@ enum FileWriter {
     /// section when `tag` is non-empty. Untagged items go under `## Quick capture`.
     /// The file always starts with a `# Inbox` H1.
     /// If `includeTimestamp` is true, appends `➕ YYYY-MM-DD HH:MM`.
+    /// If `attachmentLink` is set, an indented image-link child line follows
+    /// the todo and travels with it through insertion, re-org, and archive.
     static func appendTodo(
         _ text: String,
         tag: String? = nil,
         to url: URL,
         includeTimestamp: Bool = false,
-        now: Date = Date()
+        now: Date = Date(),
+        attachmentLink: String? = nil
     ) throws {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
         let heading = sectionName(for: tag)
         let item = todoLine(trimmedText, includeTimestamp: includeTimestamp, now: now)
-        try appendUnderHeading(heading, item: item, to: url)
+        let children = attachmentLink.map { [attachmentChildLine($0)] } ?? []
+        try appendUnderHeading(heading, item: item, childLines: children, to: url)
+    }
+
+    /// The indented image-link child line for an attachment. Single source of
+    /// truth for the format so the capture path and the editor's parsing
+    /// (`editor.ts` matches indented `![…](…)` lines) can never drift.
+    static func attachmentChildLine(_ relativePath: String) -> String {
+        return "  ![screenshot](\(relativePath))"
     }
 
     /// The `## H2` a capture routes to: the trimmed tag, or `## Quick capture`
@@ -74,7 +85,7 @@ enum FileWriter {
         return f.string(from: date)
     }
 
-    static func appendUnderHeading(_ heading: String, item: String, to url: URL) throws {
+    static func appendUnderHeading(_ heading: String, item: String, childLines: [String] = [], to url: URL) throws {
         let fm = FileManager.default
         let parent = url.deletingLastPathComponent()
         if !fm.fileExists(atPath: parent.path) {
@@ -83,7 +94,7 @@ enum FileWriter {
 
         let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
         let withDocHeading = ensureDocumentHeading(in: existing)
-        let updated = insert(item: item, underHeading: heading, in: withDocHeading)
+        let updated = insert(item: item, childLines: childLines, underHeading: heading, in: withDocHeading)
 
         guard let data = updated.data(using: .utf8) else { throw WriteError.encodingFailed }
         try data.write(to: url, options: .atomic)
@@ -114,7 +125,12 @@ enum FileWriter {
     /// section, `!!` after all `!!!`s, `!` after those, and no-priority items
     /// after those. Within a bucket the new item lands at the TOP (newer first).
     /// Checked items (bucket 4) stay below everything.
-    static func insert(item: String, underHeading heading: String, in content: String) -> String {
+    ///
+    /// `childLines` (indented continuation lines, e.g. an attachment image
+    /// link) land directly after `item` as one block — they stay separate
+    /// array elements so the priority bucket is always computed on the parent
+    /// line alone.
+    static func insert(item: String, childLines: [String] = [], underHeading heading: String, in content: String) -> String {
         let headingLine = "## \(heading)"
         var lines = content.components(separatedBy: "\n")
 
@@ -151,8 +167,10 @@ enum FileWriter {
                         break
                     }
                     i += 1
+                    // Same child rule as extractCompletedItems and the editor
+                    // so all three sites agree on what travels with a parent task.
                     while i < lines.count,
-                          lines[i].range(of: #"^\s+\S"#, options: .regularExpression) != nil {
+                          lines[i].range(of: childContinuationPattern, options: .regularExpression) != nil {
                         i += 1
                     }
                     continue
@@ -169,7 +187,7 @@ enum FileWriter {
                     insertIndex -= 1
                 }
             }
-            lines.insert(item, at: insertIndex)
+            lines.insert(contentsOf: [item] + childLines, at: insertIndex)
             return lines.joined(separator: "\n")
         }
 
@@ -179,7 +197,7 @@ enum FileWriter {
             if !result.hasSuffix("\n") { result += "\n" }
             result += "\n"
         }
-        result += "\(headingLine)\n\(item)\n"
+        result += "\(headingLine)\n" + ([item] + childLines).joined(separator: "\n") + "\n"
         return result
     }
 
@@ -204,6 +222,12 @@ enum FileWriter {
         return line.range(of: #"^[-*+]\s+\["#, options: .regularExpression) != nil
     }
 
+    /// Matches a line that is an indented continuation of its parent task:
+    /// 2+ spaces or a tab before a non-space character. The same rule lives in
+    /// editor-web/src/editor.ts (child grouping + image-line matching) and must
+    /// stay in sync with it.
+    private static let childContinuationPattern = #"^( {2,}|\t)\S"#
+
     // MARK: - Archive
 
     /// Moves every `- [x]` line from `sourceURL` into a sibling `_archive`
@@ -220,7 +244,7 @@ enum FileWriter {
         let archiveExisting = (try? String(contentsOf: archiveURL, encoding: .utf8)) ?? ""
         var archiveText = ensureDocumentHeading(in: archiveExisting)
         for item in archived {
-            archiveText = insert(item: item.text, underHeading: item.section ?? untaggedSection, in: archiveText)
+            archiveText = insert(item: item.text, childLines: item.children, underHeading: item.section ?? untaggedSection, in: archiveText)
         }
 
         guard let archiveData = archiveText.data(using: .utf8),
@@ -232,33 +256,64 @@ enum FileWriter {
     }
 
     struct ArchivedItem: Equatable {
-        let text: String      // the task line, with indentation stripped
-        let section: String?  // the `## section` it lived under (nil → untagged)
+        let text: String        // the task line, with indentation stripped
+        let section: String?    // the `## section` it lived under (nil → untagged)
+        let children: [String]  // trailing indented continuation lines, re-indented to 2 spaces
+
+        init(text: String, section: String?, children: [String] = []) {
+            self.text = text
+            self.section = section
+            self.children = children
+        }
     }
 
     /// Splits `content` into the file body with every `- [x]` line removed,
     /// plus a list of those removed items with their containing section name.
+    /// A checked task's trailing indented continuation lines that are NOT
+    /// themselves task lines (e.g. attachment image links, notes) move with it,
+    /// so the archive never strands a child in the source file. Indented task
+    /// lines are left for the main loop to handle (checked ones are extracted
+    /// individually and flattened; unchecked ones remain in the source).
     static func extractCompletedItems(from content: String) -> (remaining: String, items: [ArchivedItem]) {
-        var lines = content.components(separatedBy: "\n")
+        let lines = content.components(separatedBy: "\n")
         var items: [ArchivedItem] = []
-        var keepIndices: [Int] = []
+        var kept: [String] = []
         var currentSection: String? = nil
 
-        for (i, line) in lines.enumerated() {
+        var i = 0
+        while i < lines.count {
+            let line = lines[i]
             let trimmed = line.trimmingCharacters(in: .whitespaces)
             if trimmed.hasPrefix("## ") {
                 currentSection = String(trimmed.dropFirst(3)).trimmingCharacters(in: .whitespaces)
-                keepIndices.append(i)
+                kept.append(line)
+                i += 1
             } else if line.range(of: #"^\s*[-*+]\s+\[[xX]\]"#, options: .regularExpression) != nil {
                 let unindented = line.replacingOccurrences(of: #"^\s+"#, with: "", options: .regularExpression)
-                items.append(ArchivedItem(text: unindented, section: currentSection))
+                var children: [String] = []
+                var j = i + 1
+                // Collect only indented continuation lines (notes, image links).
+                // Stop at any indented task line — the main loop handles nested
+                // tasks individually (checked ones get extracted and flattened;
+                // unchecked ones stay in the source).
+                while j < lines.count,
+                      lines[j].range(of: childContinuationPattern, options: .regularExpression) != nil,
+                      lines[j].range(of: #"^\s*[-*+]\s+\["#, options: .regularExpression) == nil {
+                    // The parent flattens to top level, so children normalize
+                    // to a 2-space indent under it.
+                    let body = lines[j].replacingOccurrences(of: #"^\s+"#, with: "", options: .regularExpression)
+                    children.append("  " + body)
+                    j += 1
+                }
+                items.append(ArchivedItem(text: unindented, section: currentSection, children: children))
+                i = j
             } else {
-                keepIndices.append(i)
+                kept.append(line)
+                i += 1
             }
         }
 
-        lines = keepIndices.map { lines[$0] }
-        return (lines.joined(separator: "\n"), items)
+        return (kept.joined(separator: "\n"), items)
     }
 
     /// Sibling URL with `_archive` inserted before the extension.
