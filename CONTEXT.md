@@ -17,11 +17,15 @@ crossfades between them.
 ## Glossary
 
 - **Capture file** — the single user-chosen markdown file every capture is
-  appended to. There is always exactly one; the editor always opens it. Its
-  first line is always `# Inbox`.
+  appended to. There is always exactly one, and the editor always opens it — it
+  is **the active inbox**. Its first line is always `# Inbox`. Refile writes to
+  *other* inboxes (see **Target inbox**) but never changes which file is the
+  capture file.
 
-- **Inbox** — the mandatory `# Inbox` H1 at the top of the capture file.
-  `FileWriter.appendTodo` enforces it.
+- **Inbox** — an `# Inbox`-headed markdown file that items live under. **No
+  longer unique**: the capture file is the active inbox the editor opens; refile
+  targets each hold their own inbox the app writes to but never opens. The H1 is
+  mandatory and `FileWriter.appendTodo` enforces it.
 
 - **Section** — an `## H2` heading under which items live. Tag values become
   section names verbatim.
@@ -78,6 +82,22 @@ crossfades between them.
 - **Re-org / sweep** (`⌘'`) — moves checked items to the bottom of their
   section, sorts unchecked items by priority bucket, and strips priority
   markers off checked items. "Re-org" and "sweep" are the same gesture.
+
+- **Refile** — a gesture (editor mode) that moves the item under the cursor —
+  its whole **subtree** (the item, its attachment lines, and any nested
+  sub-items) — out of the current file into a chosen **refile target**, removing
+  it from the source. Modeled on Emacs org-mode refile. Distinct from archive
+  (which moves only checked items, and only within a sibling `_archive` file).
+
+- **Refile target** — a user-configured destination **folder** (set in
+  Settings). The capture file's own folder is never offered as a target.
+
+- **Target inbox** — the `inbox.md` inside a refile target (filename is always
+  literally `inbox.md`). A plain `# Inbox` file with **no fixed sections**:
+  refiled subtrees are appended at **top level**, in arrival order, directly
+  under the `# Inbox` H1 (their content — nested items, image lines — travels
+  with them). Created with a bare `# Inbox` scaffold if missing. The app writes
+  to it on refile but never opens it.
 
 - **`#cal`** — a capture prefix that re-interprets the input as a
   natural-language calendar event and opens a generated `.ics`.
