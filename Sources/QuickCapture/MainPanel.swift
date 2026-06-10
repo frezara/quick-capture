@@ -26,6 +26,10 @@ final class MainPanel: NSPanel {
     private let onDismiss: () -> Void
 
     private(set) var editorOpen = false
+    /// True while the screenshot picker takeover surface is shown (a large
+    /// centered frame, capture inputs hidden — same window, like editor mode).
+    /// Guards `captureContentDidChange` from fighting the fixed picker frame.
+    private(set) var pickerOpen = false
 
     // MARK: Surfaces
 
@@ -160,7 +164,9 @@ final class MainPanel: NSPanel {
             onClose: { [weak self] in self?.onDismiss() },
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
-            onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) }
+            onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
+            onPickerAttach: { [weak self] url in self?.closePickerSurface(attaching: url) },
+            onPickerCancel: { [weak self] in self?.closePickerSurface(attaching: nil) }
         )
     }
 
@@ -239,6 +245,11 @@ final class MainPanel: NSPanel {
     func openEditor() {
         guard !editorOpen else { return }
         editorOpen = true
+        // The picker is a capture-surface affordance; ⌘F into the editor closes
+        // it. editorOpen is set first so the capture re-measure this triggers is
+        // already guarded; openEditor's own animateFrame places the geometry.
+        pickerOpen = false
+        appState.screenshotPickerItems = nil
         isMovableByWindowBackground = false
         promoteToRegular()
         NSApp.activate(ignoringOtherApps: true)
@@ -317,6 +328,7 @@ final class MainPanel: NSPanel {
 
     private func collapseStateReset() {
         editorOpen = false
+        pickerOpen = false
         isCollapsing = false   // a fresh summon cancels any in-flight collapse
         container.editorActive = false
         editorContainer.isHidden = true
@@ -340,6 +352,10 @@ final class MainPanel: NSPanel {
     /// recorded size so it dissolves in place on the next switch.
     private func captureContentDidChange(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
+        // The picker takeover fills the window with a fixed centered frame.
+        // Ignore its size entirely — recording it would clobber the saved
+        // capture height that closePickerSurface uses to restore the box.
+        guard !pickerOpen else { return }
         captureContentSize = size
         container.captureHeight = size.height
         guard !editorOpen else { return }
@@ -440,6 +456,7 @@ final class MainPanel: NSPanel {
         appState.pendingAttachment = nil
         appState.recentScreenshotExists = false
         appState.attachFeedback = nil
+        appState.screenshotPickerItems = nil
         let window = appState.screenshotAttachWindow
         ScreenshotLocator.mostRecent { [weak self] shot in
             guard let self, generation == self.attachLookupGeneration, let shot else { return }
@@ -452,18 +469,76 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// ⌘⇧S — attach the most recent screenshot regardless of age (R4).
-    private func attachMostRecentScreenshot() {
+    /// ⌘⇧S — open the screenshot picker takeover surface with the 10 most
+    /// recent screenshots (newest pre-highlighted). Picking one attaches it as
+    /// the chip; Esc closes without changing the attachment. No screenshots →
+    /// the transient "No screenshots found" feedback instead of an empty panel.
+    private func openScreenshotPicker() {
         attachLookupGeneration += 1
         let generation = attachLookupGeneration
-        ScreenshotLocator.mostRecent { [weak self] shot in
-            guard let self, generation == self.attachLookupGeneration else { return }
-            if let shot {
-                self.appState.pendingAttachment = shot.url
-            } else {
+        ScreenshotLocator.recent(limit: 10) { [weak self] shots in
+            guard let self, generation == self.attachLookupGeneration, !self.editorOpen else { return }
+            if shots.isEmpty {
+                self.appState.screenshotPickerItems = nil
                 self.appState.attachFeedback = "No screenshots found"
+            } else {
+                self.appState.screenshotPickerItems = shots
+                self.enterPickerSurface()
             }
         }
+    }
+
+    /// Editor-style geometry for the picker: a comfortable centered panel, wider
+    /// than the capture box and a generous fraction of the screen height.
+    private func pickerFrame(in screen: NSRect) -> NSRect {
+        let width: CGFloat = min(860, screen.width - 80)
+        let height: CGFloat = min(560, screen.height * 0.82)
+        return NSRect(x: screen.midX - width / 2,
+                      y: screen.midY - height / 2,
+                      width: width, height: height)
+    }
+
+    /// Grow the window to the centered picker frame. The capture host stays the
+    /// active surface (CaptureView swaps its own content to the picker), so no
+    /// crossfade host is involved — just the frame animation.
+    private func enterPickerSurface() {
+        guard !pickerOpen, !editorOpen, let screen = currentScreenVisibleFrame() else { return }
+        pickerOpen = true
+        canDismissOnBlur = false
+        let target = pickerFrame(in: screen)
+        anchorCenterY = target.midY
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.24
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self?.canDismissOnBlur = true }
+        })
+    }
+
+    /// Close the picker surface, optionally attaching `url` as the chip, and
+    /// shrink back to the centered capture box. `pickerOpen` stays true until the
+    /// shrink finishes so the capture re-measure (CaptureView swaps back the
+    /// moment items clear) can't fire a competing non-animated setFrame.
+    private func closePickerSurface(attaching url: URL?) {
+        if let url { appState.pendingAttachment = url }
+        appState.screenshotPickerItems = nil
+        guard pickerOpen, let screen = currentScreenVisibleFrame() else { pickerOpen = false; return }
+        canDismissOnBlur = false
+        anchorCenterY = screen.midY
+        let target = NSRect(x: screen.midX - captureWidth / 2,
+                            y: screen.midY - captureContentSize.height / 2,
+                            width: captureWidth, height: captureContentSize.height)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.24
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            self.pickerOpen = false
+            self.focusCapture()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.canDismissOnBlur = true }
+        })
     }
 
     /// Flush the editor's debounced autosave so disk is current before leaving
@@ -490,7 +565,7 @@ final class MainPanel: NSPanel {
         // exact-Command guard below would bounce it to super. Capture mode
         // only — the chip is a capture-surface affordance.
         if mods == [.command, .shift], key == "s", !editorOpen {
-            attachMostRecentScreenshot()
+            openScreenshotPicker()
             return true
         }
 

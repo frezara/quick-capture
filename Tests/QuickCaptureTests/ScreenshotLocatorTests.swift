@@ -42,6 +42,41 @@ final class ScreenshotLocatorTests: XCTestCase {
         XCTAssertNil(ScreenshotLocator.newestScreenshot(in: dir.appendingPathComponent("missing")))
     }
 
+    func testNewestScreenshotsReturnsNewestFirstUpToLimit() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        // Create six screenshots with ascending creation dates.
+        var urls: [URL] = []
+        for i in 1...6 {
+            let url = try makeFile(in: dir, named: "Screenshot 2026-06-0\(i) at 10.00.00.png")
+            try setCreationDate(Date(timeIntervalSince1970: TimeInterval(i) * 1_000_000), on: url)
+            urls.append(url)
+        }
+
+        let result = ScreenshotLocator.newestScreenshots(in: dir, limit: 5)
+
+        XCTAssertEqual(result.count, 5, "limit caps the result count")
+        // Newest first: 2026-06-06 … 2026-06-02 (the oldest, 2026-06-01, is dropped).
+        XCTAssertEqual(result.map { $0.url.lastPathComponent },
+                       urls.reversed().prefix(5).map { $0.lastPathComponent })
+    }
+
+    func testNewestScreenshotsIgnoresNonScreenshotFiles() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let shot = try makeFile(in: dir, named: "Screenshot 2026-06-01 at 10.00.00.png")
+        let photo = try makeFile(in: dir, named: "IMG_0042.png")
+        try setCreationDate(Date(timeIntervalSince1970: 1_000_000), on: shot)
+        try setCreationDate(Date(timeIntervalSince1970: 9_000_000), on: photo)
+
+        let result = ScreenshotLocator.newestScreenshots(in: dir, limit: 5)
+
+        XCTAssertEqual(result.map { $0.url.lastPathComponent }, [shot.lastPathComponent],
+                       "non-screenshot files are excluded from the picker list")
+    }
+
     func testIsScreenshotFileMatchesDefaultAndLegacyNames() {
         XCTAssertTrue(ScreenshotLocator.isScreenshotFile(URL(fileURLWithPath: "/x/Screenshot 2026-06-07 at 14.30.12.png")))
         XCTAssertTrue(ScreenshotLocator.isScreenshotFile(URL(fileURLWithPath: "/x/Screen Shot 2021-01-01 at 09.00.00.png")))

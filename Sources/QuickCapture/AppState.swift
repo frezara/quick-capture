@@ -106,6 +106,10 @@ final class AppState: ObservableObject {
 
     /// Screenshot currently attached to the capture box as a chip.
     @Published var pendingAttachment: URL?
+    /// When non-nil, the ⌘⇧S screenshot picker is open over the capture box,
+    /// offering these recent screenshots (newest first). Cleared on attach,
+    /// Esc, mode switch, and full dismiss.
+    @Published var screenshotPickerItems: [ScreenshotLocator.Screenshot]?
     /// A screenshot exists on disk but is outside the auto-attach window —
     /// drives the "⌘⇧S to attach screenshot" hint.
     @Published var recentScreenshotExists = false

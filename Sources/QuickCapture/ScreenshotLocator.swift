@@ -17,14 +17,31 @@ enum ScreenshotLocator {
     /// main queue. `timeout` bounds a stalled Spotlight query — the folder
     /// scan result still answers when it fires.
     static func mostRecent(timeout: TimeInterval = 0.6, completion: @escaping (Screenshot?) -> Void) {
-        let folderShot = newestScreenshot(in: screenshotFolder())
-        let run = SpotlightRun { spotlightShot in
-            let best = [spotlightShot, folderShot]
-                .compactMap { $0 }
-                .max { $0.createdAt < $1.createdAt }
-            completion(best)
+        recent(limit: 1, timeout: timeout) { completion($0.first) }
+    }
+
+    /// Asynchronously find the newest `limit` screenshots, newest first. Same
+    /// contract as `mostRecent` (main thread, main-queue completion) — the
+    /// Spotlight and folder-scan results are merged, deduped by path, and the
+    /// newest `limit` win. Drives the ⌘⇧S screenshot picker.
+    static func recent(limit: Int = 5, timeout: TimeInterval = 0.6, completion: @escaping ([Screenshot]) -> Void) {
+        let folder = screenshotFolder()
+        let folderPath = folder.standardizedFileURL.path
+        let folderShots = newestScreenshots(in: folder, limit: limit)
+        // Spotlight is home-wide, so fetch generously and keep only screenshots
+        // that live *directly* in the screenshot folder. Without this, our own
+        // attachment copies (named `screenshot-*.png`, and they keep the
+        // `kMDItemIsScreenCapture` flag the original carried) sort to the very
+        // top by copy time and crowd out the real, newest Desktop screenshots.
+        let run = SpotlightRun { spotlightShots in
+            var seen = Set<String>()
+            let merged = (spotlightShots + folderShots)
+                .filter { $0.url.deletingLastPathComponent().standardizedFileURL.path == folderPath }
+                .sorted { $0.createdAt > $1.createdAt }
+                .filter { seen.insert($0.url.standardizedFileURL.path).inserted }
+            completion(Array(merged.prefix(limit)))
         }
-        run.start(timeout: timeout)
+        run.start(limit: max(limit, 50), timeout: timeout)
     }
 
     /// Where macOS saves screenshots: `com.apple.screencapture location`,
@@ -38,12 +55,17 @@ enum ScreenshotLocator {
 
     /// Newest screenshot-named image in `dir` by creation date, or nil.
     static func newestScreenshot(in dir: URL) -> Screenshot? {
+        newestScreenshots(in: dir, limit: 1).first
+    }
+
+    /// Newest `limit` screenshot-named images in `dir`, newest first.
+    static func newestScreenshots(in dir: URL, limit: Int) -> [Screenshot] {
         let fm = FileManager.default
         guard let urls = try? fm.contentsOfDirectory(
             at: dir,
             includingPropertiesForKeys: [.creationDateKey],
             options: [.skipsHiddenFiles]
-        ) else { return nil }
+        ) else { return [] }
 
         // Resolve the configured base name once — CFPreferences is an IPC
         // round-trip, and a Desktop can hold a lot of files.
@@ -54,7 +76,9 @@ enum ScreenshotLocator {
                 guard let date = (try? url.resourceValues(forKeys: [.creationDateKey]))?.creationDate else { return nil }
                 return Screenshot(url: url, createdAt: date)
             }
-            .max { $0.createdAt < $1.createdAt }
+            .sorted { $0.createdAt > $1.createdAt }
+            .prefix(limit)
+            .map { $0 }
     }
 
     /// Filename shape of a macOS screenshot: the configured base name
@@ -77,13 +101,13 @@ private final class SpotlightRun {
     private var observer: NSObjectProtocol?
     private var finished = false
     private var retainSelf: SpotlightRun?
-    private let completion: (ScreenshotLocator.Screenshot?) -> Void
+    private let completion: ([ScreenshotLocator.Screenshot]) -> Void
 
-    init(completion: @escaping (ScreenshotLocator.Screenshot?) -> Void) {
+    init(completion: @escaping ([ScreenshotLocator.Screenshot]) -> Void) {
         self.completion = completion
     }
 
-    func start(timeout: TimeInterval) {
+    func start(limit: Int = 1, timeout: TimeInterval) {
         retainSelf = self
         query.predicate = NSPredicate(format: "kMDItemIsScreenCapture == 1")
         query.searchScopes = [NSMetadataQueryUserHomeScope]
@@ -96,30 +120,32 @@ private final class SpotlightRun {
         ) { [weak self] _ in
             guard let self else { return }
             self.query.disableUpdates()
-            var shot: ScreenshotLocator.Screenshot?
-            if let item = self.query.results.first as? NSMetadataItem,
-               let path = item.value(forAttribute: NSMetadataItemPathKey as String) as? String,
-               let date = item.value(forAttribute: NSMetadataItemFSCreationDateKey as String) as? Date {
-                shot = ScreenshotLocator.Screenshot(url: URL(fileURLWithPath: path), createdAt: date)
-            }
-            self.finish(shot)
+            let shots = (self.query.results as? [NSMetadataItem] ?? [])
+                .prefix(limit)
+                .compactMap { item -> ScreenshotLocator.Screenshot? in
+                    guard let path = item.value(forAttribute: NSMetadataItemPathKey as String) as? String,
+                          let date = item.value(forAttribute: NSMetadataItemFSCreationDateKey as String) as? Date
+                    else { return nil }
+                    return ScreenshotLocator.Screenshot(url: URL(fileURLWithPath: path), createdAt: date)
+                }
+            self.finish(shots)
         }
 
         guard query.start() else {
-            finish(nil)
+            finish([])
             return
         }
         DispatchQueue.main.asyncAfter(deadline: .now() + timeout) { [weak self] in
-            self?.finish(nil)
+            self?.finish([])
         }
     }
 
-    private func finish(_ shot: ScreenshotLocator.Screenshot?) {
+    private func finish(_ shots: [ScreenshotLocator.Screenshot]) {
         guard !finished else { return }
         finished = true
         query.stop()
         if let observer { NotificationCenter.default.removeObserver(observer) }
-        completion(shot)
+        completion(shots)
         retainSelf = nil
     }
 }
