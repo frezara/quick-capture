@@ -28,6 +28,12 @@ struct CaptureView: View {
     /// and start a resize⇄focus oscillation. Only an explicit move to the todo
     /// field hides it.
     @State private var tagFieldActive = false
+
+    /// Highlighted row in the tag dropdown (clamped to the filtered list at
+    /// use sites, since the list shrinks as the user types).
+    @State private var tagHighlight = 0
+    /// Esc closes the dropdown without leaving the tag field; typing reopens.
+    @State private var tagDropdownDismissed = false
     /// Highlighted row in the ⌘⇧S screenshot picker (0 = newest). Moves with
     /// ↑/↓ independently of what's toggled for selection.
     @State private var pickerIndex = 0
@@ -68,6 +74,7 @@ struct CaptureView: View {
         .animation(.easeInOut(duration: 0.18), value: shouldShowExtras)
         .animation(.easeInOut(duration: 0.18), value: isCalendarMode)
         .animation(.easeInOut(duration: 0.18), value: pickerOpen)
+        .animation(.easeInOut(duration: 0.18), value: tagDropdownVisible)
         // Pin the root to its intrinsic height — otherwise NSHostingView's fixed
         // frame can squash the VStack when the todo field grows mid-resize,
         // clipping the header. The picker surface, by contrast, fills the large
@@ -104,6 +111,10 @@ struct CaptureView: View {
         .onChange(of: focused) { _, newValue in
             if newValue == .tag {
                 tagFieldActive = true
+                // A fresh entry into the field reopens a previously
+                // Esc-dismissed dropdown and starts at the top row.
+                tagDropdownDismissed = false
+                tagHighlight = 0
             } else {
                 // Collapse the footer when the tag field is no longer focused —
                 // but defer the check so the *transient* focus drop AppKit emits
@@ -115,10 +126,16 @@ struct CaptureView: View {
                 }
             }
         }
-        // Esc closes the picker first (it's a transient surface); only a plain
-        // Esc with no picker open dismisses the whole panel.
+        // Esc closes transient surfaces first (picker, then the tag dropdown,
+        // without clearing typed text); only a plain Esc dismisses the panel.
         .onExitCommand {
-            if pickerOpen { onPickerCancel() } else { onEscape() }
+            if pickerOpen {
+                onPickerCancel()
+            } else if tagDropdownVisible {
+                tagDropdownDismissed = true
+            } else {
+                onEscape()
+            }
         }
         // Global Enter handler — guarantees that pressing Enter saves the todo
         // no matter where focus is (chip, suggestion area, transient nil).
@@ -139,10 +156,18 @@ struct CaptureView: View {
         .onKeyPress(.rightArrow) { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
         // Space toggles the highlighted row's selection — multi-attach (#45).
         .onKeyPress(.space)      { pickerOpen ? { toggleHighlighted(); return .handled }() : .ignored }
+        .onChange(of: tagText) { _, _ in
+            // Typing reopens an Esc-dismissed dropdown and resets the
+            // highlight — the filtered list under the cursor just changed.
+            tagDropdownDismissed = false
+            tagHighlight = 0
+        }
         .onReceive(NotificationCenter.default.publisher(for: .capturePanelDidHide)) { _ in
             todoText = ""
             tagText = ""
             tagFieldActive = false
+            tagDropdownDismissed = false
+            tagHighlight = 0
             focused = .todo
             appState.pendingAttachments = []
             appState.recentScreenshotExists = false
@@ -184,6 +209,19 @@ struct CaptureView: View {
     private var captureColumn: some View {
         VStack(spacing: 0) {
             inputsRow
+            // Obsidian-style tag suggest, anchored under the tag field. Part
+            // of the layout flow (not a floating overlay) because the window
+            // is content-sized and would clip anything outside its bounds;
+            // MainPanel grows the window downward with a fixed top edge, so
+            // the inputs stay put and this reads as a dropdown opening.
+            if tagDropdownVisible {
+                HStack(spacing: 0) {
+                    Spacer(minLength: 0)
+                    tagDropdown.frame(width: 180)
+                }
+                .padding(.top, Metrics.s1)
+                .transition(.opacity)
+            }
             if shouldShowExtras {
                 // Symmetric: gap above the rule (from the inputs) and below it
                 // (to the chips), so the separator doesn't get squashed against
@@ -300,15 +338,41 @@ struct CaptureView: View {
                 .foregroundStyle(tagActive ? theme.accentInk : theme.ink)
                 .focused($focused, equals: .tag)
                 .onSubmit { submit() }
+                .onKeyPress(.return) {
+                    // Enter accepts the highlighted suggestion when it differs
+                    // from the typed text; otherwise falls through (.ignored)
+                    // to onSubmit, which saves the capture.
+                    guard tagDropdownVisible else { return .ignored }
+                    let pick = filteredTags[tagHighlightClamped]
+                    let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
+                    guard pick.lowercased() != query.lowercased() else { return .ignored }
+                    acceptTag(pick)
+                    return .handled
+                }
                 .onKeyPress(.tab) {
-                    // Tab → autocomplete to the first prefix-matched tag.
-                    // Empty or no match → no-op (no Tab cycle anywhere).
+                    // Tab accepts the highlighted suggestion. With the
+                    // dropdown closed, fall back to first-prefix-match
+                    // autocomplete (no Tab cycle anywhere).
+                    if tagDropdownVisible {
+                        acceptTag(filteredTags[tagHighlightClamped])
+                        return .handled
+                    }
                     let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
                     guard !query.isEmpty else { return .handled }
                     if let match = matchedTag,
                        match.lowercased() != query.lowercased() {
                         tagText = match
                     }
+                    return .handled
+                }
+                .onKeyPress(.upArrow) {
+                    guard tagDropdownVisible else { return .ignored }
+                    tagHighlight = max(0, tagHighlightClamped - 1)
+                    return .handled
+                }
+                .onKeyPress(.downArrow) {
+                    guard tagDropdownVisible else { return .ignored }
+                    tagHighlight = min(filteredTags.count - 1, tagHighlightClamped + 1)
                     return .handled
                 }
         }
@@ -351,12 +415,92 @@ struct CaptureView: View {
         return allKnownTags.first(where: { $0.lowercased().hasPrefix(query) })
     }
 
-    // MARK: - Suggestions
+    // MARK: - Tag dropdown (Obsidian-style suggest)
 
-    /// All known tags stay visible — they don't filter as the user types.
-    /// The matched one is signalled via the tag field's tint colors instead.
-    private var displayedTags: [String] {
-        Array(allKnownTags.prefix(7))
+    /// Prefix-filtered suggestions: the full known list while the field is
+    /// empty (Obsidian shows everything on focus), narrowing as you type.
+    private var filteredTags: [String] {
+        let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        let matches = query.isEmpty
+            ? allKnownTags
+            : allKnownTags.filter { $0.lowercased().hasPrefix(query) }
+        return Array(matches.prefix(6))
+    }
+
+    /// Visibility keys off `tagFieldActive` (the debounced focus flag), not
+    /// `focused` directly — the dropdown appearing changes the panel height,
+    /// and AppKit's transient focus drop during that resize would otherwise
+    /// hide it again and oscillate. Hidden once the field holds exactly the
+    /// only match (accepting a tag closes the dropdown without extra state).
+    private var tagDropdownVisible: Bool {
+        guard tagFieldActive, !tagDropdownDismissed, !filteredTags.isEmpty else { return false }
+        let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if filteredTags.count == 1 && filteredTags[0].lowercased() == query { return false }
+        return true
+    }
+
+    /// The highlighted row, clamped — the filtered list shrinks as you type.
+    private var tagHighlightClamped: Int {
+        min(tagHighlight, max(0, filteredTags.count - 1))
+    }
+
+    private var tagDropdown: some View {
+        VStack(alignment: .leading, spacing: 1) {
+            ForEach(Array(filteredTags.enumerated()), id: \.element) { index, tag in
+                tagDropdownRow(tag, highlighted: index == tagHighlightClamped)
+                    .onTapGesture { acceptTag(tag) }
+            }
+        }
+        .padding(3)
+        // Floating card — opaque surface, not the translucent well tint
+        // (same lesson as the editor's refile dropdown, 56b274f).
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                .fill(theme.surface)
+        )
+        .overlay(
+            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                .strokeBorder(theme.border, lineWidth: 0.5)
+        )
+        .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
+    }
+
+    private func tagDropdownRow(_ name: String, highlighted: Bool) -> some View {
+        let isCal = name.lowercased() == "cal"
+        let isDark = colorScheme == .dark
+        let hue = TagPalette.entry(for: name)
+        return HStack(spacing: 6) {
+            if isCal {
+                Image(systemName: "calendar")
+                    .font(.system(size: 11, weight: .semibold))
+                    .foregroundStyle(theme.inkTertiary)
+            } else {
+                Circle()
+                    .fill(hue.dot(dark: isDark))
+                    .frame(width: 7, height: 7)
+            }
+            Text(name)
+                .foregroundStyle(highlighted ? theme.accentInk : theme.inkSecondary)
+                .lineLimit(1)
+            Spacer(minLength: 0)
+        }
+        .font(TypeScale.chip)
+        .padding(.horizontal, 9)
+        .padding(.vertical, 6)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                .fill(highlighted ? AnyShapeStyle(theme.accentSoft) : AnyShapeStyle(.clear))
+        )
+        .contentShape(Rectangle())
+        .help(isCal ? "Creates a calendar event — type naturally, e.g. \"call Seb tomorrow at 2pm\"" : "")
+    }
+
+    /// Put the chosen tag in the field and close the dropdown (the exact-match
+    /// rule in `tagDropdownVisible` does the closing). Enter then submits.
+    private func acceptTag(_ tag: String) {
+        tagText = tag
+        tagHighlight = 0
+        focused = .tag
     }
 
     // MARK: - Calendar preview
@@ -444,39 +588,24 @@ struct CaptureView: View {
             if !appState.pendingAttachments.isEmpty {
                 attachmentChips
             }
-            tagChipsScroll
             if let hint = attachHintText {
                 Text(hint)
                     .font(TypeScale.chip)
                     .foregroundStyle(theme.inkTertiary)
                     .fixedSize()
                     .transition(.opacity)
+            } else if appState.pendingAttachments.isEmpty {
+                // The tag chips moved into the dropdown under the tag field;
+                // keep a quiet hint here so the footer row (and with it the
+                // strip's fixed height) never collapses to empty.
+                Text("Tab to tag · ⌘⇧S to attach")
+                    .font(TypeScale.chip)
+                    .foregroundStyle(theme.inkTertiary)
+                    .fixedSize()
             }
+            Spacer(minLength: 0)
         }
         .animation(.easeInOut(duration: 0.15), value: appState.attachFeedback)
-    }
-
-    private var tagChipsScroll: some View {
-        ScrollView(.horizontal, showsIndicators: false) {
-            HStack(spacing: Metrics.s1) {
-                ForEach(displayedTags, id: \.self) { tag in
-                    chip(tag, isMatch: tag.lowercased() == matchedTag?.lowercased())
-                        .onTapGesture { chipTapped(tag) }
-                }
-            }
-            .padding(.vertical, 1)   // breathing room so chip borders don't clip
-        }
-        // Fade chips out at the right edge, hinting that more content scrolls
-        // beyond. A mask (not a painted overlay) so it works on the frosted
-        // panel, where there is no solid surface colour to fade into.
-        .mask(
-            HStack(spacing: 0) {
-                Rectangle()
-                LinearGradient(colors: [.black, .clear],
-                               startPoint: .leading, endPoint: .trailing)
-                    .frame(width: 32)
-            }
-        )
     }
 
     // MARK: - Attachment chip
@@ -879,39 +1008,6 @@ struct CaptureView: View {
     /// Finder-tag-style chips: each tag carries its 7px hue dot; the
     /// prefix-matched tag tints with its OWN hue (not the accent). The `cal`
     /// chip is a command, not a tag — calendar glyph, no dot, neutral always.
-    private func chip(_ name: String, isMatch: Bool) -> some View {
-        let isCal = name.lowercased() == "cal"
-        let isDark = colorScheme == .dark
-        let hue = TagPalette.entry(for: name)
-        return HStack(spacing: 5) {
-            if isCal {
-                Image(systemName: "calendar")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.inkTertiary)
-            } else {
-                Circle()
-                    .fill(hue.dot(dark: isDark))
-                    .frame(width: 7, height: 7)
-            }
-            if !isCal {
-                Text("#").foregroundStyle(isMatch ? hue.label(dark: isDark).opacity(0.7) : theme.inkTertiary)
-            }
-            Text(name).foregroundStyle(isMatch ? hue.label(dark: isDark) : theme.inkSecondary)
-        }
-        .font(TypeScale.chip)
-        .padding(.horizontal, 11)
-        .padding(.vertical, 7)
-        .background(
-            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .fill(isMatch && !isCal ? AnyShapeStyle(hue.tint(dark: isDark)) : AnyShapeStyle(theme.chip))
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .strokeBorder(isMatch && !isCal ? hue.dot(dark: isDark).opacity(0.35) : .clear, lineWidth: 1)
-        )
-        .help(isCal ? "Creates a calendar event — type naturally, e.g. \"call Seb tomorrow at 2pm\"" : "")
-    }
-
     // MARK: - Actions
 
     private func submit() {
@@ -941,12 +1037,6 @@ struct CaptureView: View {
         tagText = ""
         appState.pendingAttachments = []
         chipThumbnails = [:]
-    }
-
-    private func chipTapped(_ tag: String) {
-        // Clicking a suggestion chip is the commit action — one tag, one save.
-        tagText = tag
-        submit()
     }
 
 }
