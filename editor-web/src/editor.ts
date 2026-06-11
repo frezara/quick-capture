@@ -1233,15 +1233,29 @@ function moveCompletedToBottom(view: EditorView): void {
         }
     }
 
+    // Anchor the viewport, not the cursor. Re-org only reorders existing lines,
+    // so the document's total height is invariant — restoring the raw scrollTop
+    // keeps the exact same pixel region visible. Without this, the whole-doc
+    // replace makes CodeMirror re-anchor the viewport (and `scrollIntoView:false`
+    // alone doesn't stop the jump), so the visible region shifts whenever the
+    // sorted lines or the cursor are far from where the user was looking.
+    const scroller = view.scrollDOM;
+    const prevScrollTop = scroller.scrollTop;
+
     view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: next },
         selection: { anchor: newAnchor },
         scrollIntoView: false,
     });
+    scroller.scrollTop = prevScrollTop;
 
     if (!content) return;
 
     requestAnimationFrame(() => {
+        // CodeMirror may re-measure on the frame after a whole-doc replace and
+        // nudge the scroll; re-assert the anchor before measuring FLIP offsets
+        // so the animation plays within a stable viewport.
+        if (scroller.scrollTop !== prevScrollTop) scroller.scrollTop = prevScrollTop;
         const moved: { el: HTMLElement; delta: number }[] = [];
         for (const el of content.querySelectorAll<HTMLElement>(".cm-line")) {
             const oldTop = startPositions.get(el.textContent ?? "");
