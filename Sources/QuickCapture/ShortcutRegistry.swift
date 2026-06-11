@@ -58,16 +58,18 @@ enum ShortcutAction: String, CaseIterable {
     // Window-intercepted: matched in `MainPanel.performKeyEquivalent` before
     // WebKit/CodeMirror can claim the key.
     //
-    // Binding scheme (epic #53): plain ⌘ keys keep their native/Obsidian
-    // editor meaning (⌘F find, ⌘S save, ⌘E read mode…); ⌃⌘ is the app's
-    // reserved namespace for panel-level actions — the macOS analogue of
-    // emacs keeping C-c for user bindings. Avoid the system-claimed combos:
-    // ⌃⌘F (fullscreen), ⌃⌘Q (lock screen), ⌃⌘Space (emoji), ⌃⌘D (dictionary).
+    // Binding scheme (epic #53, namespace revised by #69): plain ⌘ keys keep
+    // their native/Obsidian editor meaning (⌘F find, ⌘S save, ⌘E read mode…);
+    // ⌥⌘ is the app's reserved namespace for panel-level actions — ⌥ is the
+    // Mac's Meta, and the adjacent keys roll under one thumb (⌃⌘, the first
+    // pick, proved a pinky claw in practice). Avoid the system-claimed
+    // combos: ⌥⌘Esc (force quit), ⌥⌘H (Hide Others — it's in our own app
+    // menu), ⌥⌘D (Dock), ⌥⌘Space (Finder search).
     case toggleEditor
     case dismissPanel
     case attachScreenshot
     case refile
-    /// ⌘R must stay swallowed in editor mode even though refile moved to ⌃⌘R:
+    /// ⌘R must stay swallowed in editor mode even though refile moved to ⌥⌘R:
     /// WebKit reserves the key for "reload", which would blow away the warm
     /// editor (and its undo history / cursor) the moment it got through.
     case swallowReload
@@ -84,10 +86,10 @@ enum ShortcutAction: String, CaseIterable {
 
     var chord: KeyChord {
         switch self {
-        case .toggleEditor:     return KeyChord(key: "e", modifiers: [.command, .control])
+        case .toggleEditor:     return KeyChord(key: "e", modifiers: [.command, .option])
         case .dismissPanel:     return KeyChord(key: "w", modifiers: .command)
         case .attachScreenshot: return KeyChord(key: "s", modifiers: [.command, .shift])
-        case .refile:           return KeyChord(key: "r", modifiers: [.command, .control])
+        case .refile:           return KeyChord(key: "r", modifiers: [.command, .option])
         case .swallowReload:    return KeyChord(key: "r", modifiers: .command)
         case .readMode:         return KeyChord(key: "e", modifiers: .command)
         case .toggleTask:       return KeyChord(key: "l", modifiers: .command)

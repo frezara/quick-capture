@@ -2,7 +2,7 @@ import XCTest
 @testable import QuickCapture
 
 /// Module 1 — `FileWriter` refile core. Pure string-in/string-out functions
-/// behind the ⌃⌘R refile gesture (issue #32), unit-tested without a filesystem
+/// behind the ⌥⌘R refile gesture (issue #32), unit-tested without a filesystem
 /// or UI, in the style of `insert` / `extractCompletedItems`.
 final class FileWriterRefileTests: XCTestCase {
 

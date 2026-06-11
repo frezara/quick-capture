@@ -716,7 +716,7 @@ function makeTheme() {
         opacity: "1",
         transform: "translateY(0)",
     },
-    // Cursor-anchored refile dropdown (⌃⌘R). A small surface card listing the
+    // Cursor-anchored refile dropdown (⌥⌘R). A small surface card listing the
     // configured refile targets; arrow keys navigate, Enter selects, Esc cancels.
     ".cm-refile-dropdown": {
         position: "fixed",
@@ -1167,7 +1167,7 @@ let vimMode: "normal" | "insert" | "visual" | "replace" = "normal";
 // (same pattern as setRefileTargets); these defaults exist so the browser
 // harness — which has no bridge — gets working bindings. The command map is
 // also the bridge dispatch table: window-intercepted actions that must run
-// in the editor (⌃⌘R refile) arrive as qcEditor.invoke(actionId).
+// in the editor (⌥⌘R refile) arrive as qcEditor.invoke(actionId).
 const appKeymapComp = new Compartment();
 const defaultAppKeymap: Record<string, string> = {
     readMode: "Mod-e",
@@ -1669,7 +1669,7 @@ function sendToSwift(message: Record<string, unknown>) {
     window.webkit?.messageHandlers?.editorBridge?.postMessage(message);
 }
 
-// MARK: - Refile (⌃⌘R)
+// MARK: - Refile (⌥⌘R)
 //
 // Resolve the subtree under the cursor with the SAME child-indent rule mirrored
 // from FileWriter (`/^( {2,}|\t)\S/`, here via indent-width comparison), open a
@@ -1938,11 +1938,11 @@ function mount(content: string) {
                     run: () => { sendToSwift({ type: "dismiss" }); return true; },
                 },
                 {
-                    // Ctrl+Mod+R mirrors the app's ⌃⌘R refile here for the
+                    // Alt+Mod+R mirrors the app's ⌥⌘R refile here for the
                     // browser harness; in the app the window intercepts the
                     // chord and drives qcEditor.invoke("refile") over the
                     // bridge before the web view ever sees it.
-                    key: "Ctrl-Mod-r",
+                    key: "Alt-Mod-r",
                     run: (v) => { startRefile(v); return true; },
                 },
                 // Obsidian-style Tab / Shift-Tab: indent or outdent a list/task
