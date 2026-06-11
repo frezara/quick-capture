@@ -71,3 +71,12 @@ So we revert to ADR-0001's model: one surface on screen at a time.
   `SplitContainerView`, the fused-panel "join", the persistent-strip layout)
   need rewinding to the mode model. The Misted-Steel redesign, vim toggle,
   focus fix, and dark mode are unaffected.
+
+## Update (2026-06, epic #53)
+
+The switch gesture moved from `⌘F` to `⌃⌘E`, refile from `⌘R` to `⌃⌘R`, and
+`⌘F` became native find inside the editor (CodeMirror search panel). `⌘R` is
+still window-intercepted in editor mode, now as a deliberate no-op — WebKit
+would otherwise reload the warm editor. The mutual-exclusion mechanics this
+ADR restores are unchanged; bindings live in `ShortcutRegistry.swift`. Where
+this document says `⌘F`, read the registry's `toggleEditor` chord.

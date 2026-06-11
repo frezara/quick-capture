@@ -122,7 +122,7 @@ final class AppState: ObservableObject {
 
     // Capture-session state (not persisted). Lives here rather than in
     // CaptureView @State so MainPanel (detection, ⌘⇧S pull-in) and the view
-    // share it; it survives the ⌘F editor round-trip and is cleared on the
+    // share it; it survives the ⌃⌘E editor round-trip and is cleared on the
     // `.capturePanelDidHide` notification alongside the typed text.
 
     /// Screenshots currently attached to the capture box, in selection order
