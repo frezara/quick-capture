@@ -4,6 +4,7 @@ import {
     WidgetType, Decoration, DecorationSet, ViewPlugin, ViewUpdate,
 } from "@codemirror/view";
 import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertTab } from "@codemirror/commands";
+import { search, searchKeymap } from "@codemirror/search";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
 import { syntaxHighlighting, HighlightStyle, bracketMatching, indentOnInput, indentUnit, syntaxTree } from "@codemirror/language";
@@ -715,7 +716,7 @@ function makeTheme() {
         opacity: "1",
         transform: "translateY(0)",
     },
-    // Cursor-anchored refile dropdown (⌘R). A small surface card listing the
+    // Cursor-anchored refile dropdown (⌃⌘R). A small surface card listing the
     // configured refile targets; arrow keys navigate, Enter selects, Esc cancels.
     ".cm-refile-dropdown": {
         position: "fixed",
@@ -771,6 +772,56 @@ function makeTheme() {
     ".cm-refile-toast--visible": {
         opacity: "1",
         transform: "translateX(-50%) translateY(0)",
+    },
+    // Native find (⌘F) — restyle CodeMirror's search panel from its unthemed
+    // defaults to the native-v2 palette. Top-anchored (search({top:true})) so
+    // it never collides with the bottom status bar.
+    ".cm-panels": {
+        backgroundColor: palette.surface,
+        color: palette.text,
+        zIndex: "25",
+    },
+    ".cm-panels.cm-panels-top": {
+        borderBottom: `0.5px solid ${palette.borderSoft}`,
+    },
+    ".cm-panel.cm-search": {
+        fontFamily: sansFamily,
+        fontSize: "12px",
+        padding: "8px 10px",
+    },
+    ".cm-panel.cm-search input.cm-textfield": {
+        backgroundColor: palette.surfaceField,
+        border: `0.5px solid ${palette.borderSoft}`,
+        borderRadius: "6px",
+        color: palette.text,
+        outline: "none",
+    },
+    ".cm-panel.cm-search input.cm-textfield:focus": {
+        borderColor: palette.accent,
+    },
+    ".cm-panel.cm-search button.cm-button": {
+        background: palette.surfaceField,
+        backgroundImage: "none",
+        border: `0.5px solid ${palette.borderSoft}`,
+        borderRadius: "6px",
+        color: palette.text,
+        cursor: "pointer",
+    },
+    ".cm-panel.cm-search label": {
+        color: palette.soft,
+        fontSize: "11px",
+    },
+    ".cm-panel.cm-search button[name=close]": {
+        color: palette.soft,
+        cursor: "pointer",
+        fontSize: "14px",
+    },
+    ".cm-searchMatch": {
+        backgroundColor: `${palette.accent}38`,
+        borderRadius: "2px",
+    },
+    ".cm-searchMatch.cm-searchMatch-selected": {
+        backgroundColor: `${palette.accent}66`,
     },
     // Floating action cluster, bottom-right (replaces the old left rail). A
     // small surface card holding the reorg + archive buttons; clears the
@@ -1110,8 +1161,7 @@ let vimMode: "normal" | "insert" | "visual" | "replace" = "normal";
 // (same pattern as setRefileTargets); these defaults exist so the browser
 // harness — which has no bridge — gets working bindings. The command map is
 // also the bridge dispatch table: window-intercepted actions that must run
-// in the editor (⌘R refile — WebKit eats the raw key as "reload") arrive as
-// qcEditor.invoke(actionId).
+// in the editor (⌃⌘R refile) arrive as qcEditor.invoke(actionId).
 const appKeymapComp = new Compartment();
 const defaultAppKeymap: Record<string, string> = {
     readMode: "Mod-e",
@@ -1555,7 +1605,7 @@ function sendToSwift(message: Record<string, unknown>) {
     window.webkit?.messageHandlers?.editorBridge?.postMessage(message);
 }
 
-// MARK: - Refile (⌘R)
+// MARK: - Refile (⌃⌘R)
 //
 // Resolve the subtree under the cursor with the SAME child-indent rule mirrored
 // from FileWriter (`/^( {2,}|\t)\S/`, here via indent-width comparison), open a
@@ -1792,7 +1842,15 @@ function mount(content: string) {
             // re-org) — built from the registry-pushed bindings, swappable
             // live via the compartment when Swift re-pushes.
             appKeymapComp.of(buildAppKeymap()),
+            // Native find (⌘F / ⌘G / ⇧⌘G). The panel renders at the top so it
+            // doesn't collide with the bottom status bar. searchKeymap must
+            // precede the Escape→dismiss binding below: its Escape entry
+            // (close panel) returns false when no panel is open, falling
+            // through to dismiss — the reverse order would dismiss the whole
+            // window while searching with vim off.
+            search({ top: true }),
             keymap.of([
+                ...searchKeymap,
                 {
                     // Esc dismisses the panel. This only fires when vim is OFF —
                     // with vim on, its keymap (loaded earlier) owns Escape, so
@@ -1801,11 +1859,11 @@ function mount(content: string) {
                     run: () => { sendToSwift({ type: "dismiss" }); return true; },
                 },
                 {
-                    // Cmd+R — kept for the browser harness only. In the app,
-                    // WebKit eats ⌘R as "reload" before this runs, so Swift
-                    // drives refile via qcEditor.invoke("refile") from the
-                    // window's performKeyEquivalent instead.
-                    key: "Mod-r",
+                    // Ctrl+Mod+R mirrors the app's ⌃⌘R refile here for the
+                    // browser harness; in the app the window intercepts the
+                    // chord and drives qcEditor.invoke("refile") over the
+                    // bridge before the web view ever sees it.
+                    key: "Ctrl-Mod-r",
                     run: (v) => { startRefile(v); return true; },
                 },
                 // Obsidian-style Tab / Shift-Tab: indent or outdent a list/task
@@ -1906,9 +1964,8 @@ window.qcEditor = {
     refileDidComplete: (targetName: string) => {
         if (view) showRefileToast(view, `Refiled to ${targetName}`);
     },
-    // Entry point for the ⌘R gesture. Swift drives this from the window's
-    // performKeyEquivalent because WebKit eats ⌘R as "reload" before the editor
-    // keymap can run. (The Mod-r keymap entry is kept for the browser harness.)
+    // Legacy entry point for the refile gesture (superseded by invoke("refile");
+    // kept so an older Swift layer or external driver can still trigger it).
     startRefile: () => { if (view) startRefile(view); },
     // Editor-local bindings pushed from Swift's ShortcutRegistry — the single
     // source of truth for shortcuts. Before mount this just records the map;

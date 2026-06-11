@@ -20,7 +20,7 @@ enum FileWriter {
 
         ## Quick capture
 
-        - [ ] Welcome to Quick Capture — press ⌥T to capture a thought, ⌘F to open the editor.
+        - [ ] Welcome to Quick Capture — press ⌥T to capture a thought, ⌃⌘E to open the editor.
         """
 
     /// Obsidian Tasks plugin's "created date" marker.
@@ -331,7 +331,7 @@ enum FileWriter {
         var errorDescription: String? {
             switch self {
             case .contentDrifted:
-                return "The file changed since you pressed ⌘R. Refile again."
+                return "The file changed since you pressed ⌃⌘R. Refile again."
             }
         }
     }

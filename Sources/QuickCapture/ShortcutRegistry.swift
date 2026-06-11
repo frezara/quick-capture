@@ -56,18 +56,27 @@ enum ShortcutScope {
 
 enum ShortcutAction: String, CaseIterable {
     // Window-intercepted: matched in `MainPanel.performKeyEquivalent` before
-    // WebKit/CodeMirror can claim the key. ⌘R *must* be intercepted there —
-    // WebKit reserves it for "reload" and would swallow it before the editor
-    // keymap ever runs; ⌘F likewise reads as "find" inside the web view.
+    // WebKit/CodeMirror can claim the key.
+    //
+    // Binding scheme (epic #53): plain ⌘ keys keep their native/Obsidian
+    // editor meaning (⌘F find, ⌘S save, ⌘E read mode…); ⌃⌘ is the app's
+    // reserved namespace for panel-level actions — the macOS analogue of
+    // emacs keeping C-c for user bindings. Avoid the system-claimed combos:
+    // ⌃⌘F (fullscreen), ⌃⌘Q (lock screen), ⌃⌘Space (emoji), ⌃⌘D (dictionary).
     case toggleEditor
     case dismissPanel
     case attachScreenshot
     case refile
+    /// ⌘R must stay swallowed in editor mode even though refile moved to ⌃⌘R:
+    /// WebKit reserves the key for "reload", which would blow away the warm
+    /// editor (and its undo history / cursor) the moment it got through.
+    case swallowReload
 
     // Editor-local: bound inside CodeMirror via the keymap Swift pushes on
     // boot (`qcEditor.setKeymap`). The window must NOT intercept these — they
     // are text-editing bindings that should only fire while the editor view
-    // itself has focus (not, say, the refile dropdown's key capture).
+    // itself has focus (not, say, the refile dropdown's key capture). ⌘F is
+    // deliberately absent: CodeMirror's own searchKeymap owns find.
     case readMode
     case toggleTask
     case save
@@ -75,10 +84,11 @@ enum ShortcutAction: String, CaseIterable {
 
     var chord: KeyChord {
         switch self {
-        case .toggleEditor:     return KeyChord(key: "f", modifiers: .command)
+        case .toggleEditor:     return KeyChord(key: "e", modifiers: [.command, .control])
         case .dismissPanel:     return KeyChord(key: "w", modifiers: .command)
         case .attachScreenshot: return KeyChord(key: "s", modifiers: [.command, .shift])
-        case .refile:           return KeyChord(key: "r", modifiers: .command)
+        case .refile:           return KeyChord(key: "r", modifiers: [.command, .control])
+        case .swallowReload:    return KeyChord(key: "r", modifiers: .command)
         case .readMode:         return KeyChord(key: "e", modifiers: .command)
         case .toggleTask:       return KeyChord(key: "l", modifiers: .command)
         case .save:             return KeyChord(key: "s", modifiers: .command)
@@ -92,14 +102,14 @@ enum ShortcutAction: String, CaseIterable {
             return .anyMode
         case .attachScreenshot:
             return .captureMode
-        case .refile, .readMode, .toggleTask, .save, .reorg:
+        case .refile, .swallowReload, .readMode, .toggleTask, .save, .reorg:
             return .editorMode
         }
     }
 
     var isWindowIntercepted: Bool {
         switch self {
-        case .toggleEditor, .dismissPanel, .attachScreenshot, .refile:
+        case .toggleEditor, .dismissPanel, .attachScreenshot, .refile, .swallowReload:
             return true
         case .readMode, .toggleTask, .save, .reorg:
             return false
@@ -116,6 +126,7 @@ enum ShortcutAction: String, CaseIterable {
         case .dismissPanel:     return nil
         case .attachScreenshot: return nil
         case .refile:           return "Refile…"
+        case .swallowReload:    return nil
         case .readMode:         return "Toggle Read Mode"
         case .toggleTask:       return "Toggle Checkbox"
         case .save:             return "Save Now"

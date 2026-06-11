@@ -12,18 +12,18 @@ Project hand-off doc for Claude Code. Read this first.
    a markdown file. Tags route entries under `## tag` headings; untagged
    items go under `## Quick capture`. `#cal` re-interprets the input as a
    natural-language calendar event and opens an `.ics`.
-2. **Editor mode** — `⌘F` crossfades the panel (frame animation + alpha
+2. **Editor mode** — `⌃⌘E` crossfades the panel (frame animation + alpha
    crossfade) to a full CodeMirror 6 editor hosted in a `WKWebView`, with
    Obsidian-style live preview (checkbox widgets, hidden syntax marks, indent
    guides), vim mode (optional), priority orbs, a floating action cluster, and
    file-watcher reload. The editor is headerless — its bottom status bar carries
-   the filename, vim mode, and item count. `⌘F` crossfades back to the capture
+   the filename, vim mode, and item count. `⌃⌘E` crossfades back to the capture
    box. The menu-bar "Open Editor…" summons straight into editor mode.
 
 The two are **mutually-exclusive modes** — only one surface is ever on screen
 (see ADR-0004). One window, one file (always the capture file). The editor's web
 view stays warm across mode switches, so toggling is instant and preserves
-cursor/scroll. Typed-but-unsaved capture text is preserved when you ⌘F into the
+cursor/scroll. Typed-but-unsaved capture text is preserved when you ⌃⌘E into the
 editor and back; it's only cleared on a full dismiss.
 
 LSUIElement app (no dock icon by default). Editor mode bumps the activation
@@ -41,16 +41,18 @@ Sources/QuickCapture/
   AppDelegate.swift                NSStatusItem, main menu, hotkey, panel lifecycle, launch-at-login
   AppState.swift                   ObservableObject; UserDefaults-backed settings + recent-tag scan
   HotKeyConfig.swift               Codable hotkey model used by KeyRecorderView
+  ShortcutRegistry.swift           Single source of truth for app shortcuts: chords, scopes,
+                                   window-intercept flags, Editor-menu titles, editor keymap push
   MainPanel.swift                  The one NSPanel: hosts CaptureView + the editor WKWebView
                                    (both warm), mutually-exclusive mode switching (capture↔editor),
-                                   ⌘F intercept, frame/crossfade animation, file watcher, JS↔Swift bridge
+                                   shortcut intercepts, frame/crossfade animation, file watcher, JS↔Swift bridge
   CaptureView.swift                SwiftUI capture UI (multi-line input, tag field, shake-on-empty)
   KeyRecorderView.swift            Settings widget for re-binding the global hotkey
   SettingsView.swift               SwiftUI Settings form (file path, hotkey, font, timestamp, refile targets)
   SettingsWindowController.swift   Plain NSWindow fallback path for Settings (menu-bar item route)
   FileWriter.swift                 Append/insert/archive logic + refile core (subtree span,
                                    verify-and-remove, dedent, attachment-paths, append-under-inbox)
-  RefileService.swift              ⌘R disk pipeline: verify→copy→rewrite/dedent→write target→write source→delete
+  RefileService.swift              ⌃⌘R disk pipeline: verify→copy→rewrite/dedent→write target→write source→delete
   RefileTarget.swift               Settings model for a refile destination folder + effective-list filtering
   EventParser.swift                "#cal" NL → calendar event parser
   ICSWriter.swift                  Calendar event → temp .ics file
@@ -121,10 +123,17 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   full-visible-height centered frame. `openEditor` / `closeEditor` /
   `showInEditor` drive the mode; `show()` always resets to capture so
   re-summoning lands on the capture box.
-- **⌘F is intercepted at the window.** `MainPanel.performKeyEquivalent`
-  catches ⌘F *before* it reaches CodeMirror/WebKit (which would treat it as
-  "find") and switches mode. Vim owns Escape inside the editor, so ⌘F (not
-  Escape) is the switch gesture.
+- **Shortcuts live in `ShortcutRegistry.swift`** (epic #53). Scheme: plain ⌘
+  keys keep their native/Obsidian editor meaning (⌘F find, ⌘S save, ⌘E read
+  mode, ⌘L toggle task); **⌃⌘ is the app's namespace** for panel-level actions
+  (⌃⌘E mode toggle, ⌃⌘R refile). `MainPanel.performKeyEquivalent` is a generic
+  registry lookup; editor-local bindings are pushed into CodeMirror via
+  `qcEditor.setKeymap` on boot. Adding a shortcut = one registry case + a
+  handler arm (`MainPanel.perform(shortcut:)`) or one `appCommands` entry
+  (editor.ts). ⌘R is intercepted as a deliberate no-op in editor mode — WebKit
+  would otherwise reload the warm editor. Vim owns Escape inside the editor,
+  so ⌃⌘E (not Escape) is the switch gesture; ⌘F opens CodeMirror's search
+  panel (top-anchored, themed).
 - **Mode-aware dismiss.** `resignKey` only self-dismisses (click-away) in
   capture mode — the editor must survive losing focus so you can copy from
   other apps. `canBecomeMain` is true only in editor mode.
@@ -161,7 +170,7 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   (FLIP-animated, focus preserved), sorts unchecked items by priority bucket
   (`!!!` → `!!` → `!` → plain), and strips priority markers from checked
   items so they read as plain done items.
-- **Refile (`⌘R`).** Editor-only. Moves the subtree under the cursor (item +
+- **Refile (`⌃⌘R`).** Editor-only. Moves the subtree under the cursor (item +
   attachments + nested children, resolved by the shared child-indent rule, a
   cursor-on-child resolving up) into a chosen **refile target**'s `inbox.md`,
   appended at top level (dedented) in arrival order, with its screenshots. The
@@ -173,8 +182,9 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   against the file drifting between flush and move. Targets are configured in
   Settings (folders, optional labels, reorderable); Swift **pushes** the
   effective list into the editor (it can't read settings) on entry and on
-  change. `⌘R` is *not* intercepted in `MainPanel.performKeyEquivalent` — it
-  falls through to the editor's `Mod-r` keymap.
+  change. `⌃⌘R` is window-intercepted and drives `qcEditor.invoke("refile")`
+  over the bridge; the editor keeps a `Ctrl-Mod-r` keymap entry for the
+  browser harness.
 
 ## When you're asked to…
 

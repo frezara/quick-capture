@@ -11,7 +11,7 @@ decisions behind the non-obvious bits, see `docs/adr/`.
 
 Quick Capture is a personal macOS menu bar app (`LSUIElement`, no permanent
 dock icon). A single floating `NSPanel` shows one of two mutually-exclusive
-surfaces — a small **capture box** or a full markdown **editor** — and ⌘F
+surfaces — a small **capture box** or a full markdown **editor** — and ⌃⌘E
 crossfades between them.
 
 ## Glossary
@@ -48,9 +48,10 @@ crossfades between them.
   two mutually-exclusive modes (see **editor mode**).
 
 - **Editor mode** — the state showing the full-screen editor and nothing else.
-  Reached via `⌘F` (or the menu-bar "Open Editor…"); `⌘F` returns to capture
-  mode. Survives loss of focus. Capturing and editing are mutually exclusive —
-  only one surface is ever on screen (see ADR-0004).
+  Reached via `⌃⌘E` (or the menu-bar "Open Editor…"); `⌃⌘E` returns to capture
+  mode (`⌘F` is native find inside the editor — see epic #53). Survives loss of
+  focus. Capturing and editing are mutually exclusive — only one surface is
+  ever on screen (see ADR-0004).
 
 - **Editor** — the markdown editing surface (CodeMirror 6 in a `WKWebView`,
   Obsidian-style live preview), shown full-screen in editor mode. The capture
