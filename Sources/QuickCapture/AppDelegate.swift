@@ -181,11 +181,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @objc private func rebindHotKey() {
+        let config = appState.hotKey
+        // Validate the new combo BEFORE tearing down the old one. The previous
+        // code released the existing HotKey first and only then checked for a
+        // mappable key code — so a config whose code doesn't resolve to a
+        // `HotKey.Key` left the app with no working hotkey at all (the "loses
+        // its binding" failure). Keep the current binding intact on a bad combo.
+        guard let key = config.key else {
+            NSLog("QuickCapture: hotkey rebind skipped — \(config.displayString) has no mappable key code; keeping the existing binding")
+            return
+        }
+        // Drop the old registration only now. soffes/HotKey unregisters the
+        // Carbon hot key synchronously in `deinit`, so releasing here frees the
+        // combo before we register the replacement (a same-combo re-register
+        // would otherwise hit RegisterEventHotKey's duplicate-combo failure).
         hotKey = nil
-        guard let key = appState.hotKey.key else { return }
-        let combo = HotKey(key: key, modifiers: appState.hotKey.modifierFlags)
+        let combo = HotKey(key: key, modifiers: config.modifierFlags)
         combo.keyDownHandler = { [weak self] in self?.toggleCapture() }
         hotKey = combo
+        NSLog("QuickCapture: hotkey bound to \(config.displayString) (keyCode \(config.keyCode), modifiers \(config.modifiers))")
     }
 
     // MARK: - Capture panel
