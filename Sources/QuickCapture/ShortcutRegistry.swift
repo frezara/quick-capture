@@ -18,7 +18,9 @@ import AppKit
 /// events on the Swift side; rendered as a CodeMirror key spec for
 /// editor-local bindings.
 struct KeyChord: Equatable {
-    /// Lowercased `charactersIgnoringModifiers` of the key.
+    /// Lowercased `charactersIgnoringModifiers` of the key, or a CodeMirror
+    /// key name ("ArrowDown") for non-character keys — those are editor-local
+    /// only, so they never go through `matches`.
     let key: String
     let modifiers: NSEvent.ModifierFlags
 
@@ -35,6 +37,16 @@ struct KeyChord: Equatable {
         if modifiers.contains(.shift)   { s += "Shift-" }
         if modifiers.contains(.command) { s += "Mod-" }
         return s + key
+    }
+
+    /// What an `NSMenuItem` wants in `keyEquivalent` — function-key characters
+    /// for the named keys, the raw character otherwise.
+    var menuKeyEquivalent: String {
+        switch key {
+        case "ArrowUp":   return String(UnicodeScalar(UInt16(NSUpArrowFunctionKey))!)
+        case "ArrowDown": return String(UnicodeScalar(UInt16(NSDownArrowFunctionKey))!)
+        default:          return key
+        }
     }
 }
 
@@ -83,6 +95,8 @@ enum ShortcutAction: String, CaseIterable {
     case toggleTask
     case save
     case reorg
+    case nextSection
+    case prevSection
 
     var chord: KeyChord {
         switch self {
@@ -95,6 +109,8 @@ enum ShortcutAction: String, CaseIterable {
         case .toggleTask:       return KeyChord(key: "l", modifiers: .command)
         case .save:             return KeyChord(key: "s", modifiers: .command)
         case .reorg:            return KeyChord(key: "'", modifiers: .command)
+        case .nextSection:      return KeyChord(key: "ArrowDown", modifiers: [.command, .option])
+        case .prevSection:      return KeyChord(key: "ArrowUp", modifiers: [.command, .option])
         }
     }
 
@@ -104,7 +120,8 @@ enum ShortcutAction: String, CaseIterable {
             return .anyMode
         case .attachScreenshot:
             return .captureMode
-        case .refile, .swallowReload, .readMode, .toggleTask, .save, .reorg:
+        case .refile, .swallowReload, .readMode, .toggleTask, .save, .reorg,
+             .nextSection, .prevSection:
             return .editorMode
         }
     }
@@ -113,7 +130,7 @@ enum ShortcutAction: String, CaseIterable {
         switch self {
         case .toggleEditor, .dismissPanel, .attachScreenshot, .refile, .swallowReload:
             return true
-        case .readMode, .toggleTask, .save, .reorg:
+        case .readMode, .toggleTask, .save, .reorg, .nextSection, .prevSection:
             return false
         }
     }
@@ -133,6 +150,8 @@ enum ShortcutAction: String, CaseIterable {
         case .toggleTask:       return "Toggle Checkbox"
         case .save:             return "Save Now"
         case .reorg:            return "Re-organize"
+        case .nextSection:      return "Next Section"
+        case .prevSection:      return "Previous Section"
         }
     }
 }

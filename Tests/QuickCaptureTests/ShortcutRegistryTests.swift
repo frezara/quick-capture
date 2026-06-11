@@ -105,6 +105,8 @@ final class ShortcutRegistryTests: XCTestCase {
             "toggleTask": "Mod-l",
             "save": "Mod-s",
             "reorg": "Mod-'",
+            "nextSection": "Alt-Mod-ArrowDown",
+            "prevSection": "Alt-Mod-ArrowUp",
         ])
     }
 
