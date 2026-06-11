@@ -700,7 +700,9 @@ function makeTheme() {
         fontWeight: "600",
         letterSpacing: "0.6px",
         textTransform: "uppercase",
-        backgroundColor: palette.accentSoft,
+        // Floats over content — accentSoft is translucent in the native-v2
+        // palette, so layer it on the opaque surface or text bleeds through.
+        background: `linear-gradient(0deg, ${palette.accentSoft}, ${palette.accentSoft}) ${palette.surface}`,
         color: palette.accentInk,
         border: `1px solid ${palette.accent}33`,
         opacity: "0",
@@ -722,8 +724,10 @@ function makeTheme() {
         maxWidth: "320px",
         padding: "4px",
         borderRadius: "10px",
-        backgroundColor: palette.surfaceField,
-        border: `1px solid ${palette.accent}33`,
+        // Floating card — must be opaque (surfaceField is a translucent well
+        // tint in the native-v2 palette; content would bleed through).
+        backgroundColor: palette.surface,
+        border: `0.5px solid ${palette.borderSoft}`,
         boxShadow: "0 8px 28px rgba(0,0,0,0.28)",
         fontFamily: sansFamily,
         fontSize: "12px",
@@ -751,8 +755,9 @@ function makeTheme() {
         transform: "translateX(-50%) translateY(6px)",
         padding: "6px 14px",
         borderRadius: "9px",
-        backgroundColor: palette.surfaceField,
-        border: `1px solid ${palette.accent}33`,
+        // Floating toast — opaque surface, not the translucent well tint.
+        backgroundColor: palette.surface,
+        border: `0.5px solid ${palette.borderSoft}`,
         boxShadow: "0 6px 20px rgba(0,0,0,0.22)",
         fontFamily: sansFamily,
         fontSize: "11px",
