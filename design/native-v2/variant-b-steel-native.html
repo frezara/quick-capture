@@ -1,0 +1,1275 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Quick Capture — Variant B: Steel Native</title>
+<style>
+/* ============================================================
+   TOKENS — Steel Native
+   Translate these custom properties to SwiftUI / CSS constants.
+   ============================================================ */
+:root {
+  /* Brand accent (Misted Steel lineage) */
+  --accent:           #2F6FA3;
+  --accent-soft:      #D4E3F1;
+  --accent-ring:      rgba(47, 111, 163, 0.28);
+  --accent-contrast:  #FFFFFF;
+
+  /* Ink */
+  --ink:              #1B222B;
+  --ink-2:            rgba(27, 34, 43, 0.66);
+  --ink-3:            rgba(27, 34, 43, 0.46);
+  --ink-4:            rgba(27, 34, 43, 0.30);
+  --section-label:    #54718B;
+  --link:             #2F6FA3;
+
+  /* Priority palette (the only warm color in the system) */
+  --prio-red:         #DB5560;
+  --prio-amber:       #D99A3C;
+  --prio-green:       #4E9E84;
+
+  /* Surfaces */
+  --panel-frost:      rgba(248, 250, 252, 0.72);
+  --panel-opaque:     #F7F9FB;
+  --settings-bg:      #F1F3F6;
+  --card:             rgba(255, 255, 255, 0.80);
+  --cluster-frost:    rgba(250, 252, 254, 0.78);
+
+  /* Controls */
+  --control-bg:       #FFFFFF;
+  --control-shadow:   0 0.5px 1.5px rgba(20, 30, 42, 0.20);
+  --toggle-off:       rgba(30, 42, 54, 0.22);
+
+  /* Recessed wells (inputs, preview ground) */
+  --well:             rgba(26, 38, 52, 0.05);
+  --well-shadow:      inset 0 1px 2px rgba(18, 30, 44, 0.10);
+
+  /* Chips */
+  --chip:             rgba(26, 38, 52, 0.065);
+  --chip-hover:       rgba(26, 38, 52, 0.115);
+
+  /* Hairlines + edge light */
+  --hairline:         rgba(34, 50, 66, 0.24);
+  --hairline-soft:    rgba(34, 50, 66, 0.12);
+  --top-light:        rgba(255, 255, 255, 0.65);
+
+  /* Window shadow */
+  --win-shadow:       0 24px 60px rgba(14, 26, 40, 0.32), 0 2px 8px rgba(14, 26, 40, 0.14);
+
+  /* Abstract screenshot placeholders */
+  --ph-bg:            #E8EDF2;
+  --ph-frame:         #DCE3EA;
+  --ph-line:          rgba(40, 60, 82, 0.20);
+
+  /* Simulated desktop */
+  --desktop:
+    radial-gradient(1100px 720px at 18% 8%,  rgba(222, 233, 244, 0.85), transparent 60%),
+    radial-gradient(950px 640px  at 84% 26%, rgba(120, 148, 178, 0.55), transparent 58%),
+    radial-gradient(800px 900px  at 50% 110%, rgba(40, 62, 88, 0.50), transparent 65%),
+    linear-gradient(158deg, #B6C6D8 0%, #8CA4BD 38%, #5F7C99 72%, #45607D 100%);
+
+  --exhibit-label:    rgba(255, 255, 255, 0.82);
+  --exhibit-sub:      rgba(255, 255, 255, 0.55);
+}
+
+html.dark {
+  --accent:           #5AA2E0;
+  --accent-soft:      #23364A;
+  --accent-ring:      rgba(90, 162, 224, 0.34);
+  --accent-contrast:  #0E1622;
+
+  --ink:              #EDF1F5;
+  --ink-2:            rgba(237, 241, 245, 0.66);
+  --ink-3:            rgba(237, 241, 245, 0.45);
+  --ink-4:            rgba(237, 241, 245, 0.28);
+  --section-label:    #8FB0CC;
+  --link:             #5AA2E0;
+
+  --prio-red:         #F0727C;
+  --prio-amber:       #E7B05A;
+  --prio-green:       #6FBBA0;
+
+  --panel-frost:      rgba(26, 31, 38, 0.64);
+  --panel-opaque:     #1C2128;
+  --settings-bg:      #1E242B;
+  --card:             rgba(255, 255, 255, 0.045);
+  --cluster-frost:    rgba(34, 40, 48, 0.78);
+
+  --control-bg:       #3A424B;
+  --control-shadow:   0 0.5px 1.5px rgba(0, 0, 0, 0.45);
+  --toggle-off:       rgba(255, 255, 255, 0.17);
+
+  --well:             rgba(0, 0, 0, 0.26);
+  --well-shadow:      inset 0 1px 2.5px rgba(0, 0, 0, 0.34);
+
+  --chip:             rgba(255, 255, 255, 0.07);
+  --chip-hover:       rgba(255, 255, 255, 0.12);
+
+  --hairline:         rgba(173, 196, 219, 0.22);
+  --hairline-soft:    rgba(173, 196, 219, 0.10);
+  --top-light:        rgba(255, 255, 255, 0.08);
+
+  --win-shadow:       0 28px 72px rgba(0, 0, 0, 0.55), 0 2px 10px rgba(0, 0, 0, 0.35);
+
+  --ph-bg:            #2A323C;
+  --ph-frame:         #333D48;
+  --ph-line:          rgba(196, 216, 236, 0.16);
+
+  --desktop:
+    radial-gradient(1100px 720px at 18% 8%,  rgba(62, 84, 110, 0.55), transparent 60%),
+    radial-gradient(950px 640px  at 84% 26%, rgba(38, 56, 78, 0.65), transparent 58%),
+    radial-gradient(800px 900px  at 50% 110%, rgba(8, 14, 22, 0.70), transparent 65%),
+    linear-gradient(158deg, #2C3A4C 0%, #202C3C 40%, #151E2B 74%, #0E1520 100%);
+
+  --exhibit-label:    rgba(255, 255, 255, 0.72);
+  --exhibit-sub:      rgba(255, 255, 255, 0.42);
+}
+
+/* ============================================================
+   PAGE CHROME (not part of the app design)
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Helvetica Neue", sans-serif;
+  background: var(--desktop);
+  background-attachment: fixed;
+  color: var(--ink);
+  -webkit-font-smoothing: antialiased;
+  padding: 64px 32px 140px;
+}
+
+.page-title {
+  text-align: center;
+  margin-bottom: 96px;
+}
+.page-title h1 {
+  font-size: 16px;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+  color: var(--exhibit-label);
+  text-shadow: 0 1px 2px rgba(10, 20, 32, 0.25);
+}
+.page-title p {
+  margin-top: 6px;
+  font-size: 12.5px;
+  color: var(--exhibit-sub);
+}
+
+.theme-toggle {
+  position: fixed;
+  top: 18px;
+  right: 20px;
+  z-index: 100;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  font: 500 12px -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--panel-frost);
+  -webkit-backdrop-filter: blur(30px);
+  backdrop-filter: blur(30px);
+  border: none;
+  border-radius: 7px;
+  padding: 7px 12px;
+  cursor: pointer;
+  box-shadow: inset 0 1px 0 var(--top-light), 0 0 0 0.5px var(--hairline), 0 4px 14px rgba(12, 22, 36, 0.18);
+}
+.theme-toggle:hover { background: var(--chip-hover); }
+.theme-toggle svg { width: 13px; height: 13px; }
+.theme-toggle .when-dark  { display: none; }
+html.dark .theme-toggle .when-light { display: none; }
+html.dark .theme-toggle .when-dark  { display: inline; }
+
+.exhibit {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  margin-bottom: 130px;
+}
+.exhibit-label {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.14em;
+  text-transform: uppercase;
+  color: var(--exhibit-label);
+  text-shadow: 0 1px 2px rgba(10, 20, 32, 0.25);
+  margin-bottom: 26px;
+}
+.state-label {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--exhibit-sub);
+  margin: 0 0 12px 4px;
+  align-self: flex-start;
+}
+
+/* ============================================================
+   SHARED WINDOW MATERIALS
+   ============================================================ */
+.win-frost {
+  background: var(--panel-frost);
+  -webkit-backdrop-filter: blur(30px) saturate(150%);
+  backdrop-filter: blur(30px) saturate(150%);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 var(--top-light), 0 0 0 0.5px var(--hairline), var(--win-shadow);
+}
+.win-opaque {
+  background: var(--panel-opaque);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 var(--top-light), 0 0 0 0.5px var(--hairline), var(--win-shadow);
+}
+
+/* ============================================================
+   EXHIBIT 1 — CAPTURE WINDOW
+   ============================================================ */
+.capture-stack {
+  display: flex;
+  flex-direction: column;
+  gap: 56px;
+  align-items: center;
+}
+.capture-state { display: flex; flex-direction: column; }
+
+.capture-win {
+  width: 640px;
+  padding: 14px 14px 10px;
+}
+
+.capture-inputs {
+  display: flex;
+  gap: 8px;
+}
+.field {
+  border-radius: 10px;
+  background: var(--well);
+  box-shadow: var(--well-shadow), 0 0 0 0.5px var(--hairline-soft);
+  padding: 11px 14px;
+  font-size: 15px;
+  line-height: 1.3;
+  color: var(--ink);
+  display: flex;
+  align-items: center;
+  min-height: 42px;
+}
+.field-main { flex: 1; }
+.field-tag {
+  width: 138px;
+  font-size: 13px;
+  color: var(--ink-2);
+}
+.field .placeholder { color: var(--ink-3); }
+.field.focused {
+  box-shadow: var(--well-shadow), 0 0 0 0.5px var(--accent), 0 0 0 3px var(--accent-ring);
+}
+.completion { color: var(--ink-4); }
+
+.caret {
+  display: inline-block;
+  width: 1.5px;
+  height: 17px;
+  margin-left: 1px;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  animation: blink 1.1s steps(1) infinite;
+}
+.caret.small { height: 14px; }
+@keyframes blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0; } }
+
+.capture-divider {
+  height: 0.5px;
+  background: var(--hairline-soft);
+  margin: 12px 2px 9px;
+}
+
+.suggest-row {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  padding: 0 2px 2px;
+}
+.chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--ink-2);
+  background: var(--chip);
+  border-radius: 7px;
+  padding: 4px 10px;
+  cursor: default;
+  white-space: nowrap;
+  transition: background-color 0.12s ease;
+}
+.chip:hover { background: var(--chip-hover); color: var(--ink); }
+.chip svg { width: 12px; height: 12px; opacity: 0.75; }
+.chip.active {
+  background: var(--accent-soft);
+  color: var(--accent);
+  box-shadow: 0 0 0 0.5px var(--accent-ring);
+}
+.chip.active svg { opacity: 1; }
+.chip .hash { color: var(--ink-4); font-weight: 600; margin-right: -1px; }
+.chip.active .hash { color: var(--accent); opacity: 0.65; }
+
+.suggest-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--ink-4);
+  letter-spacing: 0.01em;
+  white-space: nowrap;
+}
+
+/* ============================================================
+   EXHIBIT 2 — EDITOR WINDOW
+   ============================================================ */
+.editor-win {
+  width: 760px;
+  height: 820px;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  position: relative;
+}
+
+.editor-scroll {
+  flex: 1;
+  overflow: hidden;
+  padding: 30px 32px 16px;
+}
+
+/* Content = mono. Chrome = sans. */
+.md-h1 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 6px;
+}
+.md-h1 .glyph {
+  width: 21px;
+  height: 21px;
+  border-radius: 6px;
+  background: var(--accent-soft);
+  color: var(--accent);
+  font: 700 13px ui-monospace, "SF Mono", Menlo, monospace;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: inset 0 0 0 0.5px var(--accent-ring);
+}
+.md-h1 .title {
+  font: 600 20px -apple-system, sans-serif;
+  letter-spacing: -0.015em;
+  color: var(--ink);
+}
+
+.md-h2 {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 26px 0 10px;
+  font: 600 11px -apple-system, sans-serif;
+  letter-spacing: 0.10em;
+  text-transform: uppercase;
+  color: var(--section-label);
+}
+.md-h2::after {
+  content: "";
+  flex: 1;
+  height: 0.5px;
+  background: var(--hairline-soft);
+}
+
+.todo {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  position: relative;
+  padding: 2.5px 26px 2.5px 2px;
+  border-radius: 6px;
+  font: 400 13px ui-monospace, "SF Mono", Menlo, monospace;
+  line-height: 1.6;
+  color: var(--ink);
+}
+.todo:hover { background: var(--chip); }
+.todo-text { flex: 1; min-width: 0; overflow-wrap: break-word; }
+
+.cb {
+  flex: none;
+  width: 15px;
+  height: 15px;
+  margin-top: 3px;
+  border-radius: 4.5px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--ink-4), var(--control-shadow);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.cb.checked {
+  background: var(--accent);
+  box-shadow: inset 0 0 0 0.5px rgba(0, 0, 0, 0.06), var(--control-shadow);
+}
+.cb.checked svg { width: 9px; height: 9px; stroke: #fff; }
+
+.todo.done .todo-text {
+  color: var(--ink-4);
+  text-decoration: line-through;
+  text-decoration-color: var(--ink-4);
+  text-decoration-thickness: 1px;
+}
+
+.todo.child {
+  margin-left: 27px;
+  font-size: 12.5px;
+  color: var(--ink-2);
+}
+.todo.child::before {
+  content: "";
+  position: absolute;
+  left: -13px;
+  top: 1px;
+  bottom: 1px;
+  width: 1px;
+  background: var(--hairline-soft);
+  border-radius: 0.5px;
+}
+.todo.child .cb { width: 13px; height: 13px; margin-top: 4px; border-radius: 4px; }
+
+.pdot {
+  position: absolute;
+  right: 9px;
+  top: 9.5px;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+}
+.pdot.red   { background: var(--prio-red);   box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--prio-red)   16%, transparent); }
+.pdot.amber { background: var(--prio-amber); box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--prio-amber) 16%, transparent); }
+.pdot.green { background: var(--prio-green); box-shadow: 0 0 0 3.5px color-mix(in srgb, var(--prio-green) 16%, transparent); }
+
+.md-link {
+  color: var(--link);
+  text-decoration: underline;
+  text-decoration-color: color-mix(in srgb, var(--link) 40%, transparent);
+  text-underline-offset: 2.5px;
+  cursor: pointer;
+}
+.md-link:hover { text-decoration-color: var(--link); }
+
+.attach-row { padding: 1px 0 4px 27px; }
+.attach-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font: 400 11px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--ink-2);
+  background: var(--chip);
+  border-radius: 7px;
+  padding: 3.5px 9px;
+  box-shadow: 0 0 0 0.5px var(--hairline-soft);
+  cursor: default;
+  transition: background-color 0.12s ease;
+}
+.attach-chip:hover { background: var(--chip-hover); color: var(--ink); }
+.attach-chip svg { width: 11px; height: 11px; opacity: 0.7; flex: none; }
+
+.action-cluster {
+  position: absolute;
+  right: 16px;
+  bottom: 52px;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  padding: 5px;
+  border-radius: 10px;
+  background: var(--cluster-frost);
+  -webkit-backdrop-filter: blur(20px);
+  backdrop-filter: blur(20px);
+  box-shadow: inset 0 1px 0 var(--top-light), 0 0 0 0.5px var(--hairline), 0 6px 18px rgba(12, 22, 36, 0.18);
+}
+.action-btn {
+  width: 28px;
+  height: 28px;
+  border: none;
+  border-radius: 7px;
+  background: transparent;
+  color: var(--ink-2);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.action-btn:hover { background: var(--chip-hover); color: var(--ink); }
+.action-btn svg { width: 14px; height: 14px; }
+
+.status-bar {
+  flex: none;
+  height: 30px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 12px;
+  box-shadow: inset 0 0.5px 0 var(--hairline-soft);
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.status-left, .status-right { display: flex; align-items: center; gap: 10px; }
+.vim-pill {
+  font-size: 9.5px;
+  font-weight: 700;
+  letter-spacing: 0.10em;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border-radius: 5px;
+  padding: 2px 7px;
+}
+.status-file { font-family: ui-monospace, "SF Mono", Menlo, monospace; color: var(--ink-2); }
+.status-right span + span { margin-left: 6px; }
+
+/* ============================================================
+   EXHIBIT 3 — SCREENSHOT PICKER
+   ============================================================ */
+.picker-win {
+  width: 860px;
+  overflow: hidden;
+}
+.picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 18px 12px;
+  box-shadow: 0 0.5px 0 var(--hairline-soft);
+}
+.picker-title { font-size: 15px; font-weight: 600; letter-spacing: -0.01em; }
+.picker-hints {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  font-size: 11px;
+  color: var(--ink-3);
+}
+.picker-hints .hint { display: inline-flex; align-items: center; gap: 5px; }
+kbd {
+  font: 500 10px -apple-system, sans-serif;
+  color: var(--ink-2);
+  background: var(--chip);
+  border-radius: 4.5px;
+  padding: 1.5px 5.5px;
+  box-shadow: 0 0 0 0.5px var(--hairline-soft), 0 1px 0 var(--hairline-soft);
+}
+
+.picker-body { display: flex; }
+.picker-list {
+  width: 296px;
+  flex: none;
+  padding: 9px;
+  box-shadow: 0.5px 0 0 var(--hairline-soft);
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+.shot-row {
+  display: flex;
+  align-items: center;
+  gap: 11px;
+  padding: 7px 9px;
+  border-radius: 10px;
+  cursor: default;
+  transition: background-color 0.12s ease;
+}
+.shot-row:hover { background: var(--chip); }
+.shot-row.selected {
+  background: var(--accent-soft);
+  box-shadow: 0 0 0 1px var(--accent-ring);
+}
+.shot-time { display: flex; flex-direction: column; gap: 1px; }
+.shot-time .t1 { font-size: 12.5px; font-weight: 500; color: var(--ink); }
+.shot-time .t2 { font-size: 10.5px; color: var(--ink-3); }
+.shot-row.selected .t1 { color: var(--accent); }
+.shot-row.selected .t2 { color: color-mix(in srgb, var(--accent) 65%, var(--ink-3)); }
+
+/* Abstract screenshot thumbnail — 44×30 rounded rect with content lines */
+.thumb {
+  flex: none;
+  width: 44px;
+  height: 30px;
+  border-radius: 5px;
+  background: var(--ph-bg);
+  box-shadow: inset 0 0 0 0.5px var(--hairline-soft), var(--control-shadow);
+  position: relative;
+  overflow: hidden;
+}
+.thumb::before {
+  content: "";
+  position: absolute;
+  inset: 0 0 auto 0;
+  height: 7px;
+  background: var(--ph-frame);
+  box-shadow: 0 0.5px 0 var(--hairline-soft);
+}
+.thumb::after {
+  content: "";
+  position: absolute;
+  left: 6px;
+  right: 10px;
+  top: 12px;
+  height: 13px;
+  background: repeating-linear-gradient(
+    to bottom,
+    var(--ph-line) 0 1.5px,
+    transparent 1.5px 5px
+  );
+}
+.thumb.wide::after { right: 6px; }
+
+.picker-preview {
+  flex: 1;
+  padding: 14px;
+  display: flex;
+}
+.preview-well {
+  flex: 1;
+  border-radius: 10px;
+  background: var(--well);
+  box-shadow: var(--well-shadow), 0 0 0 0.5px var(--hairline-soft);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+/* Abstract preview — a document window placeholder */
+.preview-doc {
+  width: 380px;
+  height: 268px;
+  border-radius: 9px;
+  background: var(--ph-bg);
+  box-shadow: 0 0 0 0.5px var(--hairline), 0 10px 28px rgba(12, 22, 36, 0.20);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+.preview-doc .doc-bar {
+  flex: none;
+  height: 22px;
+  background: var(--ph-frame);
+  box-shadow: 0 0.5px 0 var(--hairline-soft);
+  display: flex;
+  align-items: center;
+  gap: 4.5px;
+  padding-left: 9px;
+}
+.preview-doc .doc-bar i {
+  width: 6.5px;
+  height: 6.5px;
+  border-radius: 50%;
+  background: var(--ph-line);
+}
+.preview-doc .doc-body { flex: 1; padding: 18px 20px; }
+.preview-doc .line {
+  height: 7px;
+  border-radius: 3.5px;
+  background: var(--ph-line);
+  margin-bottom: 11px;
+}
+.preview-doc .line.w90 { width: 90%; }
+.preview-doc .line.w60 { width: 60%; }
+.preview-doc .line.w75 { width: 75%; }
+.preview-doc .line.w40 { width: 40%; }
+.preview-doc .line.head { width: 34%; height: 10px; opacity: 0.85; margin-bottom: 16px; }
+.preview-doc .gap { height: 10px; }
+
+/* ============================================================
+   EXHIBIT 4 — SETTINGS WINDOW
+   ============================================================ */
+.settings-win {
+  width: 560px;
+  background: var(--settings-bg);
+  border-radius: 14px;
+  box-shadow: inset 0 1px 0 var(--top-light), 0 0 0 0.5px var(--hairline), var(--win-shadow);
+  overflow: hidden;
+}
+.settings-titlebar {
+  height: 38px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+  box-shadow: 0 0.5px 0 var(--hairline-soft);
+}
+.settings-body { padding: 18px 20px 22px; }
+
+.group { margin-bottom: 20px; }
+.group:last-child { margin-bottom: 0; }
+.group-title {
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-3);
+  padding: 0 2px 7px 12px;
+}
+.group-card {
+  background: var(--card);
+  border-radius: 10px;
+  box-shadow: inset 0 1px 0 var(--top-light), 0 0 0 0.5px var(--hairline-soft), var(--control-shadow);
+  overflow: hidden;
+}
+.s-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+  padding: 10px 14px;
+  min-height: 44px;
+}
+.s-row + .s-row { box-shadow: inset 0 0.5px 0 var(--hairline-soft); }
+.s-label { font-size: 13px; color: var(--ink); flex: none; }
+.s-control { display: flex; align-items: center; gap: 9px; min-width: 0; }
+.mono-path {
+  font: 400 11.5px ui-monospace, "SF Mono", Menlo, monospace;
+  color: var(--ink-3);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+/* Native-style push button */
+.btn {
+  font: 400 12.5px -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--control-bg);
+  border: none;
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  box-shadow: inset 0 0.5px 0 var(--top-light), 0 0 0 0.5px var(--hairline), var(--control-shadow);
+  transition: filter 0.1s ease;
+  white-space: nowrap;
+}
+.btn:hover { filter: brightness(0.97); }
+html.dark .btn:hover { filter: brightness(1.12); }
+.btn:active { filter: brightness(0.92); }
+
+/* Native-style pop-up button (accent chevron capsule on right) */
+.popup {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  font: 400 12.5px -apple-system, sans-serif;
+  color: var(--ink);
+  background: var(--control-bg);
+  border: none;
+  border-radius: 6px;
+  padding: 3px 3px 3px 12px;
+  cursor: pointer;
+  box-shadow: inset 0 0.5px 0 var(--top-light), 0 0 0 0.5px var(--hairline), var(--control-shadow);
+  transition: filter 0.1s ease;
+}
+.popup:hover { filter: brightness(0.97); }
+html.dark .popup:hover { filter: brightness(1.12); }
+.popup .pop-chevrons {
+  width: 17px;
+  height: 17px;
+  border-radius: 4.5px;
+  background: var(--accent);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.popup .pop-chevrons svg { width: 9px; height: 11px; stroke: #fff; }
+
+/* Native-style toggle */
+.toggle {
+  flex: none;
+  width: 38px;
+  height: 22px;
+  border-radius: 11px;
+  background: var(--toggle-off);
+  box-shadow: inset 0 0.5px 1.5px rgba(10, 20, 32, 0.18);
+  position: relative;
+  cursor: pointer;
+  transition: background-color 0.15s ease;
+}
+.toggle .knob {
+  position: absolute;
+  top: 1.5px;
+  left: 1.5px;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  background: #FFFFFF;
+  box-shadow: 0 0 0 0.5px rgba(20, 30, 42, 0.10), 0 1px 2.5px rgba(10, 20, 32, 0.30);
+  transition: left 0.15s ease;
+}
+.toggle.on { background: var(--accent); }
+.toggle.on .knob { left: 17.5px; }
+
+/* Key-cap display */
+.keycaps { display: inline-flex; gap: 4px; }
+.keycap {
+  min-width: 23px;
+  height: 23px;
+  padding: 0 6px;
+  border-radius: 5px;
+  background: var(--control-bg);
+  box-shadow: inset 0 0.5px 0 var(--top-light), 0 0 0 0.5px var(--hairline), 0 1px 0 var(--hairline-soft);
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font: 500 12px -apple-system, sans-serif;
+  color: var(--ink);
+}
+
+/* Refile target rows */
+.target-row { justify-content: flex-start; }
+.target-row .folder-ic { flex: none; width: 17px; height: 17px; color: var(--accent); opacity: 0.85; }
+.target-name { font-size: 13px; font-weight: 500; color: var(--ink); margin-left: 1px; }
+.target-row .mono-path { margin-left: 4px; flex: 1; }
+.row-actions { display: flex; align-items: center; gap: 2px; margin-left: auto; }
+.icon-btn {
+  width: 22px;
+  height: 22px;
+  border: none;
+  border-radius: 5.5px;
+  background: transparent;
+  color: var(--ink-3);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  cursor: pointer;
+  transition: background-color 0.12s ease, color 0.12s ease;
+}
+.icon-btn:hover { background: var(--chip-hover); color: var(--ink); }
+.icon-btn svg { width: 11px; height: 11px; }
+.add-row { min-height: 40px; }
+</style>
+</head>
+<body>
+
+<!-- Theme toggle (page chrome) -->
+<button class="theme-toggle" onclick="document.documentElement.classList.toggle('dark')">
+  <svg class="when-light" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+    <path d="M12.6 9.6A5.1 5.1 0 0 1 6.4 3.4a5.1 5.1 0 1 0 6.2 6.2Z"/>
+  </svg>
+  <svg class="when-dark" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+    <circle cx="8" cy="8" r="3.2"/>
+    <path d="M8 1.4v1.7M8 12.9v1.7M1.4 8h1.7M12.9 8h1.7M3.3 3.3l1.2 1.2M11.5 11.5l1.2 1.2M12.7 3.3l-1.2 1.2M4.5 11.5l-1.2 1.2"/>
+  </svg>
+  <span class="when-light">Dark</span>
+  <span class="when-dark">Light</span>
+</button>
+
+<div class="page-title">
+  <h1>Quick Capture — Native Redesign · Variant B: Steel Native</h1>
+  <p>Native macOS materials and typography carrying the app's steel-blue identity. Cool, precise, calm.</p>
+</div>
+
+<!-- ============================================================
+     EXHIBIT 1 — CAPTURE WINDOW
+     ============================================================ -->
+<section class="exhibit">
+  <div class="exhibit-label">01 · Capture Window</div>
+
+  <div class="capture-stack">
+
+    <!-- Resting -->
+    <div class="capture-state">
+      <div class="state-label">Resting</div>
+      <div class="capture-win win-frost">
+        <div class="capture-inputs">
+          <div class="field field-main"><span class="placeholder">What needs doing?</span></div>
+          <div class="field field-tag"><span class="placeholder"># tag</span></div>
+        </div>
+        <div class="capture-divider"></div>
+        <div class="suggest-row">
+          <span class="chip">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+              <rect x="1.5" y="2.5" width="11" height="10" rx="2"/>
+              <path d="M1.5 5.5h11M4.5 1v2.5M9.5 1v2.5"/>
+            </svg>
+            cal
+          </span>
+          <span class="chip"><span class="hash">#</span>hyper-active</span>
+          <span class="chip"><span class="hash">#</span>quick-capture</span>
+          <span class="chip"><span class="hash">#</span>design-extract</span>
+          <span class="suggest-hint">⌘⇧S to attach screenshot</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- Typing -->
+    <div class="capture-state">
+      <div class="state-label">Typing</div>
+      <div class="capture-win win-frost">
+        <div class="capture-inputs">
+          <div class="field field-main focused">Fix the hyper+1 layout bug<span class="caret"></span></div>
+          <div class="field field-tag">hy<span class="caret small"></span><span class="completion">per-active</span></div>
+        </div>
+        <div class="capture-divider"></div>
+        <div class="suggest-row">
+          <span class="chip">
+            <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round">
+              <rect x="1.5" y="2.5" width="11" height="10" rx="2"/>
+              <path d="M1.5 5.5h11M4.5 1v2.5M9.5 1v2.5"/>
+            </svg>
+            cal
+          </span>
+          <span class="chip active"><span class="hash">#</span>hyper-active</span>
+          <span class="chip"><span class="hash">#</span>quick-capture</span>
+          <span class="chip"><span class="hash">#</span>design-extract</span>
+          <span class="suggest-hint">⌘⇧S to attach screenshot</span>
+        </div>
+      </div>
+    </div>
+
+  </div>
+</section>
+
+<!-- ============================================================
+     EXHIBIT 2 — MARKDOWN EDITOR
+     ============================================================ -->
+<section class="exhibit">
+  <div class="exhibit-label">02 · Markdown Editor</div>
+
+  <div class="editor-win win-opaque">
+    <div class="editor-scroll">
+
+      <div class="md-h1">
+        <span class="glyph">#</span>
+        <span class="title">Inbox</span>
+      </div>
+
+      <div class="md-h2"><span>quick-capture</span></div>
+
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">how to deep think about making quick-captures editor easy jump to focus on headings while hiding other items like emacs?</span>
+      </div>
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">returning focus to the last app using it?</span>
+      </div>
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">select multiple items and toggle them to done and undone</span>
+      </div>
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">Jump from section to section — deep research</span>
+      </div>
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">Look at this for the landing page: <a class="md-link">https://www.supaste.com/#featues</a></span>
+      </div>
+
+      <div class="md-h2"><span>hyper-active</span></div>
+
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">going from layout two to one, i have to press hyper+1 twice to get chrome to appear. Chrome is in both layouts</span>
+        <span class="pdot red"></span>
+      </div>
+      <div class="todo child">
+        <span class="cb"></span>
+        <span class="todo-text">something else</span>
+      </div>
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">hyper + 1 isn't working like it's supposed to</span>
+        <span class="pdot green"></span>
+      </div>
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">Obsidian not actually launching</span>
+      </div>
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">need a better release process for this</span>
+      </div>
+      <div class="todo done">
+        <span class="cb checked">
+          <svg viewBox="0 0 10 10" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.4 4 7.8 8.5 2.4"/></svg>
+        </span>
+        <span class="todo-text">now what?</span>
+      </div>
+      <div class="todo done">
+        <span class="cb checked">
+          <svg viewBox="0 0 10 10" fill="none" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 5.4 4 7.8 8.5 2.4"/></svg>
+        </span>
+        <span class="todo-text">what? is this?</span>
+      </div>
+
+      <div class="md-h2"><span>home</span></div>
+
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">take something to target</span>
+      </div>
+      <div class="attach-row">
+        <span class="attach-chip">
+          <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1.5" y="2" width="11" height="10" rx="2"/>
+            <circle cx="5" cy="5.5" r="1.1"/>
+            <path d="M2 10.5 5.8 7l2.7 2.6 1.6-1.5 2.4 2.3"/>
+          </svg>
+          screenshot-2026-06-10-141227-3.png
+        </span>
+      </div>
+
+      <div class="md-h2"><span>design-extract</span></div>
+
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">Write a skill to generate design system from image</span>
+      </div>
+      <div class="todo">
+        <span class="cb"></span>
+        <span class="todo-text">The purpose is to give it an image and it should create the most commonly used design assets</span>
+      </div>
+
+    </div>
+
+    <!-- Floating action cluster -->
+    <div class="action-cluster">
+      <button class="action-btn" title="Export">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M7 1.5v7M4.2 6 7 8.8 9.8 6"/>
+          <path d="M1.8 9.5v1.7a1.3 1.3 0 0 0 1.3 1.3h7.8a1.3 1.3 0 0 0 1.3-1.3V9.5"/>
+        </svg>
+      </button>
+      <button class="action-btn" title="Archive completed">
+        <svg viewBox="0 0 14 14" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1.5" y="2" width="11" height="3" rx="1"/>
+          <path d="M2.5 5v5.5A1.5 1.5 0 0 0 4 12h6a1.5 1.5 0 0 0 1.5-1.5V5"/>
+          <path d="M5.6 7.5h2.8"/>
+        </svg>
+      </button>
+    </div>
+
+    <!-- Status bar -->
+    <div class="status-bar">
+      <div class="status-left">
+        <span class="vim-pill">NORMAL</span>
+        <span class="status-file">inbox.md</span>
+      </div>
+      <div class="status-right">
+        <span>27 items · 2 done</span>
+        <span>UTF-8</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     EXHIBIT 3 — SCREENSHOT PICKER
+     ============================================================ -->
+<section class="exhibit">
+  <div class="exhibit-label">03 · Screenshot Picker</div>
+
+  <div class="picker-win win-frost">
+    <div class="picker-header">
+      <span class="picker-title">Recent screenshots</span>
+      <div class="picker-hints">
+        <span class="hint"><kbd>↑</kbd><kbd>↓</kbd> navigate</span>
+        <span class="hint"><kbd>↵</kbd> attach</span>
+        <span class="hint"><kbd>esc</kbd> cancel</span>
+      </div>
+    </div>
+    <div class="picker-body">
+      <div class="picker-list">
+        <div class="shot-row selected">
+          <span class="thumb"></span>
+          <span class="shot-time"><span class="t1">1:19 PM</span><span class="t2">Today</span></span>
+        </div>
+        <div class="shot-row">
+          <span class="thumb wide"></span>
+          <span class="shot-time"><span class="t1">12:38 PM</span><span class="t2">Today</span></span>
+        </div>
+        <div class="shot-row">
+          <span class="thumb"></span>
+          <span class="shot-time"><span class="t1">2:17 PM</span><span class="t2">Yesterday</span></span>
+        </div>
+        <div class="shot-row">
+          <span class="thumb wide"></span>
+          <span class="shot-time"><span class="t1">2:12 PM</span><span class="t2">Yesterday</span></span>
+        </div>
+        <div class="shot-row">
+          <span class="thumb"></span>
+          <span class="shot-time"><span class="t1">2:06 PM</span><span class="t2">Yesterday</span></span>
+        </div>
+        <div class="shot-row">
+          <span class="thumb wide"></span>
+          <span class="shot-time"><span class="t1">2:06 PM</span><span class="t2">Yesterday</span></span>
+        </div>
+        <div class="shot-row">
+          <span class="thumb"></span>
+          <span class="shot-time"><span class="t1">2:06 PM</span><span class="t2">Yesterday</span></span>
+        </div>
+        <div class="shot-row">
+          <span class="thumb wide"></span>
+          <span class="shot-time"><span class="t1">12:08 PM</span><span class="t2">Yesterday</span></span>
+        </div>
+      </div>
+      <div class="picker-preview">
+        <div class="preview-well">
+          <div class="preview-doc">
+            <div class="doc-bar"><i></i><i></i><i></i></div>
+            <div class="doc-body">
+              <div class="line head"></div>
+              <div class="line w90"></div>
+              <div class="line w75"></div>
+              <div class="line w60"></div>
+              <div class="gap"></div>
+              <div class="line w90"></div>
+              <div class="line w40"></div>
+              <div class="gap"></div>
+              <div class="line w75"></div>
+              <div class="line w60"></div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     EXHIBIT 4 — SETTINGS
+     ============================================================ -->
+<section class="exhibit">
+  <div class="exhibit-label">04 · Settings</div>
+
+  <div class="settings-win">
+    <div class="settings-titlebar">Quick Capture Settings</div>
+    <div class="settings-body">
+
+      <div class="group">
+        <div class="group-title">Capture</div>
+        <div class="group-card">
+          <div class="s-row">
+            <span class="s-label">Capture file</span>
+            <span class="s-control">
+              <span class="mono-path">~/Notes/inbox.md</span>
+              <button class="btn">Choose…</button>
+            </span>
+          </div>
+          <div class="s-row">
+            <span class="s-label">Include timestamp</span>
+            <span class="s-control"><span class="toggle on"><span class="knob"></span></span></span>
+          </div>
+          <div class="s-row">
+            <span class="s-label">Font</span>
+            <span class="s-control">
+              <button class="popup">System
+                <span class="pop-chevrons">
+                  <svg viewBox="0 0 9 11" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4 4.5 1.5 7 4M2 7l2.5 2.5L7 7"/></svg>
+                </span>
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Editor</div>
+        <div class="group-card">
+          <div class="s-row">
+            <span class="s-label">Vim mode</span>
+            <span class="s-control"><span class="toggle on"><span class="knob"></span></span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Screenshots</div>
+        <div class="group-card">
+          <div class="s-row">
+            <span class="s-label">Auto-attach window</span>
+            <span class="s-control">
+              <button class="popup">2 minutes
+                <span class="pop-chevrons">
+                  <svg viewBox="0 0 9 11" fill="none" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M2 4 4.5 1.5 7 4M2 7l2.5 2.5L7 7"/></svg>
+                </span>
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">General</div>
+        <div class="group-card">
+          <div class="s-row">
+            <span class="s-label">Launch at login</span>
+            <span class="s-control"><span class="toggle"><span class="knob"></span></span></span>
+          </div>
+          <div class="s-row">
+            <span class="s-label">Global hotkey</span>
+            <span class="s-control">
+              <span class="keycaps"><span class="keycap">⌥</span><span class="keycap">T</span></span>
+              <button class="btn">Record…</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Refile targets</div>
+        <div class="group-card">
+          <div class="s-row target-row">
+            <svg class="folder-ic" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
+              <path d="M1.8 4.2A1.4 1.4 0 0 1 3.2 2.8h3.1l1.5 1.7h5.9a1.4 1.4 0 0 1 1.4 1.4v6.7a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4Z"/>
+            </svg>
+            <span class="target-name">home</span>
+            <span class="mono-path">~/Notes/home</span>
+            <span class="row-actions">
+              <button class="icon-btn" title="Move up">
+                <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 3.5-3.5L9 7"/></svg>
+              </button>
+              <button class="icon-btn" title="Move down">
+                <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="m2 4 3.5 3.5L9 4"/></svg>
+              </button>
+              <button class="icon-btn" title="Remove">
+                <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="m2.5 2.5 6 6M8.5 2.5l-6 6"/></svg>
+              </button>
+            </span>
+          </div>
+          <div class="s-row target-row">
+            <svg class="folder-ic" viewBox="0 0 17 17" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round">
+              <path d="M1.8 4.2A1.4 1.4 0 0 1 3.2 2.8h3.1l1.5 1.7h5.9a1.4 1.4 0 0 1 1.4 1.4v6.7a1.4 1.4 0 0 1-1.4 1.4H3.2a1.4 1.4 0 0 1-1.4-1.4Z"/>
+            </svg>
+            <span class="target-name">work</span>
+            <span class="mono-path">~/Notes/work</span>
+            <span class="row-actions">
+              <button class="icon-btn" title="Move up">
+                <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="m2 7 3.5-3.5L9 7"/></svg>
+              </button>
+              <button class="icon-btn" title="Move down">
+                <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round"><path d="m2 4 3.5 3.5L9 4"/></svg>
+              </button>
+              <button class="icon-btn" title="Remove">
+                <svg viewBox="0 0 11 11" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"><path d="m2.5 2.5 6 6M8.5 2.5l-6 6"/></svg>
+              </button>
+            </span>
+          </div>
+          <div class="s-row add-row">
+            <button class="btn">Add Folder…</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+</body>
+</html>

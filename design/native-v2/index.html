@@ -1,0 +1,62 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Quick Capture — Native Redesign v2</title>
+<style>
+  :root {
+    --bg: #f2f4f7; --ink: #1b2129; --dim: #5d6a78; --line: rgba(0,0,0,.08);
+    --card: #ffffff; --accent: #2e6fe6;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #15181d; --ink: #edf0f4; --dim: #98a3b0; --line: rgba(255,255,255,.09); --card: #1e232a; }
+  }
+  * { box-sizing: border-box; margin: 0; }
+  body {
+    font: 15px/1.6 -apple-system, system-ui, sans-serif;
+    background: var(--bg); color: var(--ink);
+    max-width: 720px; margin: 0 auto; padding: 64px 24px 96px;
+  }
+  h1 { font-size: 22px; letter-spacing: -0.3px; }
+  p.lede { color: var(--dim); margin: 8px 0 40px; }
+  a.card {
+    display: block; background: var(--card); border-radius: 12px;
+    padding: 20px 22px; margin-bottom: 14px; text-decoration: none; color: inherit;
+    box-shadow: 0 0 0 0.5px var(--line), 0 2px 10px rgba(0,0,0,.05);
+  }
+  a.card:hover { box-shadow: 0 0 0 1px var(--accent), 0 4px 16px rgba(0,0,0,.08); }
+  a.card h2 { font-size: 16px; }
+  a.card h2 span { color: var(--dim); font-weight: 400; }
+  a.card p { color: var(--dim); font-size: 13.5px; margin-top: 4px; }
+  .hint { color: var(--dim); font-size: 13px; margin-top: 36px; border-top: 1px solid var(--line); padding-top: 16px; }
+  kbd { font: 12px ui-monospace, monospace; background: var(--card); border-radius: 4px;
+        padding: 1px 5px; box-shadow: 0 0 0 0.5px var(--line); }
+</style>
+</head>
+<body>
+  <h1>Quick Capture — Native Redesign v2</h1>
+  <p class="lede">Three flavors of the "native macOS polish" direction. Each page shows all four
+  surfaces: capture window (resting + typing), markdown editor, screenshot picker, settings.</p>
+
+  <a class="card" href="variant-a-pure-system.html">
+    <h2>A · Pure System <span>— as if Apple shipped it</span></h2>
+    <p>Maximal restraint. System blue, heavy frosted vibrancy, Spotlight-style capture box,
+    System-Settings-style preferences.</p>
+  </a>
+
+  <a class="card" href="variant-b-steel-native.html">
+    <h2>B · Steel Native <span>— native materials, your brand</span></h2>
+    <p>Keeps the Misted Steel accent family and cool-grey voice, on modern frosted materials.
+    Things-3 calm. The continuity option.</p>
+  </a>
+
+  <a class="card" href="variant-c-quiet-pro.html">
+    <h2>C · Quiet Pro <span>— keyboard-first power tool</span></h2>
+    <p>Raycast/Linear flavor: graphite panels, machined hairlines, keycap hints everywhere,
+    full-row selection, section bars with item counts. Dark is the hero.</p>
+  </a>
+
+  <p class="hint">Each page has a light/dark toggle in the top-right corner. These are visual
+  targets — implementation will be idiomatic SwiftUI + editor CSS, not a port of this HTML.</p>
+</body>
+</html>

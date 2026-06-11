@@ -1,0 +1,1131 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Quick Capture — Variant A: Pure System</title>
+<style>
+/* ============================================================
+   TOKENS — Variant A "Pure System"
+   All colors flow through these custom properties.
+   :root = light appearance, html.dark = dark appearance.
+   ============================================================ */
+:root {
+  /* accent */
+  --accent:        #007AFF;
+  --accent-tint:   rgba(0, 122, 255, 0.12);
+  --accent-tint-2: rgba(0, 122, 255, 0.20);
+  --accent-ring:   rgba(0, 122, 255, 0.35);
+
+  /* text */
+  --text-1: rgba(0, 0, 0, 0.88);
+  --text-2: rgba(60, 60, 67, 0.62);
+  --text-3: rgba(60, 60, 67, 0.36);
+
+  /* lines & rings (0.5px hairlines via box-shadow) */
+  --hairline:      rgba(0, 0, 0, 0.14);
+  --ring:          rgba(0, 0, 0, 0.18);
+  --edge-light:    rgba(255, 255, 255, 0.55);
+
+  /* materials */
+  --panel:    rgba(252, 252, 254, 0.66);   /* frosted: capture box, picker */
+  --window:   rgba(246, 246, 248, 0.96);   /* opaque window: editor, settings */
+  --bar:      rgba(0, 0, 0, 0.025);        /* status bar wash */
+  --well:     rgba(120, 120, 128, 0.10);   /* recessed input wells */
+  --chip:     rgba(120, 120, 128, 0.12);
+  --chip-hov: rgba(120, 120, 128, 0.20);
+  --control:  rgba(255, 255, 255, 0.95);   /* push buttons / pop-ups */
+  --control-hov: rgba(245, 245, 247, 1);
+  --group:    rgba(255, 255, 255, 0.62);   /* settings group card */
+  --row-hov:  rgba(120, 120, 128, 0.07);
+
+  /* checkboxes */
+  --cb-border: rgba(0, 0, 0, 0.28);
+
+  /* priority */
+  --prio-red:   #FF3B30;
+  --prio-green: #34C759;
+
+  /* placeholders (abstract screenshot art) */
+  --ph-bg:    rgba(255, 255, 255, 0.85);
+  --ph-line:  rgba(0, 0, 0, 0.14);
+  --ph-bar:   rgba(0, 0, 0, 0.07);
+
+  /* shadows */
+  --shadow-window:
+      0 0 0 0.5px var(--ring),
+      inset 0 1px 0 var(--edge-light),
+      0 24px 70px rgba(0, 0, 0, 0.28),
+      0 4px 16px rgba(0, 0, 0, 0.10);
+  --shadow-panel:
+      0 0 0 0.5px var(--ring),
+      inset 0 1px 0 var(--edge-light),
+      0 20px 60px rgba(0, 0, 0, 0.25),
+      0 2px 10px rgba(0, 0, 0, 0.08);
+  --shadow-control:
+      0 0 0 0.5px rgba(0, 0, 0, 0.16),
+      0 0.5px 1.5px rgba(0, 0, 0, 0.12);
+
+  /* page chrome (not part of the app design) */
+  --exhibit-label: rgba(15, 35, 60, 0.55);
+  --page-title:    rgba(10, 25, 45, 0.85);
+  --page-sub:      rgba(15, 35, 60, 0.55);
+  --speck:         rgba(255, 255, 255, 0.55);
+
+  /* keycaps */
+  --keycap-bg: rgba(255, 255, 255, 0.85);
+
+  /* checkerboard well */
+  --check-a: rgba(120, 120, 128, 0.10);
+  --check-b: transparent;
+}
+
+html.dark {
+  --accent:        #0A84FF;
+  --accent-tint:   rgba(10, 132, 255, 0.16);
+  --accent-tint-2: rgba(10, 132, 255, 0.28);
+  --accent-ring:   rgba(10, 132, 255, 0.40);
+
+  --text-1: rgba(255, 255, 255, 0.92);
+  --text-2: rgba(235, 235, 245, 0.60);
+  --text-3: rgba(235, 235, 245, 0.32);
+
+  --hairline:   rgba(255, 255, 255, 0.13);
+  --ring:       rgba(255, 255, 255, 0.14);
+  --edge-light: rgba(255, 255, 255, 0.10);
+
+  --panel:    rgba(38, 38, 42, 0.58);
+  --window:   rgba(33, 33, 37, 0.96);
+  --bar:      rgba(255, 255, 255, 0.03);
+  --well:     rgba(120, 120, 128, 0.20);
+  --chip:     rgba(120, 120, 128, 0.24);
+  --chip-hov: rgba(120, 120, 128, 0.34);
+  --control:  rgba(255, 255, 255, 0.14);
+  --control-hov: rgba(255, 255, 255, 0.20);
+  --group:    rgba(255, 255, 255, 0.05);
+  --row-hov:  rgba(255, 255, 255, 0.05);
+
+  --cb-border: rgba(255, 255, 255, 0.35);
+
+  --prio-red:   #FF453A;
+  --prio-green: #30D158;
+
+  --ph-bg:   rgba(255, 255, 255, 0.10);
+  --ph-line: rgba(255, 255, 255, 0.22);
+  --ph-bar:  rgba(255, 255, 255, 0.08);
+
+  --shadow-window:
+      0 0 0 0.5px rgba(0, 0, 0, 0.55),
+      inset 0 0 0 0.5px var(--ring),
+      inset 0 1px 0 var(--edge-light),
+      0 24px 70px rgba(0, 0, 0, 0.55),
+      0 4px 16px rgba(0, 0, 0, 0.30);
+  --shadow-panel:
+      0 0 0 0.5px rgba(0, 0, 0, 0.55),
+      inset 0 0 0 0.5px var(--ring),
+      inset 0 1px 0 var(--edge-light),
+      0 20px 60px rgba(0, 0, 0, 0.50),
+      0 2px 10px rgba(0, 0, 0, 0.30);
+  --shadow-control:
+      0 0 0 0.5px rgba(255, 255, 255, 0.16),
+      0 0.5px 1.5px rgba(0, 0, 0, 0.30);
+
+  --exhibit-label: rgba(255, 255, 255, 0.45);
+  --page-title:    rgba(255, 255, 255, 0.90);
+  --page-sub:      rgba(255, 255, 255, 0.48);
+  --speck:         rgba(255, 255, 255, 0.20);
+
+  --keycap-bg: rgba(255, 255, 255, 0.12);
+
+  --check-a: rgba(255, 255, 255, 0.07);
+  --check-b: transparent;
+}
+
+/* ============================================================
+   PAGE / SIMULATED DESKTOP
+   ============================================================ */
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: -apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue", sans-serif;
+  font-size: 13px;
+  color: var(--text-1);
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+  background:
+    radial-gradient(900px 600px at 12% 8%,  rgba(255, 211, 165, 0.38), transparent 62%),
+    radial-gradient(1100px 700px at 88% 18%, rgba(110, 195, 215, 0.42), transparent 62%),
+    radial-gradient(1000px 900px at 50% 105%, rgba(62, 105, 158, 0.50), transparent 72%),
+    linear-gradient(168deg, #d3e2ee 0%, #aac4da 38%, #7e9dc1 74%, #5b79a5 100%);
+  background-attachment: fixed;
+  padding: 72px 24px 160px;
+}
+html.dark body {
+  background:
+    radial-gradient(900px 600px at 12% 8%,  rgba(255, 150, 90, 0.10), transparent 62%),
+    radial-gradient(1100px 700px at 88% 18%, rgba(58, 132, 165, 0.22), transparent 62%),
+    radial-gradient(1000px 900px at 50% 105%, rgba(42, 62, 116, 0.42), transparent 72%),
+    linear-gradient(168deg, #18222f 0%, #131b29 45%, #0d1320 100%);
+  background-attachment: fixed;
+}
+/* fine speck grid behind everything, so the frosted blur is visible */
+body::before {
+  content: "";
+  position: fixed;
+  inset: 0;
+  background-image: radial-gradient(circle, var(--speck) 1px, transparent 1.6px);
+  background-size: 23px 23px;
+  pointer-events: none;
+  z-index: 0;
+}
+
+/* ---- page chrome (exhibit framing, not app design) ---- */
+.page-head {
+  position: relative; z-index: 1;
+  max-width: 860px; margin: 0 auto 84px; text-align: center;
+}
+.page-head h1 {
+  font-size: 21px; font-weight: 700; letter-spacing: -0.01em;
+  color: var(--page-title);
+}
+.page-head h1 span { font-weight: 400; color: var(--page-sub); }
+.page-head p { margin-top: 6px; font-size: 13px; color: var(--page-sub); }
+
+.exhibit {
+  position: relative; z-index: 1;
+  margin: 0 auto 140px;
+  display: flex; flex-direction: column; align-items: center;
+}
+.exhibit-label {
+  align-self: center;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.14em; text-transform: uppercase;
+  color: var(--exhibit-label);
+  margin-bottom: 22px;
+}
+.state-label {
+  font-size: 10px; font-weight: 600;
+  letter-spacing: 0.12em; text-transform: uppercase;
+  color: var(--exhibit-label);
+  margin: 0 0 10px 4px;
+  align-self: flex-start;
+}
+.state + .state { margin-top: 48px; }
+.state { display: flex; flex-direction: column; }
+
+/* ---- theme toggle (page chrome) ---- */
+.theme-toggle {
+  position: fixed; top: 20px; right: 20px; z-index: 50;
+  display: flex; align-items: center; gap: 7px;
+  padding: 7px 13px;
+  font: 500 12px -apple-system, system-ui, sans-serif;
+  color: var(--text-1);
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  backdrop-filter: blur(40px) saturate(1.8);
+  border: none; border-radius: 100px;
+  box-shadow: 0 0 0 0.5px var(--ring), 0 4px 18px rgba(0,0,0,0.18);
+  cursor: pointer;
+}
+.theme-toggle:hover { background: var(--chip-hov); }
+.theme-toggle svg { width: 13px; height: 13px; }
+.theme-toggle .when-light, html.dark .theme-toggle .when-dark { display: inline-flex; align-items: center; gap: 7px; }
+.theme-toggle .when-dark, html.dark .theme-toggle .when-light { display: none; }
+
+/* ============================================================
+   SHARED PRIMITIVES
+   ============================================================ */
+.mono { font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace; }
+
+.hairline-h {
+  height: 1px;
+  background: var(--hairline);
+  transform: scaleY(0.5);
+  transform-origin: 50% 100%;
+}
+
+/* macOS-style push button */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center;
+  padding: 3px 11px 4px;
+  font: 400 13px -apple-system, system-ui, sans-serif;
+  color: var(--text-1);
+  background: var(--control);
+  border: none; border-radius: 6px;
+  box-shadow: var(--shadow-control);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.btn:hover { background: var(--control-hov); }
+.btn:active { background: var(--accent-tint); }
+
+/* macOS-style pop-up button */
+.popup {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 3px 7px 4px 11px;
+  font: 400 13px -apple-system, system-ui, sans-serif;
+  color: var(--text-1);
+  background: var(--control);
+  border: none; border-radius: 6px;
+  box-shadow: var(--shadow-control);
+  cursor: pointer;
+  white-space: nowrap;
+}
+.popup:hover { background: var(--control-hov); }
+.popup svg { width: 8px; height: 11px; color: var(--text-2); flex: none; }
+
+/* macOS-style switch */
+.switch {
+  position: relative;
+  width: 36px; height: 21px; flex: none;
+  border-radius: 100px;
+  background: var(--well);
+  box-shadow: inset 0 0 0 0.5px var(--hairline);
+  cursor: pointer;
+  transition: background 0.15s ease;
+}
+.switch::after {
+  content: "";
+  position: absolute; top: 1.5px; left: 1.5px;
+  width: 18px; height: 18px; border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 0 0.5px rgba(0,0,0,0.08), 0 1px 3px rgba(0,0,0,0.25);
+  transition: left 0.15s ease;
+}
+.switch.on { background: var(--accent); box-shadow: none; }
+.switch.on::after { left: 16.5px; }
+
+/* keycap chip */
+.keycap {
+  display: inline-flex; align-items: center; justify-content: center;
+  min-width: 21px; height: 21px; padding: 0 5px;
+  font: 500 11px -apple-system, system-ui, sans-serif;
+  color: var(--text-2);
+  background: var(--keycap-bg);
+  border-radius: 5px;
+  box-shadow: 0 0 0 0.5px var(--hairline), 0 1px 0 rgba(0,0,0,0.06);
+}
+
+/* ============================================================
+   EXHIBIT 1 — CAPTURE WINDOW
+   ============================================================ */
+.capture {
+  width: 640px;
+  border-radius: 16px;
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow: var(--shadow-panel);
+  padding: 14px 14px 11px;
+}
+
+.capture-row { display: flex; gap: 8px; }
+
+.cap-input {
+  flex: 1;
+  display: flex; align-items: center;
+  padding: 11px 13px;
+  border-radius: 8px;
+  background: var(--well);
+  font-size: 17px;
+  color: var(--text-1);
+  line-height: 1.3;
+  min-height: 44px;
+}
+.cap-input .placeholder { color: var(--text-3); }
+
+.cap-tag {
+  width: 132px; flex: none;
+  display: flex; align-items: center;
+  padding: 11px 11px;
+  border-radius: 8px;
+  background: var(--well);
+  font-size: 13px;
+  color: var(--text-1);
+}
+.cap-tag .placeholder { color: var(--text-3); }
+
+/* focus ring (typing state) */
+.focused {
+  box-shadow: 0 0 0 0.5px var(--accent), 0 0 0 3.5px var(--accent-ring);
+  background: var(--well);
+}
+
+/* blinking caret */
+.caret {
+  display: inline-block;
+  width: 1.5px; height: 1.15em;
+  margin-left: 1px;
+  background: var(--accent);
+  vertical-align: text-bottom;
+  animation: blink 1.06s steps(1) infinite;
+}
+@keyframes blink { 0%, 60% { opacity: 1; } 61%, 100% { opacity: 0; } }
+
+.ghost-completion { color: var(--text-3); }
+
+.capture .hairline-h { margin: 12px 0 9px; }
+
+.cap-chips {
+  display: flex; align-items: center; gap: 6px;
+}
+.chip {
+  display: inline-flex; align-items: center; gap: 5px;
+  padding: 3px 9px 4px;
+  font-size: 11px; font-weight: 500;
+  color: var(--text-2);
+  background: var(--chip);
+  border-radius: 6px;
+  cursor: default;
+  white-space: nowrap;
+}
+.chip:hover { background: var(--chip-hov); color: var(--text-1); }
+.chip svg { width: 11px; height: 11px; flex: none; }
+.chip.match {
+  background: var(--accent-tint-2);
+  color: var(--accent);
+  box-shadow: inset 0 0 0 0.5px var(--accent-ring);
+}
+.chip.match:hover { background: var(--accent-tint-2); color: var(--accent); }
+.cap-hint {
+  margin-left: auto;
+  font-size: 11px;
+  color: var(--text-3);
+  white-space: nowrap;
+}
+
+/* ============================================================
+   EXHIBIT 2 — MARKDOWN EDITOR
+   ============================================================ */
+.editor {
+  position: relative;
+  width: 760px; height: 820px;
+  border-radius: 12px;
+  background: var(--window);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow: var(--shadow-window);
+  overflow: hidden;
+}
+
+.ed-content {
+  position: absolute; inset: 0 0 30px 0;
+  overflow: hidden;
+  padding: 30px 34px 20px;
+  font-family: ui-monospace, "SF Mono", SFMono-Regular, Menlo, monospace;
+  font-size: 13px;
+  line-height: 1.6;
+}
+
+.ed-h1 {
+  font-size: 21px; font-weight: 600; letter-spacing: -0.01em;
+  color: var(--text-1);
+  margin-bottom: 6px;
+}
+
+.ed-h2 {
+  display: flex; align-items: center; gap: 12px;
+  margin: 24px 0 8px;
+  font-family: -apple-system, system-ui, sans-serif;
+  font-size: 11px; font-weight: 600;
+  letter-spacing: 0.09em; text-transform: uppercase;
+  color: var(--text-2);
+}
+.ed-h2::after {
+  content: "";
+  flex: 1; height: 1px;
+  background: var(--hairline);
+  transform: scaleY(0.5);
+}
+
+.ed-line {
+  display: flex; align-items: flex-start; gap: 9px;
+  padding: 3px 0;
+  border-radius: 5px;
+}
+.ed-line:hover { background: var(--row-hov); }
+.ed-line .txt { color: var(--text-1); min-width: 0; }
+
+.cb {
+  flex: none;
+  width: 14px; height: 14px;
+  margin-top: 3.5px;
+  border-radius: 4px;
+  background: transparent;
+  box-shadow: inset 0 0 0 1px var(--cb-border);
+}
+.cb.checked {
+  background: var(--accent);
+  box-shadow: none;
+  display: flex; align-items: center; justify-content: center;
+}
+.cb.checked svg { width: 9px; height: 9px; color: #fff; }
+
+.ed-line.done .txt {
+  color: var(--text-3);
+  text-decoration: line-through;
+  text-decoration-thickness: 1px;
+}
+
+/* nested child item with indent guide */
+.ed-line.child {
+  margin-left: 23px;
+  position: relative;
+  padding-left: 14px;
+}
+.ed-line.child::before {
+  content: "";
+  position: absolute; left: 5px; top: -3px; bottom: -1px;
+  width: 1px;
+  background: var(--hairline);
+}
+.ed-line.child .cb { width: 12px; height: 12px; margin-top: 4.5px; border-radius: 3.5px; }
+.ed-line.child .txt { font-size: 12.5px; color: var(--text-2); }
+
+/* priority dots */
+.pdot {
+  flex: none;
+  width: 8px; height: 8px;
+  border-radius: 50%;
+  margin-left: auto;
+  margin-top: 7px;
+  margin-right: 4px;
+}
+.pdot.red   { background: var(--prio-red);   box-shadow: 0 0 0 3px color-mix(in srgb, var(--prio-red) 15%, transparent); }
+.pdot.green { background: var(--prio-green); box-shadow: 0 0 0 3px color-mix(in srgb, var(--prio-green) 15%, transparent); }
+
+.ed-link { color: var(--accent); text-decoration: none; }
+.ed-link:hover { text-decoration: underline; }
+
+/* attachment chip */
+.attach-row { padding: 1px 0 4px 23px; }
+.attach-chip {
+  display: inline-flex; align-items: center; gap: 6px;
+  padding: 3px 9px 3px 7px;
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--chip);
+  border-radius: 6px;
+  cursor: default;
+}
+.attach-chip:hover { background: var(--chip-hov); color: var(--text-1); }
+.attach-chip svg { width: 12px; height: 12px; flex: none; color: var(--text-2); }
+
+/* floating action cluster */
+.action-cluster {
+  position: absolute;
+  right: 16px; bottom: 46px;
+  display: flex; flex-direction: column; gap: 2px;
+  padding: 4px;
+  border-radius: 11px;
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(20px) saturate(1.6);
+  backdrop-filter: blur(20px) saturate(1.6);
+  box-shadow: 0 0 0 0.5px var(--ring), 0 6px 22px rgba(0,0,0,0.18);
+}
+.action-btn {
+  width: 30px; height: 30px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 8px;
+  background: transparent;
+  color: var(--text-2);
+  cursor: pointer;
+}
+.action-btn:hover { background: var(--chip-hov); color: var(--text-1); }
+.action-btn svg { width: 15px; height: 15px; }
+
+/* status bar */
+.statusbar {
+  position: absolute;
+  left: 0; right: 0; bottom: 0;
+  height: 30px;
+  display: flex; align-items: center; gap: 9px;
+  padding: 0 13px;
+  font-size: 11px;
+  color: var(--text-2);
+  background: var(--bar);
+  box-shadow: inset 0 0.5px 0 var(--hairline);
+}
+.vim-pill {
+  padding: 1px 8px 2px;
+  border-radius: 100px;
+  font-size: 10px; font-weight: 600; letter-spacing: 0.04em;
+  color: #fff;
+  background: var(--accent);
+}
+.statusbar .file { color: var(--text-2); }
+.statusbar .right { margin-left: auto; display: flex; gap: 16px; color: var(--text-3); }
+.statusbar .right .counts { color: var(--text-2); }
+
+/* ============================================================
+   EXHIBIT 3 — SCREENSHOT PICKER
+   ============================================================ */
+.picker {
+  width: 860px;
+  border-radius: 12px;
+  background: var(--panel);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow: var(--shadow-panel);
+  overflow: hidden;
+}
+
+.picker-head {
+  display: flex; align-items: center;
+  padding: 14px 18px 12px;
+}
+.picker-head h2 { font-size: 15px; font-weight: 600; color: var(--text-1); }
+.picker-hints {
+  margin-left: auto;
+  display: flex; align-items: center; gap: 14px;
+  font-size: 11px; color: var(--text-3);
+}
+.picker-hints .hint { display: flex; align-items: center; gap: 5px; }
+
+.picker-body {
+  display: flex; gap: 14px;
+  padding: 4px 14px 14px;
+  border-top: none;
+  position: relative;
+}
+.picker-body::before {
+  content: "";
+  position: absolute; top: 0; left: 14px; right: 14px;
+  height: 1px; background: var(--hairline);
+  transform: scaleY(0.5);
+}
+
+.shot-list {
+  width: 252px; flex: none;
+  display: flex; flex-direction: column; gap: 2px;
+  padding-top: 12px;
+}
+.shot-row {
+  display: flex; align-items: center; gap: 10px;
+  padding: 6px 8px;
+  border-radius: 8px;
+  cursor: default;
+}
+.shot-row:hover { background: var(--row-hov); }
+.shot-row.selected {
+  background: var(--accent-tint);
+  box-shadow: inset 0 0 0 1px var(--accent-ring);
+}
+.shot-row.selected:hover { background: var(--accent-tint); }
+
+.thumb {
+  flex: none;
+  width: 44px; height: 30px;
+  border-radius: 5px;
+  background-color: var(--ph-bg);
+  background-image:
+    linear-gradient(var(--ph-line), var(--ph-line)),
+    linear-gradient(var(--ph-line), var(--ph-line)),
+    linear-gradient(var(--ph-line), var(--ph-line));
+  background-repeat: no-repeat;
+  background-size: 26px 2px, 18px 2px, 22px 2px;
+  background-position: 6px 8px, 6px 14px, 6px 20px;
+  box-shadow: 0 0 0 0.5px var(--hairline);
+}
+.shot-meta { display: flex; flex-direction: column; line-height: 1.35; }
+.shot-meta .time { font-size: 12px; font-weight: 500; color: var(--text-1); }
+.shot-meta .day  { font-size: 11px; color: var(--text-2); }
+.shot-row.selected .shot-meta .time { color: var(--text-1); }
+
+.shot-preview {
+  flex: 1;
+  margin-top: 12px;
+  border-radius: 10px;
+  background:
+    conic-gradient(var(--check-a) 0 25%, var(--check-b) 0 50%,
+                   var(--check-a) 0 75%, var(--check-b) 0) 0 0 / 16px 16px,
+    var(--well);
+  box-shadow: inset 0 0 0 0.5px var(--hairline), inset 0 1px 4px rgba(0,0,0,0.06);
+  display: flex; align-items: center; justify-content: center;
+  padding: 26px;
+}
+
+/* big abstract document-window placeholder */
+.preview-doc {
+  width: 100%; max-width: 430px;
+  aspect-ratio: 4 / 2.8;
+  border-radius: 9px;
+  background: var(--ph-bg);
+  box-shadow: 0 0 0 0.5px var(--hairline), 0 10px 30px rgba(0,0,0,0.14);
+  overflow: hidden;
+  display: flex; flex-direction: column;
+}
+.preview-doc .doc-titlebar {
+  height: 26px; flex: none;
+  display: flex; align-items: center; gap: 5px;
+  padding: 0 10px;
+  background: var(--ph-bar);
+  box-shadow: inset 0 -0.5px 0 var(--hairline);
+}
+.preview-doc .doc-titlebar i {
+  width: 7px; height: 7px; border-radius: 50%;
+  background: var(--ph-line);
+}
+.preview-doc .doc-body {
+  flex: 1;
+  padding: 18px 20px;
+  background-image:
+    linear-gradient(var(--ph-line), var(--ph-line)),
+    linear-gradient(var(--ph-line), var(--ph-line)),
+    linear-gradient(var(--ph-line), var(--ph-line)),
+    linear-gradient(var(--ph-line), var(--ph-line)),
+    linear-gradient(var(--ph-line), var(--ph-line)),
+    linear-gradient(var(--ph-bar), var(--ph-bar));
+  background-repeat: no-repeat;
+  background-size: 46% 3px, 72% 3px, 64% 3px, 70% 3px, 38% 3px, 30% 10px;
+  background-position: 20px 22px, 20px 48px, 20px 64px, 20px 80px, 20px 96px, 20px 120px;
+}
+
+/* ============================================================
+   EXHIBIT 4 — SETTINGS WINDOW
+   ============================================================ */
+.settings {
+  width: 560px;
+  border-radius: 12px;
+  background: var(--window);
+  -webkit-backdrop-filter: blur(40px) saturate(1.8);
+  backdrop-filter: blur(40px) saturate(1.8);
+  box-shadow: var(--shadow-window);
+  overflow: hidden;
+}
+
+.settings-titlebar {
+  position: relative;
+  height: 40px;
+  display: flex; align-items: center; justify-content: center;
+  font-size: 13px; font-weight: 600;
+  color: var(--text-1);
+  box-shadow: inset 0 -0.5px 0 var(--hairline);
+}
+.traffic {
+  position: absolute; left: 14px; top: 50%;
+  transform: translateY(-50%);
+  display: flex; gap: 8px;
+}
+.traffic i { width: 12px; height: 12px; border-radius: 50%; box-shadow: inset 0 0 0 0.5px rgba(0,0,0,0.12); }
+.traffic .r { background: #FF5F57; }
+.traffic .y { background: #FEBC2E; }
+.traffic .g { background: #28C840; }
+
+.settings-body { padding: 20px 20px 22px; }
+
+.group { margin-bottom: 22px; }
+.group:last-child { margin-bottom: 0; }
+.group-title {
+  font-size: 13px; font-weight: 600;
+  color: var(--text-1);
+  margin: 0 2px 7px;
+}
+.group-card {
+  border-radius: 8px;
+  background: var(--group);
+  box-shadow: 0 0 0 0.5px var(--hairline);
+  overflow: hidden;
+}
+.row {
+  display: flex; align-items: center; gap: 10px;
+  min-height: 40px;
+  padding: 7px 13px;
+}
+.row + .row { box-shadow: inset 0 0.5px 0 var(--hairline); }
+.row-label { font-size: 13px; color: var(--text-1); }
+.row-trail { margin-left: auto; display: flex; align-items: center; gap: 9px; }
+.row .path {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11.5px;
+  color: var(--text-2);
+}
+
+/* refile target rows */
+.target-row { min-height: 46px; }
+.target-row .folder-glyph { width: 17px; height: 17px; color: var(--accent); flex: none; }
+.target-name { font-size: 13px; font-weight: 500; color: var(--text-1); }
+.target-path {
+  font-family: ui-monospace, "SF Mono", Menlo, monospace;
+  font-size: 11px;
+  color: var(--text-3);
+  margin-left: 2px;
+}
+.target-ctrls { margin-left: auto; display: flex; align-items: center; gap: 2px; }
+.icon-btn {
+  width: 22px; height: 22px;
+  display: flex; align-items: center; justify-content: center;
+  border: none; border-radius: 5px;
+  background: transparent;
+  color: var(--text-3);
+  cursor: pointer;
+  font-size: 11px;
+}
+.icon-btn:hover { background: var(--chip-hov); color: var(--text-1); }
+.icon-btn svg { width: 10px; height: 10px; }
+
+.add-folder-row {
+  padding: 9px 13px;
+  box-shadow: inset 0 0.5px 0 var(--hairline);
+}
+
+/* hotkey keycaps */
+.hotkey-caps { display: flex; gap: 4px; }
+</style>
+</head>
+<body>
+
+<!-- theme toggle (page chrome) -->
+<button class="theme-toggle" id="themeToggle" type="button">
+  <span class="when-light">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+      <path d="M13.2 9.6A5.4 5.4 0 0 1 6.4 2.8a5.4 5.4 0 1 0 6.8 6.8Z"/>
+    </svg>
+    Dark
+  </span>
+  <span class="when-dark">
+    <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round">
+      <circle cx="8" cy="8" r="3.2"/>
+      <path d="M8 1.2v1.6M8 13.2v1.6M1.2 8h1.6M13.2 8h1.6M3.2 3.2l1.1 1.1M11.7 11.7l1.1 1.1M3.2 12.8l1.1-1.1M11.7 4.3l1.1-1.1"/>
+    </svg>
+    Light
+  </span>
+</button>
+
+<header class="page-head">
+  <h1>Quick Capture — Native Redesign <span>· Variant A: Pure System</span></h1>
+  <p>Maximal Apple restraint — Spotlight and System Settings DNA, system blue only where it earns it.</p>
+</header>
+
+<!-- ════════════════════════════════════════════════════════════
+     EXHIBIT 1 · CAPTURE WINDOW
+     ════════════════════════════════════════════════════════════ -->
+<section class="exhibit">
+  <div class="exhibit-label">01 · Capture Window</div>
+
+  <div class="state">
+    <div class="state-label">Resting</div>
+    <div class="capture">
+      <div class="capture-row">
+        <div class="cap-input"><span class="placeholder">What needs doing?</span></div>
+        <div class="cap-tag"><span class="placeholder"># tag</span></div>
+      </div>
+      <div class="hairline-h"></div>
+      <div class="cap-chips">
+        <span class="chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+            <rect x="1.7" y="2.7" width="12.6" height="11" rx="2.4"/>
+            <path d="M1.7 6.2h12.6M5 1.2v2.6M11 1.2v2.6"/>
+          </svg>
+          cal
+        </span>
+        <span class="chip"># hyper-active</span>
+        <span class="chip"># quick-capture</span>
+        <span class="chip"># design-extract</span>
+        <span class="cap-hint">⌘⇧S to attach screenshot</span>
+      </div>
+    </div>
+  </div>
+
+  <div class="state">
+    <div class="state-label">Typing</div>
+    <div class="capture">
+      <div class="capture-row">
+        <div class="cap-input focused">Fix the hyper+1 layout bug<span class="caret"></span></div>
+        <div class="cap-tag focused">hy<span class="ghost-completion">per-active</span></div>
+      </div>
+      <div class="hairline-h"></div>
+      <div class="cap-chips">
+        <span class="chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round">
+            <rect x="1.7" y="2.7" width="12.6" height="11" rx="2.4"/>
+            <path d="M1.7 6.2h12.6M5 1.2v2.6M11 1.2v2.6"/>
+          </svg>
+          cal
+        </span>
+        <span class="chip match"># hyper-active</span>
+        <span class="chip"># quick-capture</span>
+        <span class="chip"># design-extract</span>
+        <span class="cap-hint">⌘⇧S to attach screenshot</span>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════
+     EXHIBIT 2 · MARKDOWN EDITOR
+     ════════════════════════════════════════════════════════════ -->
+<section class="exhibit">
+  <div class="exhibit-label">02 · Markdown Editor</div>
+
+  <div class="editor">
+    <div class="ed-content">
+      <div class="ed-h1">Inbox</div>
+
+      <div class="ed-h2">quick-capture</div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">how to deep think about making quick-captures editor easy jump to focus on headings while hiding other items like emacs?</span></div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">returning focus to the last app using it?</span></div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">select multiple items and toggle them to done and undone</span></div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">Jump from section to section — deep research</span></div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">Look at this for the landing page: <a class="ed-link" href="#">https://www.supaste.com/#featues</a></span></div>
+
+      <div class="ed-h2">hyper-active</div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">going from layout two to one, i have to press hyper+1 twice to get chrome to appear. Chrome is in both layouts</span><span class="pdot red"></span></div>
+      <div class="ed-line child"><span class="cb"></span><span class="txt">something else</span></div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">hyper + 1 isn't working like it's supposed to</span><span class="pdot green"></span></div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">Obsidian not actually launching</span></div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">need a better release process for this</span></div>
+      <div class="ed-line done">
+        <span class="cb checked"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 8.6 6.4 11.8 12.8 4.6"/></svg></span>
+        <span class="txt">now what?</span>
+      </div>
+      <div class="ed-line done">
+        <span class="cb checked"><svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round"><path d="M3.2 8.6 6.4 11.8 12.8 4.6"/></svg></span>
+        <span class="txt">what? is this?</span>
+      </div>
+
+      <div class="ed-h2">home</div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">take something to target</span></div>
+      <div class="attach-row">
+        <span class="attach-chip">
+          <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linecap="round" stroke-linejoin="round">
+            <rect x="1.8" y="2.8" width="12.4" height="10.4" rx="2.2"/>
+            <circle cx="5.6" cy="6.2" r="1.1"/>
+            <path d="M2.4 11.6 6 8.4l2.4 2.1 2.8-2.6 2.6 2.4"/>
+          </svg>
+          screenshot-2026-06-10-141227-3.png
+        </span>
+      </div>
+
+      <div class="ed-h2">design-extract</div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">Write a skill to generate design system from image</span></div>
+      <div class="ed-line"><span class="cb"></span><span class="txt">The purpose is to give it an image and it should create the most commonly used design assets</span></div>
+    </div>
+
+    <div class="action-cluster">
+      <button class="action-btn" type="button" title="Export">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M8 2v7.2M5.2 6.6 8 9.4l2.8-2.8"/>
+          <path d="M2.5 10.8v1.7a1.5 1.5 0 0 0 1.5 1.5h8a1.5 1.5 0 0 0 1.5-1.5v-1.7"/>
+        </svg>
+      </button>
+      <button class="action-btn" type="button" title="Archive completed">
+        <svg viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+          <rect x="1.8" y="2.6" width="12.4" height="3.2" rx="1"/>
+          <path d="M3 5.8v6.1a1.5 1.5 0 0 0 1.5 1.5h7a1.5 1.5 0 0 0 1.5-1.5V5.8"/>
+          <path d="M6.4 8.6h3.2"/>
+        </svg>
+      </button>
+    </div>
+
+    <div class="statusbar">
+      <span class="vim-pill">NORMAL</span>
+      <span class="file mono">inbox.md</span>
+      <span class="right">
+        <span class="counts">27 items · 2 done</span>
+        <span>UTF-8</span>
+      </span>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════
+     EXHIBIT 3 · SCREENSHOT PICKER
+     ════════════════════════════════════════════════════════════ -->
+<section class="exhibit">
+  <div class="exhibit-label">03 · Screenshot Picker</div>
+
+  <div class="picker">
+    <div class="picker-head">
+      <h2>Recent screenshots</h2>
+      <div class="picker-hints">
+        <span class="hint"><span class="keycap">↑</span><span class="keycap">↓</span> navigate</span>
+        <span class="hint"><span class="keycap">↵</span> attach</span>
+        <span class="hint"><span class="keycap">esc</span> cancel</span>
+      </div>
+    </div>
+    <div class="picker-body">
+      <div class="shot-list">
+        <div class="shot-row selected">
+          <div class="thumb"></div>
+          <div class="shot-meta"><span class="time">1:19 PM</span><span class="day">Today</span></div>
+        </div>
+        <div class="shot-row">
+          <div class="thumb"></div>
+          <div class="shot-meta"><span class="time">12:38 PM</span><span class="day">Today</span></div>
+        </div>
+        <div class="shot-row">
+          <div class="thumb"></div>
+          <div class="shot-meta"><span class="time">2:17 PM</span><span class="day">Yesterday</span></div>
+        </div>
+        <div class="shot-row">
+          <div class="thumb"></div>
+          <div class="shot-meta"><span class="time">2:12 PM</span><span class="day">Yesterday</span></div>
+        </div>
+        <div class="shot-row">
+          <div class="thumb"></div>
+          <div class="shot-meta"><span class="time">2:06 PM</span><span class="day">Yesterday</span></div>
+        </div>
+        <div class="shot-row">
+          <div class="thumb"></div>
+          <div class="shot-meta"><span class="time">2:06 PM</span><span class="day">Yesterday</span></div>
+        </div>
+        <div class="shot-row">
+          <div class="thumb"></div>
+          <div class="shot-meta"><span class="time">2:06 PM</span><span class="day">Yesterday</span></div>
+        </div>
+        <div class="shot-row">
+          <div class="thumb"></div>
+          <div class="shot-meta"><span class="time">12:08 PM</span><span class="day">Yesterday</span></div>
+        </div>
+      </div>
+      <div class="shot-preview">
+        <div class="preview-doc">
+          <div class="doc-titlebar"><i></i><i></i><i></i></div>
+          <div class="doc-body"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ════════════════════════════════════════════════════════════
+     EXHIBIT 4 · SETTINGS WINDOW
+     ════════════════════════════════════════════════════════════ -->
+<section class="exhibit">
+  <div class="exhibit-label">04 · Settings</div>
+
+  <div class="settings">
+    <div class="settings-titlebar">
+      <div class="traffic"><i class="r"></i><i class="y"></i><i class="g"></i></div>
+      Settings
+    </div>
+    <div class="settings-body">
+
+      <div class="group">
+        <div class="group-title">Capture</div>
+        <div class="group-card">
+          <div class="row">
+            <span class="row-label">Capture file</span>
+            <span class="row-trail">
+              <span class="path">~/Notes/inbox.md</span>
+              <button class="btn" type="button">Choose…</button>
+            </span>
+          </div>
+          <div class="row">
+            <span class="row-label">Include timestamp</span>
+            <span class="row-trail"><span class="switch on"></span></span>
+          </div>
+          <div class="row">
+            <span class="row-label">Font</span>
+            <span class="row-trail">
+              <button class="popup" type="button">
+                System
+                <svg viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1.4 4 4 1.4 6.6 4M1.4 8 4 10.6 6.6 8"/>
+                </svg>
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Editor</div>
+        <div class="group-card">
+          <div class="row">
+            <span class="row-label">Vim mode</span>
+            <span class="row-trail"><span class="switch on"></span></span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Screenshots</div>
+        <div class="group-card">
+          <div class="row">
+            <span class="row-label">Auto-attach window</span>
+            <span class="row-trail">
+              <button class="popup" type="button">
+                2 minutes
+                <svg viewBox="0 0 8 12" fill="none" stroke="currentColor" stroke-width="1.4" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M1.4 4 4 1.4 6.6 4M1.4 8 4 10.6 6.6 8"/>
+                </svg>
+              </button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">General</div>
+        <div class="group-card">
+          <div class="row">
+            <span class="row-label">Launch at login</span>
+            <span class="row-trail"><span class="switch"></span></span>
+          </div>
+          <div class="row">
+            <span class="row-label">Global hotkey</span>
+            <span class="row-trail">
+              <span class="hotkey-caps"><span class="keycap">⌥</span><span class="keycap">T</span></span>
+              <button class="btn" type="button">Record…</button>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      <div class="group">
+        <div class="group-title">Refile targets</div>
+        <div class="group-card">
+          <div class="row target-row">
+            <svg class="folder-glyph" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">
+              <path d="M2 5.2A1.7 1.7 0 0 1 3.7 3.5h3l1.5 1.8h6.1A1.7 1.7 0 0 1 16 7v5.8a1.7 1.7 0 0 1-1.7 1.7H3.7A1.7 1.7 0 0 1 2 12.8V5.2Z"/>
+            </svg>
+            <span class="target-name">home</span>
+            <span class="target-path">~/Notes/home</span>
+            <span class="target-ctrls">
+              <button class="icon-btn" type="button" title="Move up">
+                <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 6.5 5 3l3.5 3.5"/></svg>
+              </button>
+              <button class="icon-btn" type="button" title="Move down">
+                <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 3.5 5 7l3.5-3.5"/></svg>
+              </button>
+              <button class="icon-btn" type="button" title="Remove">✕</button>
+            </span>
+          </div>
+          <div class="row target-row">
+            <svg class="folder-glyph" viewBox="0 0 18 18" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linejoin="round">
+              <path d="M2 5.2A1.7 1.7 0 0 1 3.7 3.5h3l1.5 1.8h6.1A1.7 1.7 0 0 1 16 7v5.8a1.7 1.7 0 0 1-1.7 1.7H3.7A1.7 1.7 0 0 1 2 12.8V5.2Z"/>
+            </svg>
+            <span class="target-name">work</span>
+            <span class="target-path">~/Notes/work</span>
+            <span class="target-ctrls">
+              <button class="icon-btn" type="button" title="Move up">
+                <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 6.5 5 3l3.5 3.5"/></svg>
+              </button>
+              <button class="icon-btn" type="button" title="Move down">
+                <svg viewBox="0 0 10 10" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" stroke-linejoin="round"><path d="M1.5 3.5 5 7l3.5-3.5"/></svg>
+              </button>
+              <button class="icon-btn" type="button" title="Remove">✕</button>
+            </span>
+          </div>
+          <div class="add-folder-row">
+            <button class="btn" type="button">Add Folder…</button>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </div>
+</section>
+
+<script>
+document.getElementById('themeToggle').addEventListener('click', function () {
+  document.documentElement.classList.toggle('dark');
+});
+</script>
+</body>
+</html>
