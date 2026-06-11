@@ -3,14 +3,14 @@ import SwiftUI
 
 struct CaptureView: View {
     @ObservedObject var appState: AppState
-    let onSubmit: (String, String?, URL?) -> Bool
+    let onSubmit: (String, String?, [URL]) -> Bool
     let onClose: () -> Void
     let onToggleEditor: () -> Void
     let onEscape: () -> Void
     let onContentSizeChange: (CGSize) -> Void
-    /// Attach the chosen screenshot and dismiss the picker surface (MainPanel
+    /// Attach the chosen screenshots and dismiss the picker surface (MainPanel
     /// shrinks the window back to the capture box).
-    var onPickerAttach: (URL) -> Void = { _ in }
+    var onPickerAttach: ([URL]) -> Void = { _ in }
     /// Dismiss the picker surface without attaching.
     var onPickerCancel: () -> Void = {}
 
@@ -18,18 +18,23 @@ struct CaptureView: View {
     @State private var tagText = ""
     @State private var shakeTrigger = 0
     @State private var isShaking = false
-    /// Decoded chip thumbnail. Loaded off the main thread (a 6K Retina PNG
-    /// decoded inline would jank the summon); the chip frame shows immediately
-    /// and the image fills in.
-    @State private var chipThumbnail: NSImage?
+    /// Decoded chip thumbnails, keyed by attachment URL. Loaded off the main
+    /// thread (a 6K Retina PNG decoded inline would jank the summon); each chip
+    /// frame shows immediately and its image fills in.
+    @State private var chipThumbnails: [URL: NSImage] = [:]
     /// Sticky tag-suggestions visibility. Driven off `focused` transitions
     /// rather than read live, so a *transient* `focused == nil` (which AppKit
     /// briefly produces while the panel resizes) doesn't collapse the footer
     /// and start a resize⇄focus oscillation. Only an explicit move to the todo
     /// field hides it.
     @State private var tagFieldActive = false
-    /// Highlighted row in the ⌘⇧S screenshot picker (0 = newest).
+    /// Highlighted row in the ⌘⇧S screenshot picker (0 = newest). Moves with
+    /// ↑/↓ independently of what's toggled for selection.
     @State private var pickerIndex = 0
+    /// Screenshots toggled (Space/click) in the ⌘⇧S picker. Enter attaches all
+    /// of these; empty falls back to the highlighted row (the one-press flow).
+    /// Keyed by URL so it survives a re-query that reshuffles indices.
+    @State private var pickerSelection: Set<URL> = []
     /// Decoded previews for the picker, keyed by screenshot URL. Loaded off the
     /// main thread like the chip thumbnail.
     @State private var pickerPreviews: [URL: NSImage] = [:]
@@ -132,20 +137,23 @@ struct CaptureView: View {
         .onKeyPress(.downArrow)  { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
         .onKeyPress(.leftArrow)  { pickerOpen ? { movePicker(-1); return .handled }() : .ignored }
         .onKeyPress(.rightArrow) { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
+        // Space toggles the highlighted row's selection — multi-attach (#45).
+        .onKeyPress(.space)      { pickerOpen ? { toggleHighlighted(); return .handled }() : .ignored }
         .onReceive(NotificationCenter.default.publisher(for: .capturePanelDidHide)) { _ in
             todoText = ""
             tagText = ""
             tagFieldActive = false
             focused = .todo
-            appState.pendingAttachment = nil
+            appState.pendingAttachments = []
             appState.recentScreenshotExists = false
             appState.attachFeedback = nil
             appState.screenshotPickerItems = nil
-            chipThumbnail = nil
+            chipThumbnails = [:]
+            pickerSelection = []
             pickerPreviews = [:]
         }
-        .onChange(of: appState.pendingAttachment) { _, newValue in
-            loadChipThumbnail(for: newValue)
+        .onChange(of: appState.pendingAttachments) { _, newValue in
+            loadChipThumbnails(for: newValue)
         }
         // The picker's item set changing (open, or ⌘⇧S re-query) resets the
         // highlight to the newest and (re)loads previews; opening also moves
@@ -157,6 +165,7 @@ struct CaptureView: View {
                 return
             }
             pickerIndex = 0
+            pickerSelection = []   // a fresh picker starts with nothing toggled
             loadPickerPreviews(items)
             // Defer focus a runloop — the focusable picker view is installed in
             // this same render pass, and focusing it synchronously can miss.
@@ -244,7 +253,7 @@ struct CaptureView: View {
                 ),
                 onSubmit: { submit() },
                 onTab: { focused = .tag },
-                onEmptyDelete: { detachChipIfPresent() }
+                onEmptyDelete: { detachMostRecent() }
             )
         }
         .padding(.horizontal, 15)
@@ -432,8 +441,8 @@ struct CaptureView: View {
 
     private var footer: some View {
         HStack(spacing: Metrics.s2) {
-            if appState.pendingAttachment != nil {
-                attachmentChip
+            if !appState.pendingAttachments.isEmpty {
+                attachmentChips
             }
             tagChipsScroll
             if let hint = attachHintText {
@@ -476,79 +485,147 @@ struct CaptureView: View {
     /// a screenshot actually exists to pull in and no chip is attached, so the
     /// footer stays quiet on summons with nothing to offer.
     private var attachHintText: String? {
-        guard appState.pendingAttachment == nil else { return nil }
+        guard appState.pendingAttachments.isEmpty else { return nil }
         if let feedback = appState.attachFeedback { return feedback }
         if appState.recentScreenshotExists { return "⌘⇧S to attach screenshot" }
         return nil
     }
 
-    /// Thumbnail chip for the attached screenshot. In `#cal` mode the chip is
-    /// disabled — a calendar capture never writes markdown, so the attachment
-    /// isn't kept, and the chip says so rather than silently dropping it.
-    private var attachmentChip: some View {
-        HStack(spacing: Metrics.s1) {
-            Group {
-                if let thumb = chipThumbnail {
-                    Image(nsImage: thumb)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    Image(systemName: "photo")
-                        .font(.system(size: 10, weight: .semibold))
-                        .foregroundStyle(theme.inkTertiary)
-                }
-            }
-            .frame(width: 28, height: 19)
-            .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+    /// Newest-first count cap before chips collapse to a single summary chip, so
+    /// a many-screenshot capture doesn't push the tag chips off the strip.
+    private static let maxInlineChips = 3
 
-            Text(isCalendarMode ? "Not used for calendar captures" : "Screenshot")
-                .font(TypeScale.chip)
-                .foregroundStyle(isCalendarMode ? theme.inkTertiary : theme.inkSecondary)
-                .lineLimit(1)
-
-            if !isCalendarMode {
-                Button {
-                    detachChipIfPresent()
-                } label: {
-                    Image(systemName: "xmark")
-                        .font(.system(size: 9, weight: .bold))
-                        .foregroundStyle(theme.inkTertiary)
+    /// One thumbnail chip per attachment, or a single "N screenshots" summary
+    /// once there are more than `maxInlineChips`. In `#cal` mode every chip is
+    /// disabled — a calendar capture never writes markdown, so the attachments
+    /// aren't kept, and the strip says so rather than silently dropping them.
+    @ViewBuilder
+    private var attachmentChips: some View {
+        let urls = appState.pendingAttachments
+        if isCalendarMode {
+            disabledAttachmentChip(count: urls.count)
+        } else if urls.count > Self.maxInlineChips {
+            summaryAttachmentChip(count: urls.count, newest: urls.last)
+        } else {
+            HStack(spacing: Metrics.s1) {
+                ForEach(urls, id: \.self) { url in
+                    attachmentChip(for: url)
                 }
-                .buttonStyle(.plain)
-                .help("Remove screenshot (⌫ on empty input)")
             }
         }
-        .padding(.horizontal, 9)
-        .padding(.vertical, 5)
-        .background(
-            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .fill(theme.chip)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .strokeBorder(theme.border, lineWidth: 0.5)
-        )
-        .opacity(isCalendarMode ? 0.55 : 1)
     }
 
-    /// Detach is sticky for the capture session — nothing re-attaches until a
-    /// fresh summon or an explicit ⌘⇧S.
+    /// A single attachment chip: its thumbnail + an xmark that detaches just
+    /// that screenshot.
+    private func attachmentChip(for url: URL) -> some View {
+        chipShell {
+            thumbOrPlaceholder(chipThumbnails[url])
+            Button {
+                detach(url)
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(theme.inkTertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Remove screenshot (⌫ on empty input removes the most recent)")
+        }
+    }
+
+    /// Collapsed chip for >3 attachments: newest thumbnail + an "N screenshots"
+    /// count, with an xmark that detaches the most recent.
+    private func summaryAttachmentChip(count: Int, newest: URL?) -> some View {
+        chipShell {
+            thumbOrPlaceholder(newest.flatMap { chipThumbnails[$0] })
+            Text("\(count) screenshots")
+                .font(TypeScale.chip)
+                .foregroundStyle(theme.inkSecondary)
+                .lineLimit(1)
+            Button {
+                detachMostRecent()
+            } label: {
+                Image(systemName: "xmark")
+                    .font(.system(size: 9, weight: .bold))
+                    .foregroundStyle(theme.inkTertiary)
+            }
+            .buttonStyle(.plain)
+            .help("Remove the most recent screenshot (⌫ on empty input)")
+        }
+    }
+
+    /// Disabled summary shown in `#cal` mode where attachments are dropped.
+    private func disabledAttachmentChip(count: Int) -> some View {
+        chipShell {
+            Image(systemName: "photo")
+                .font(.system(size: 10, weight: .semibold))
+                .foregroundStyle(theme.inkTertiary)
+                .frame(width: 28, height: 19)
+            Text(count == 1 ? "Not used for calendar captures"
+                            : "\(count) screenshots — not used for calendar captures")
+                .font(TypeScale.chip)
+                .foregroundStyle(theme.inkTertiary)
+                .lineLimit(1)
+        }
+        .opacity(0.55)
+    }
+
+    /// The 28×19 thumbnail frame shared by every attachment chip.
+    private func thumbOrPlaceholder(_ image: NSImage?) -> some View {
+        Group {
+            if let image {
+                Image(nsImage: image)
+                    .resizable()
+                    .aspectRatio(contentMode: .fill)
+            } else {
+                Image(systemName: "photo")
+                    .font(.system(size: 10, weight: .semibold))
+                    .foregroundStyle(theme.inkTertiary)
+            }
+        }
+        .frame(width: 28, height: 19)
+        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
+    }
+
+    /// Shared chip chrome (rounded, bordered) wrapping arbitrary contents.
+    private func chipShell<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
+        HStack(spacing: Metrics.s1) { content() }
+            .padding(.horizontal, 9)
+            .padding(.vertical, 5)
+            .background(
+                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                    .fill(theme.chip)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                    .strokeBorder(theme.border, lineWidth: 0.5)
+            )
+    }
+
+    /// Detach one screenshot. Detach is sticky for the capture session —
+    /// nothing re-attaches until a fresh summon or an explicit ⌘⇧S.
+    private func detach(_ url: URL) {
+        appState.pendingAttachments.removeAll { $0 == url }
+        chipThumbnails[url] = nil
+    }
+
+    /// ⌫ on the empty input removes the most-recently-attached screenshot.
     @discardableResult
-    private func detachChipIfPresent() -> Bool {
-        guard appState.pendingAttachment != nil else { return false }
-        appState.pendingAttachment = nil
-        chipThumbnail = nil
+    private func detachMostRecent() -> Bool {
+        guard let last = appState.pendingAttachments.last else { return false }
+        detach(last)
         return true
     }
 
-    private func loadChipThumbnail(for url: URL?) {
-        chipThumbnail = nil
-        guard let url else { return }
-        DispatchQueue.global(qos: .userInitiated).async {
-            guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 120) else { return }
-            let image = NSImage(cgImage: cg, size: .zero)
-            DispatchQueue.main.async {
-                if appState.pendingAttachment == url { chipThumbnail = image }
+    private func loadChipThumbnails(for urls: [URL]) {
+        // Drop thumbnails for URLs no longer attached.
+        chipThumbnails = chipThumbnails.filter { urls.contains($0.key) }
+        for url in urls where chipThumbnails[url] == nil {
+            DispatchQueue.global(qos: .userInitiated).async {
+                guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 120) else { return }
+                let image = NSImage(cgImage: cg, size: .zero)
+                DispatchQueue.main.async {
+                    if appState.pendingAttachments.contains(url) { chipThumbnails[url] = image }
+                }
             }
         }
     }
@@ -576,11 +653,22 @@ struct CaptureView: View {
                 Text("Recent screenshots")
                     .font(Typeface.ui(15, .semibold))
                     .foregroundStyle(theme.ink)
+                if !pickerSelection.isEmpty {
+                    Text("\(pickerSelection.count) selected")
+                        .font(TypeScale.chip)
+                        .foregroundStyle(theme.accentInk)
+                        .padding(.horizontal, 8)
+                        .padding(.vertical, 3)
+                        .background(
+                            Capsule().fill(theme.accentSoft)
+                        )
+                }
                 Spacer(minLength: 0)
                 HStack(spacing: Metrics.s1) {
-                    keycap("↑↓"); hintLabel("navigate")
-                    keycap("⏎");  hintLabel("attach")
-                    keycap("esc"); hintLabel("cancel")
+                    keycap("↑↓");  hintLabel("navigate")
+                    keycap("space"); hintLabel("select")
+                    keycap("⏎");   hintLabel("attach")
+                    keycap("esc");  hintLabel("cancel")
                 }
             }
 
@@ -589,12 +677,16 @@ struct CaptureView: View {
                     ScrollView(.vertical, showsIndicators: false) {
                         VStack(spacing: 4) {
                             ForEach(Array(items.enumerated()), id: \.element.url) { idx, shot in
-                                pickerRow(shot, isSelected: idx == pickerIndex)
+                                pickerRow(shot,
+                                          isHighlighted: idx == pickerIndex,
+                                          isSelected: pickerSelection.contains(shot.url))
                                     .id(idx)
                                     .contentShape(Rectangle())
                                     .onTapGesture {
+                                        // Click highlights and toggles selection
+                                        // (#45); Enter attaches the selected set.
                                         pickerIndex = idx
-                                        attachPicked()
+                                        toggleHighlighted()
                                     }
                             }
                         }
@@ -642,26 +734,41 @@ struct CaptureView: View {
             .padding(.trailing, 2)
     }
 
-    private func pickerRow(_ shot: ScreenshotLocator.Screenshot, isSelected: Bool) -> some View {
+    /// A picker row. `isHighlighted` is the ↑↓ cursor (accent wash + border);
+    /// `isSelected` is the toggled-for-attach state (a checkmark badge). The two
+    /// are independent — you can move the highlight without changing selection.
+    private func pickerRow(_ shot: ScreenshotLocator.Screenshot,
+                           isHighlighted: Bool,
+                           isSelected: Bool) -> some View {
         HStack(spacing: Metrics.s2) {
-            Group {
-                if let thumb = pickerPreviews[shot.url] {
-                    Image(nsImage: thumb)
-                        .resizable()
-                        .aspectRatio(contentMode: .fill)
-                } else {
-                    Image(systemName: "photo")
-                        .font(.system(size: 12, weight: .semibold))
-                        .foregroundStyle(theme.inkTertiary)
+            ZStack(alignment: .topLeading) {
+                Group {
+                    if let thumb = pickerPreviews[shot.url] {
+                        Image(nsImage: thumb)
+                            .resizable()
+                            .aspectRatio(contentMode: .fill)
+                    } else {
+                        Image(systemName: "photo")
+                            .font(.system(size: 12, weight: .semibold))
+                            .foregroundStyle(theme.inkTertiary)
+                    }
+                }
+                .frame(width: 52, height: 34)
+                .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
+
+                if isSelected {
+                    Image(systemName: "checkmark.circle.fill")
+                        .font(.system(size: 13, weight: .bold))
+                        .foregroundStyle(theme.accent)
+                        .background(Circle().fill(.white).padding(1.5))
+                        .padding(2)
                 }
             }
-            .frame(width: 52, height: 34)
-            .clipShape(RoundedRectangle(cornerRadius: 4, style: .continuous))
 
             VStack(alignment: .leading, spacing: 1) {
                 Text(screenshotTime(shot))
                     .font(TypeScale.chip)
-                    .foregroundStyle(isSelected ? theme.accentInk : theme.inkSecondary)
+                    .foregroundStyle(isHighlighted ? theme.accentInk : theme.inkSecondary)
                     .lineLimit(1)
                 Text(screenshotDay(shot))
                     .font(TypeScale.caption)
@@ -669,16 +776,21 @@ struct CaptureView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
+            if isSelected {
+                Image(systemName: "checkmark")
+                    .font(.system(size: 11, weight: .bold))
+                    .foregroundStyle(theme.accent)
+            }
         }
         .padding(.horizontal, 8)
         .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .fill(isSelected ? theme.accentSoft : Color.clear)
+                .fill(isHighlighted ? theme.accentSoft : Color.clear)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .strokeBorder(isSelected ? theme.accent.opacity(0.42) : .clear, lineWidth: 1)
+                .strokeBorder(isHighlighted ? theme.accent.opacity(0.42) : .clear, lineWidth: 1)
         )
     }
 
@@ -716,13 +828,31 @@ struct CaptureView: View {
         pickerIndex = (pickerIndex + delta + count) % count
     }
 
-    /// Attach the highlighted screenshot as the chip and close the surface.
-    /// MainPanel (via `onPickerAttach`) sets `pendingAttachment` and shrinks the
-    /// window; the existing `onChange(of: pendingAttachment)` decodes the chip.
+    /// Space (or click) toggles the highlighted row in/out of the selection.
+    private func toggleHighlighted() {
+        guard let items = appState.screenshotPickerItems,
+              items.indices.contains(pickerIndex) else { return }
+        let url = items[pickerIndex].url
+        if pickerSelection.contains(url) { pickerSelection.remove(url) }
+        else { pickerSelection.insert(url) }
+    }
+
+    /// Attach the chosen screenshots and close the surface. All toggled rows
+    /// attach in newest-first list order; with nothing toggled it falls back to
+    /// the highlighted row — preserving the original one-press flow. MainPanel
+    /// (via `onPickerAttach`) sets `pendingAttachments`; `onChange` decodes the
+    /// chips.
     private func attachPicked() {
         guard let items = appState.screenshotPickerItems,
               items.indices.contains(pickerIndex) else { onPickerCancel(); return }
-        onPickerAttach(items[pickerIndex].url)
+        let urls: [URL]
+        if pickerSelection.isEmpty {
+            urls = [items[pickerIndex].url]
+        } else {
+            // Preserve the picker's display order (newest first) and dedup.
+            urls = items.map(\.url).filter { pickerSelection.contains($0) }
+        }
+        onPickerAttach(urls)
     }
 
     private func loadPickerPreviews(_ items: [ScreenshotLocator.Screenshot]) {
@@ -800,17 +930,17 @@ struct CaptureView: View {
         }
         let trimmedTag = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
         let tag: String? = trimmedTag.isEmpty ? nil : trimmedTag
-        // Calendar captures never write markdown, so the attachment has
-        // nowhere to go — the chip is visibly disabled in that mode (R21).
-        let attachment = isCalendarMode ? nil : appState.pendingAttachment
-        let saved = onSubmit(trimmedText, tag, attachment)
-        // On a failed or user-declined save, leave the typed text and chip
+        // Calendar captures never write markdown, so attachments have nowhere
+        // to go — the chips are visibly disabled in that mode (R21).
+        let attachments = isCalendarMode ? [] : appState.pendingAttachments
+        let saved = onSubmit(trimmedText, tag, attachments)
+        // On a failed or user-declined save, leave the typed text and chips
         // intact so the user can retry without retyping.
         guard saved else { return }
         todoText = ""
         tagText = ""
-        appState.pendingAttachment = nil
-        chipThumbnail = nil
+        appState.pendingAttachments = []
+        chipThumbnails = [:]
     }
 
     private func chipTapped(_ tag: String) {

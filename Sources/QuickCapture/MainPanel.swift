@@ -22,7 +22,7 @@ import WebKit
 ///   file watcher reloads the warm editor on external changes.
 final class MainPanel: NSPanel {
     private let appState: AppState
-    private let onSubmit: (String, String?, URL?) -> Bool
+    private let onSubmit: (String, String?, [URL]) -> Bool
     private let onDismiss: () -> Void
 
     private(set) var editorOpen = false
@@ -88,7 +88,7 @@ final class MainPanel: NSPanel {
     }
 
     init(appState: AppState,
-         onSubmit: @escaping (String, String?, URL?) -> Bool,
+         onSubmit: @escaping (String, String?, [URL]) -> Bool,
          onDismiss: @escaping () -> Void) {
         self.appState = appState
         self.onSubmit = onSubmit
@@ -175,12 +175,12 @@ final class MainPanel: NSPanel {
             appState: appState,
             // Capture and editor are mutually exclusive (ADR-0004), so a
             // submit always writes straight to disk, the canonical copy.
-            onSubmit: { [weak self] text, tag, attachment in self?.onSubmit(text, tag, attachment) ?? false },
+            onSubmit: { [weak self] text, tag, attachments in self?.onSubmit(text, tag, attachments) ?? false },
             onClose: { [weak self] in self?.onDismiss() },
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
             onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
-            onPickerAttach: { [weak self] url in self?.closePickerSurface(attaching: url) },
+            onPickerAttach: { [weak self] urls in self?.closePickerSurface(attaching: urls) },
             onPickerCancel: { [weak self] in self?.closePickerSurface(attaching: nil) }
         )
     }
@@ -501,7 +501,7 @@ final class MainPanel: NSPanel {
     private func detectRecentScreenshot() {
         attachLookupGeneration += 1
         let generation = attachLookupGeneration
-        appState.pendingAttachment = nil
+        appState.pendingAttachments = []
         appState.recentScreenshotExists = false
         appState.attachFeedback = nil
         appState.screenshotPickerItems = nil
@@ -510,7 +510,7 @@ final class MainPanel: NSPanel {
             guard let self, generation == self.attachLookupGeneration, let shot else { return }
             let age = Date().timeIntervalSince(shot.createdAt)
             if window < 0 || age <= window {
-                self.appState.pendingAttachment = shot.url
+                self.appState.pendingAttachments = [shot.url]
             } else {
                 self.appState.recentScreenshotExists = true
             }
@@ -568,8 +568,10 @@ final class MainPanel: NSPanel {
     /// shrink back to the centered capture box. `pickerOpen` stays true until the
     /// shrink finishes so the capture re-measure (CaptureView swaps back the
     /// moment items clear) can't fire a competing non-animated setFrame.
-    private func closePickerSurface(attaching url: URL?) {
-        if let url { appState.pendingAttachment = url }
+    private func closePickerSurface(attaching urls: [URL]?) {
+        // nil = cancel (leave the current attachments untouched); a non-nil list
+        // replaces them with the picker's selection (R: ⌘⇧S sets the chips).
+        if let urls { appState.pendingAttachments = urls }
         appState.screenshotPickerItems = nil
         guard pickerOpen, let screen = currentScreenVisibleFrame() else { pickerOpen = false; return }
         canDismissOnBlur = false

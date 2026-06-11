@@ -125,8 +125,11 @@ final class AppState: ObservableObject {
     // share it; it survives the ⌘F editor round-trip and is cleared on the
     // `.capturePanelDidHide` notification alongside the typed text.
 
-    /// Screenshot currently attached to the capture box as a chip.
-    @Published var pendingAttachment: URL?
+    /// Screenshots currently attached to the capture box, in selection order
+    /// (oldest-attached first). Each renders as its own chip and writes its own
+    /// indented `![…]` child line under the captured todo. Deduped by path so
+    /// the same screenshot can't attach twice.
+    @Published var pendingAttachments: [URL] = []
     /// When non-nil, the ⌘⇧S screenshot picker is open over the capture box,
     /// offering these recent screenshots (newest first). Cleared on attach,
     /// Esc, mode switch, and full dismiss.
