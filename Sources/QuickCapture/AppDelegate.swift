@@ -219,8 +219,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
         if let panel = mainPanel { return panel }
         let panel = MainPanel(
             appState: appState,
-            onSubmit: { [weak self] text, tag, attachment in
-                self?.handleCapture(text, tag: tag, attachment: attachment) ?? false
+            onSubmit: { [weak self] text, tag, attachments in
+                self?.handleCapture(text, tag: tag, attachments: attachments) ?? false
             },
             onDismiss: { [weak self] in self?.hideCapture() }
         )
@@ -240,26 +240,29 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     }
 
     @discardableResult
-    private func handleCapture(_ text: String, tag: String?, attachment: URL? = nil) -> Bool {
+    private func handleCapture(_ text: String, tag: String?, attachments: [URL] = []) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
 
         if tag?.lowercased() == "cal" {
             // Calendar captures never touch the markdown file; the capture UI
-            // disables the chip in #cal mode, so any attachment is dropped here
-            // with the user already informed.
+            // disables the chips in #cal mode, so any attachments are dropped
+            // here with the user already informed.
             return handleCalendarCapture(trimmed)
         }
 
-        // Copy the image BEFORE writing the markdown (R16): a failed copy must
+        // Copy every image BEFORE writing the markdown (R16): a failed copy must
         // never leave a dangling image link in the file. The attachments folder
-        // and relative link resolve against the capture file path as it is
-        // right now, not as it was at attach time (R18).
-        var attachmentLink: String? = nil
-        if let attachment {
+        // and relative links resolve against the capture file path as it is
+        // right now, not as it was at attach time (R18). Links are gathered in
+        // selection order so the child lines match the chip order.
+        var attachmentLinks: [String] = []
+        for attachment in attachments {
             do {
-                attachmentLink = try AttachmentStore.copy(attachment, besideFile: appState.captureFileURL)
+                attachmentLinks.append(try AttachmentStore.copy(attachment, besideFile: appState.captureFileURL))
             } catch {
+                // Offer to save without this one and keep the rest; a decline
+                // aborts the whole capture so nothing is written half-attached.
                 guard confirmSaveWithoutAttachment(error) else { return false }
             }
         }
@@ -270,7 +273,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                 tag: tag,
                 to: appState.captureFileURL,
                 includeTimestamp: appState.includeTimestamp,
-                attachmentLink: attachmentLink
+                attachmentLinks: attachmentLinks
             )
             hideCapture()
             return true

@@ -329,7 +329,7 @@ final class FileWriterTests: XCTestCase {
         let url = makeTempFile()
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try FileWriter.appendTodo("fix layout !!", tag: "work", to: url, attachmentLink: "attachments/shot.png")
+        try FileWriter.appendTodo("fix layout !!", tag: "work", to: url, attachmentLinks: ["attachments/shot.png"])
 
         let content = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(
@@ -342,7 +342,7 @@ final class FileWriterTests: XCTestCase {
         let url = makeTempFile()
         defer { try? FileManager.default.removeItem(at: url) }
 
-        try FileWriter.appendTodo("buy milk", to: url, attachmentLink: "attachments/milk.png")
+        try FileWriter.appendTodo("buy milk", to: url, attachmentLinks: ["attachments/milk.png"])
 
         let content = try String(contentsOf: url, encoding: .utf8)
         XCTAssertTrue(
@@ -363,7 +363,7 @@ final class FileWriterTests: XCTestCase {
             to: url,
             includeTimestamp: true,
             now: fixed,
-            attachmentLink: "attachments/urgent.png"
+            attachmentLinks: ["attachments/urgent.png"]
         )
 
         let content = try String(contentsOf: url, encoding: .utf8)
@@ -374,6 +374,56 @@ final class FileWriterTests: XCTestCase {
             urgentIndex < childIndex && childIndex < plainIndex,
             "timestamped !!! pair must classify on the parent line and land above plain items; got:\n\(content)"
         )
+    }
+
+    func testAppendTodoWritesMultipleAttachmentChildLinesInOrder() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try FileWriter.appendTodo(
+            "ship it",
+            tag: "work",
+            to: url,
+            attachmentLinks: ["attachments/a.png", "attachments/b.png", "attachments/c.png"]
+        )
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(
+            content.contains("""
+            - [ ] ship it
+              ![screenshot](attachments/a.png)
+              ![screenshot](attachments/b.png)
+              ![screenshot](attachments/c.png)
+            """),
+            "each attachment writes its own indented child line, in selection order; got:\n\(content)"
+        )
+    }
+
+    func testAppendTodoDedupesRepeatedAttachmentLinks() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try FileWriter.appendTodo(
+            "dedup me",
+            to: url,
+            attachmentLinks: ["attachments/a.png", "attachments/a.png", "attachments/b.png"]
+        )
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        let occurrences = content.components(separatedBy: "![screenshot](attachments/a.png)").count - 1
+        XCTAssertEqual(occurrences, 1, "a repeated attachment path is written once; got:\n\(content)")
+        XCTAssertTrue(content.contains("![screenshot](attachments/b.png)"))
+    }
+
+    func testAppendTodoWithNoAttachmentLinksWritesBareTodo() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        try FileWriter.appendTodo("just text", to: url, attachmentLinks: [])
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(content.contains("- [ ] just text"))
+        XCTAssertFalse(content.contains("![screenshot]"), "no attachments → no child lines; got:\n\(content)")
     }
 
     // MARK: - attachmentChildLine

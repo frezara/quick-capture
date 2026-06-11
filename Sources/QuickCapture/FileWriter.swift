@@ -30,22 +30,27 @@ enum FileWriter {
     /// section when `tag` is non-empty. Untagged items go under `## Quick capture`.
     /// The file always starts with a `# Inbox` H1.
     /// If `includeTimestamp` is true, appends `➕ YYYY-MM-DD HH:MM`.
-    /// If `attachmentLink` is set, an indented image-link child line follows
-    /// the todo and travels with it through insertion, re-org, and archive.
+    /// Each path in `attachmentLinks` becomes an indented image-link child line
+    /// directly under the todo, in order, and the block travels together through
+    /// insertion, re-org, and archive. Duplicate paths are collapsed so a
+    /// screenshot referenced twice is written once.
     static func appendTodo(
         _ text: String,
         tag: String? = nil,
         to url: URL,
         includeTimestamp: Bool = false,
         now: Date = Date(),
-        attachmentLink: String? = nil
+        attachmentLinks: [String] = []
     ) throws {
         let trimmedText = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedText.isEmpty else { return }
 
         let heading = sectionName(for: tag)
         let item = todoLine(trimmedText, includeTimestamp: includeTimestamp, now: now)
-        let children = attachmentLink.map { [attachmentChildLine($0)] } ?? []
+        var seen = Set<String>()
+        let children = attachmentLinks
+            .filter { seen.insert($0).inserted }
+            .map(attachmentChildLine)
         try appendUnderHeading(heading, item: item, childLines: children, to: url)
     }
 
