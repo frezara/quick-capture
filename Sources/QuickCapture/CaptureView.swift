@@ -74,7 +74,6 @@ struct CaptureView: View {
         .animation(.easeInOut(duration: 0.18), value: shouldShowExtras)
         .animation(.easeInOut(duration: 0.18), value: isCalendarMode)
         .animation(.easeInOut(duration: 0.18), value: pickerOpen)
-        .animation(.easeInOut(duration: 0.18), value: tagDropdownVisible)
         // Pin the root to its intrinsic height — otherwise NSHostingView's fixed
         // frame can squash the VStack when the todo field grows mid-resize,
         // clipping the header. The picker surface, by contrast, fills the large
@@ -209,19 +208,6 @@ struct CaptureView: View {
     private var captureColumn: some View {
         VStack(spacing: 0) {
             inputsRow
-            // Obsidian-style tag suggest, anchored under the tag field. Part
-            // of the layout flow (not a floating overlay) because the window
-            // is content-sized and would clip anything outside its bounds;
-            // MainPanel grows the window downward with a fixed top edge, so
-            // the inputs stay put and this reads as a dropdown opening.
-            if tagDropdownVisible {
-                HStack(spacing: 0) {
-                    Spacer(minLength: 0)
-                    tagDropdown.frame(width: 180)
-                }
-                .padding(.top, Metrics.s1)
-                .transition(.opacity)
-            }
             if shouldShowExtras {
                 // Symmetric: gap above the rule (from the inputs) and below it
                 // (to the chips), so the separator doesn't get squashed against
@@ -390,6 +376,19 @@ struct CaptureView: View {
         // field never resizes as you type (longer tags scroll within it). The
         // todo field (maxWidth: .infinity) absorbs the remaining space.
         .frame(width: 180)
+        // The Obsidian-style suggest dropdown floats in a borderless child
+        // window anchored to this field (#70) — the capture window is
+        // content-sized, so an in-layout dropdown would resize the whole
+        // panel and an overlay would be clipped at its bottom edge.
+        .background(
+            TagDropdownAnchor(
+                tags: filteredTags,
+                highlight: tagHighlightClamped,
+                visible: tagDropdownVisible,
+                isDark: colorScheme == .dark,
+                onPick: { acceptTag($0) }
+            )
+        )
     }
 
     /// Tags that are always present in the suggestions and Tab autocomplete,
@@ -428,10 +427,10 @@ struct CaptureView: View {
     }
 
     /// Visibility keys off `tagFieldActive` (the debounced focus flag), not
-    /// `focused` directly — the dropdown appearing changes the panel height,
-    /// and AppKit's transient focus drop during that resize would otherwise
-    /// hide it again and oscillate. Hidden once the field holds exactly the
-    /// only match (accepting a tag closes the dropdown without extra state).
+    /// `focused` directly — AppKit emits transient focus drops whenever the
+    /// panel resizes (e.g. the todo field growing a line), which would
+    /// flicker the dropdown. Hidden once the field holds exactly the only
+    /// match (accepting a tag closes the dropdown without extra state).
     private var tagDropdownVisible: Bool {
         guard tagFieldActive, !tagDropdownDismissed, !filteredTags.isEmpty else { return false }
         let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
@@ -442,57 +441,6 @@ struct CaptureView: View {
     /// The highlighted row, clamped — the filtered list shrinks as you type.
     private var tagHighlightClamped: Int {
         min(tagHighlight, max(0, filteredTags.count - 1))
-    }
-
-    private var tagDropdown: some View {
-        VStack(alignment: .leading, spacing: 1) {
-            ForEach(Array(filteredTags.enumerated()), id: \.element) { index, tag in
-                tagDropdownRow(tag, highlighted: index == tagHighlightClamped)
-                    .onTapGesture { acceptTag(tag) }
-            }
-        }
-        .padding(3)
-        // Floating card — opaque surface, not the translucent well tint
-        // (same lesson as the editor's refile dropdown, 56b274f).
-        .background(
-            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .fill(theme.surface)
-        )
-        .overlay(
-            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .strokeBorder(theme.border, lineWidth: 0.5)
-        )
-        .shadow(color: .black.opacity(0.16), radius: 10, y: 4)
-    }
-
-    private func tagDropdownRow(_ name: String, highlighted: Bool) -> some View {
-        let isCal = name.lowercased() == "cal"
-        let isDark = colorScheme == .dark
-        let hue = TagPalette.entry(for: name)
-        return HStack(spacing: 6) {
-            if isCal {
-                Image(systemName: "calendar")
-                    .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.inkTertiary)
-            } else {
-                Circle()
-                    .fill(hue.dot(dark: isDark))
-                    .frame(width: 7, height: 7)
-            }
-            Text(name)
-                .foregroundStyle(highlighted ? theme.accentInk : theme.inkSecondary)
-                .lineLimit(1)
-            Spacer(minLength: 0)
-        }
-        .font(TypeScale.chip)
-        .padding(.horizontal, 9)
-        .padding(.vertical, 6)
-        .background(
-            RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .fill(highlighted ? AnyShapeStyle(theme.accentSoft) : AnyShapeStyle(.clear))
-        )
-        .contentShape(Rectangle())
-        .help(isCal ? "Creates a calendar event — type naturally, e.g. \"call Seb tomorrow at 2pm\"" : "")
     }
 
     /// Put the chosen tag in the field and close the dropdown (the exact-match
