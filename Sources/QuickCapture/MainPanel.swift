@@ -52,6 +52,12 @@ final class MainPanel: NSPanel {
     /// Guards `resignKey()` from self-dismissing during the show transition.
     private var canDismissOnBlur = false
 
+    /// The app that was frontmost when the panel was summoned, so focus can
+    /// return to it on dismiss — the capture flow should be a zero-cost
+    /// interruption. Recorded on every fresh summon (capture or editor) before
+    /// we activate ourselves; cleared once restored.
+    private var previousApp: NSRunningApplication?
+
     // MARK: Editor file state
 
     /// File currently loaded in the editor. Always the capture file; tracked so
@@ -184,6 +190,7 @@ final class MainPanel: NSPanel {
     /// Summon input-only. Always resets so re-summoning after a dismiss lands on
     /// the capture box.
     func show() {
+        recordPreviousApp()   // before NSApp.activate steals frontmost from it
         collapseStateReset()
         detectRecentScreenshot()
         if let screen = currentScreenVisibleFrame() {
@@ -220,6 +227,7 @@ final class MainPanel: NSPanel {
     /// Summon straight into the split (the menu-bar "Open Editor…" route),
     /// without the grow animation.
     func showInEditor() {
+        recordPreviousApp()   // before promote/activate steals frontmost from it
         editorOpen = true
         isMovableByWindowBackground = false
         promoteToRegular()
@@ -396,6 +404,37 @@ final class MainPanel: NSPanel {
 
     private func demoteToAccessory() {
         if NSApp.activationPolicy() != .accessory { NSApp.setActivationPolicy(.accessory) }
+    }
+
+    // MARK: - Previous-app focus
+
+    /// Snapshot the frontmost app at summon time so a dismiss can hand focus
+    /// back to it. Skipped (and the slot cleared) when we're already frontmost,
+    /// so a re-summon can't record ourselves as the app to return to.
+    private func recordPreviousApp() {
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let front = NSWorkspace.shared.frontmostApplication
+        previousApp = (front?.processIdentifier == myPID) ? nil : front
+    }
+
+    /// True when *we* are the app currently holding focus (or nothing is). Read
+    /// this BEFORE hiding the panel — `orderOut` shifts the frontmost app, after
+    /// which the check is meaningless.
+    private var weHoldFocus: Bool {
+        let myPID = ProcessInfo.processInfo.processIdentifier
+        let front = NSWorkspace.shared.frontmostApplication
+        return front == nil || front?.processIdentifier == myPID
+    }
+
+    /// On a full dismiss, return focus to the app the user came from — but only
+    /// when `weHeldFocus` (captured before we hid). If the user switched to a
+    /// third app while the panel was up, that app is now frontmost and we leave
+    /// it be rather than yanking focus back. Call *after* demoting to
+    /// `.accessory` (the policy switch itself reshuffles activation).
+    private func restorePreviousApp(weHeldFocus: Bool) {
+        defer { previousApp = nil }
+        guard weHeldFocus, let previousApp, !previousApp.isTerminated else { return }
+        previousApp.activate()
     }
 
     // MARK: - Focus
@@ -604,7 +643,15 @@ final class MainPanel: NSPanel {
 
     override func orderOut(_ sender: Any?) {
         canDismissOnBlur = false
+        // Capture who holds focus *before* hiding — super.orderOut shifts the
+        // frontmost app, after which the third-app guard can't tell our own
+        // dismissal apart from a deliberate switch.
+        let heldFocus = weHoldFocus
         super.orderOut(sender)
+        // Editor mode promoted us to .regular; drop back so we don't linger with
+        // a standard menu bar, then hand focus back to where the user came from.
+        demoteToAccessory()
+        restorePreviousApp(weHeldFocus: heldFocus)
     }
 
     override func resignKey() {
