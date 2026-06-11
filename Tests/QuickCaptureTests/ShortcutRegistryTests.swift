@@ -6,15 +6,22 @@ final class ShortcutRegistryTests: XCTestCase {
 
     // MARK: - Window interception
 
-    func testCommandFTogglesEditorInBothModes() {
+    func testControlCommandETogglesEditorInBothModes() {
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "f", modifiers: .command, editorOpen: false),
+            ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .control], editorOpen: false),
             .toggleEditor
         )
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "f", modifiers: .command, editorOpen: true),
+            ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .control], editorOpen: true),
             .toggleEditor
         )
+    }
+
+    /// ⌘F is native find (CodeMirror's search panel) — the window must let it
+    /// through to the web view in editor mode, and bind nothing in capture mode.
+    func testCommandFIsNeverIntercepted() {
+        XCTAssertNil(ShortcutRegistry.interceptedAction(key: "f", modifiers: .command, editorOpen: false))
+        XCTAssertNil(ShortcutRegistry.interceptedAction(key: "f", modifiers: .command, editorOpen: true))
     }
 
     func testCommandWDismissesInBothModes() {
@@ -28,10 +35,22 @@ final class ShortcutRegistryTests: XCTestCase {
         )
     }
 
-    func testCommandRRefilesOnlyInEditorMode() {
+    func testControlCommandRRefilesOnlyInEditorMode() {
+        XCTAssertEqual(
+            ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .control], editorOpen: true),
+            .refile
+        )
+        XCTAssertNil(
+            ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .control], editorOpen: false)
+        )
+    }
+
+    /// ⌘R must be swallowed in editor mode (WebKit would reload the warm
+    /// editor) and pass through untouched in capture mode.
+    func testCommandRIsSwallowedOnlyInEditorMode() {
         XCTAssertEqual(
             ShortcutRegistry.interceptedAction(key: "r", modifiers: .command, editorOpen: true),
-            .refile
+            .swallowReload
         )
         XCTAssertNil(
             ShortcutRegistry.interceptedAction(key: "r", modifiers: .command, editorOpen: false)

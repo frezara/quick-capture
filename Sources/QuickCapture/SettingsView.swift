@@ -66,7 +66,7 @@ struct SettingsView: View {
                 t.border.frame(height: 0.5).padding(.leading, 50)
                 settingsRow(
                     label: "Vim keybindings",
-                    note: "When off, standard editing. ⌘F still toggles the editor.",
+                    note: "When off, standard editing. ⌃⌘E still toggles the editor.",
                     symbol: "terminal",
                     iconColor: Color(0x34C759)
                 ) {
@@ -105,7 +105,7 @@ struct SettingsView: View {
                 if appState.refileTargets.isEmpty {
                     settingsRow(
                         label: "No targets yet",
-                        note: "⌘R in the editor files the item under your cursor into a target's inbox.md.",
+                        note: "⌃⌘R in the editor files the item under your cursor into a target's inbox.md.",
                         symbol: "folder",
                         iconColor: Color(0xFF9F0A)
                     ) {

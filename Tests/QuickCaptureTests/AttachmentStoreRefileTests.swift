@@ -1,7 +1,7 @@
 import XCTest
 @testable import QuickCapture
 
-/// Module 2 — attachment relocation for the ⌘R refile gesture (issue #32).
+/// Module 2 — attachment relocation for the ⌃⌘R refile gesture (issue #32).
 /// Copy-first into the target folder (collision-safe, name-preserving) and a
 /// shared-path-safe delete of the source original.
 final class AttachmentStoreRefileTests: XCTestCase {
