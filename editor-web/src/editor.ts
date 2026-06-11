@@ -1698,16 +1698,31 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
         items.forEach((el, i) => el.classList.toggle("cm-refile-item--selected", i === selected));
     render();
 
-    const coords = v.coordsAtPos(v.state.selection.main.head);
-    if (coords) {
-        menu.style.left = `${Math.round(coords.left)}px`;
-        menu.style.top = `${Math.round(coords.bottom + 4)}px`;
-    }
     // Append inside the editor DOM, not document.body: EditorView.theme() scopes
     // .cm-refile-dropdown styles under the editor wrapper class, so a menu on
     // document.body would render completely unstyled (and invisible). The toasts
-    // live in v.dom for the same reason.
+    // live in v.dom for the same reason. Appended before positioning so the
+    // menu has a measurable size to clamp against the viewport.
     v.dom.appendChild(menu);
+
+    const coords = v.coordsAtPos(v.state.selection.main.head);
+    if (coords) {
+        // Anchor below the cursor, kept fully on screen (#56): long target
+        // names near the right edge clamp left, and a cursor near the bottom
+        // flips the menu above the line instead of running off the window.
+        const margin = 8;
+        const rect = menu.getBoundingClientRect();
+        const left = Math.min(
+            Math.max(coords.left, margin),
+            Math.max(window.innerWidth - rect.width - margin, margin)
+        );
+        let top = coords.bottom + 4;
+        if (top + rect.height > window.innerHeight - margin) {
+            top = Math.max(coords.top - rect.height - 4, margin);
+        }
+        menu.style.left = `${Math.round(left)}px`;
+        menu.style.top = `${Math.round(top)}px`;
+    }
 
     const close = () => {
         if (!refileOpen) return;
