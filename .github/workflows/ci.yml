@@ -1,0 +1,71 @@
+name: CI
+
+# Builds and tests every pull request targeting main, plus pushes to main
+# itself, so PRs have a real status check to gate merges on. The Release
+# workflow (release.yml) stays tag-driven and is unaffected.
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build-and-test:
+    runs-on: macos-15
+    timeout-minutes: 20
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: sudo xcode-select -s /Applications/Xcode.app
+
+      - name: Install build tools
+        run: brew install xcodegen
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: npm
+          cache-dependency-path: editor-web/package-lock.json
+
+      # Rebuild the editor bundle so a TS regression in editor.ts fails CI.
+      # The committed dist/ is what ships; this proves it still compiles.
+      - name: Build editor bundle
+        working-directory: editor-web
+        run: |
+          npm ci
+          npm run build
+
+      - name: Generate Xcode project
+        run: xcodegen generate
+
+      - name: Build (Debug, ad-hoc signed)
+        run: |
+          xcodebuild \
+            -project QuickCapture.xcodeproj \
+            -scheme QuickCapture \
+            -configuration Debug \
+            -derivedDataPath build/ \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
+
+      - name: Run tests
+        run: |
+          xcodebuild \
+            -project QuickCapture.xcodeproj \
+            -scheme QuickCapture \
+            -derivedDataPath build/ \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            test
