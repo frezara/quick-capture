@@ -5,7 +5,12 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Quick Capture Editor</title>
     <style>
-        html, body { margin: 0; padding: 0; height: 100%; background: #ffffff; -webkit-font-smoothing: antialiased; overflow: hidden; }
+        /* Match Theme.surface (DesignSystem.swift) so there's no colour flash
+           before the editor theme paints. */
+        html, body { margin: 0; padding: 0; height: 100%; background: #F6F6F8; -webkit-font-smoothing: antialiased; overflow: hidden; }
+        @media (prefers-color-scheme: dark) {
+            html, body { background: #212125; }
+        }
         #editor { height: 100vh; overflow: hidden; }
         .cm-editor { height: 100%; }
     </style>

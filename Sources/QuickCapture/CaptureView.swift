@@ -84,10 +84,10 @@ struct CaptureView: View {
         // The capture box is always a self-contained rounded, bordered panel —
         // capture mode and editor mode are mutually exclusive (ADR-0004), so it
         // never has to fuse with the editor.
-        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusWindow, style: .continuous))
+        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusPanel, style: .continuous))
         .overlay(
-            RoundedRectangle(cornerRadius: Metrics.radiusWindow, style: .continuous)
-                .strokeBorder(theme.border, lineWidth: 1)
+            RoundedRectangle(cornerRadius: Metrics.radiusPanel, style: .continuous)
+                .strokeBorder(theme.borderStrong, lineWidth: 0.5)
         )
         .onAppear {
             DispatchQueue.main.async { focused = .todo }
@@ -180,7 +180,7 @@ struct CaptureView: View {
                 // (to the chips), so the separator doesn't get squashed against
                 // the input row.
                 VStack(spacing: 0) {
-                    Rectangle().fill(theme.border).frame(height: 1)
+                    Rectangle().fill(theme.border).frame(height: 0.5)
                         .padding(.top, Metrics.s3)
                     Group {
                         if isCalendarMode {
@@ -198,19 +198,21 @@ struct CaptureView: View {
 
     // MARK: - Panel surface
 
-    /// `surface` fill with the brushed top-edge `highlight` (bright in the top
-    /// ~12%, fading out) from the mockup.
+    /// Frosted material: behind-window blur under a translucent `panel` wash,
+    /// with the inset top-edge light from the mockup.
     private var panelSurface: some View {
-        theme.surface.overlay(
-            LinearGradient(
-                stops: [
-                    .init(color: theme.highlight.opacity(0.6), location: 0),
-                    .init(color: .clear, location: 0.12),
-                ],
-                startPoint: .top, endPoint: .bottom
+        VisualEffectBlur()
+            .overlay(theme.panel)
+            .overlay(
+                LinearGradient(
+                    stops: [
+                        .init(color: theme.highlight, location: 0),
+                        .init(color: .clear, location: 0.12),
+                    ],
+                    startPoint: .top, endPoint: .bottom
+                )
             )
             .allowsHitTesting(false)
-        )
     }
 
     // MARK: - Inputs row (todo + tag inline, trailing "open" glyph)
@@ -227,13 +229,13 @@ struct CaptureView: View {
         return ZStack(alignment: .topLeading) {
             if todoText.isEmpty {
                 Text("What needs doing?")
-                    .font(.system(size: 17, design: appState.captureFontDesign.design))
+                    .font(.system(size: 16, design: appState.captureFontDesign.design))
                     .foregroundStyle(theme.inkTertiary)
                     .allowsHitTesting(false)
             }
             TodoTextEditor(
                 text: $todoText,
-                font: appState.captureFontDesign.nsFont(size: 17),
+                font: appState.captureFontDesign.nsFont(size: 16),
                 textColor: NSColor(theme.ink),
                 maxLines: 4,
                 isFocused: Binding(
@@ -254,16 +256,16 @@ struct CaptureView: View {
         // Focus → accent border; submit-on-empty → a red border flash.
         .overlay(
             RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .strokeBorder(isShaking ? Color.red.opacity(0.75)
+                .strokeBorder(isShaking ? theme.priHigh.opacity(0.75)
                                         : (focusedNow ? theme.accent : .clear),
                               lineWidth: 1)
                 .animation(.easeOut(duration: 0.2), value: isShaking)
         )
-        // 3px accent-soft focus ring sitting just outside the field edge
-        // (the mockup's `box-shadow:0 0 0 3px`).
+        // 3px accent focus halo sitting just outside the field edge
+        // (the mockup's `box-shadow: 0 0 0 3px accentRing`).
         .background(
             RoundedRectangle(cornerRadius: Metrics.radiusField + 1, style: .continuous)
-                .strokeBorder(theme.accentSoft, lineWidth: 3)
+                .strokeBorder(theme.accentRing, lineWidth: 3)
                 .padding(-2)
                 .opacity(focusedNow && !isShaking ? 1 : 0)
                 .animation(.easeOut(duration: 0.15), value: focusedNow)
@@ -455,18 +457,17 @@ struct CaptureView: View {
             }
             .padding(.vertical, 1)   // breathing room so chip borders don't clip
         }
-        // Fade chips into the panel surface at the right edge, hinting that more
-        // content scrolls beyond. allowsHitTesting(false) keeps chips under the
-        // gradient still tappable.
-        .overlay(alignment: .trailing) {
-            LinearGradient(
-                colors: [.clear, theme.surface],
-                startPoint: .leading,
-                endPoint: .trailing
-            )
-            .frame(width: 32)
-            .allowsHitTesting(false)
-        }
+        // Fade chips out at the right edge, hinting that more content scrolls
+        // beyond. A mask (not a painted overlay) so it works on the frosted
+        // panel, where there is no solid surface colour to fade into.
+        .mask(
+            HStack(spacing: 0) {
+                Rectangle()
+                LinearGradient(colors: [.black, .clear],
+                               startPoint: .leading, endPoint: .trailing)
+                    .frame(width: 32)
+            }
+        )
     }
 
     // MARK: - Attachment chip
@@ -521,11 +522,11 @@ struct CaptureView: View {
         .padding(.vertical, 5)
         .background(
             RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .fill(theme.surfaceField)
+                .fill(theme.chip)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .strokeBorder(theme.border, lineWidth: 1)
+                .strokeBorder(theme.border, lineWidth: 0.5)
         )
         .opacity(isCalendarMode ? 0.55 : 1)
     }
@@ -573,12 +574,14 @@ struct CaptureView: View {
         return VStack(alignment: .leading, spacing: Metrics.s3) {
             HStack(spacing: Metrics.s2) {
                 Text("Recent screenshots")
-                    .font(TypeScale.h2)
+                    .font(Typeface.ui(15, .semibold))
                     .foregroundStyle(theme.ink)
                 Spacer(minLength: 0)
-                Text("↑↓ navigate · ⏎ attach · esc cancel")
-                    .font(TypeScale.chip)
-                    .foregroundStyle(theme.inkTertiary)
+                HStack(spacing: Metrics.s1) {
+                    keycap("↑↓"); hintLabel("navigate")
+                    keycap("⏎");  hintLabel("attach")
+                    keycap("esc"); hintLabel("cancel")
+                }
             }
 
             HStack(alignment: .top, spacing: Metrics.s3) {
@@ -616,6 +619,27 @@ struct CaptureView: View {
         .focusable()
         .focused($focused, equals: .picker)
         .focusEffectDisabled()
+    }
+
+    /// Small bordered key chip for the picker's keyboard hints (mono, per the
+    /// mockup's keycap treatment).
+    private func keycap(_ label: String) -> some View {
+        Text(label)
+            .font(Typeface.mono(10, .medium))
+            .foregroundStyle(theme.inkSecondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(
+                RoundedRectangle(cornerRadius: 4, style: .continuous)
+                    .fill(theme.chip)
+            )
+    }
+
+    private func hintLabel(_ text: String) -> some View {
+        Text(text)
+            .font(TypeScale.chip)
+            .foregroundStyle(theme.inkTertiary)
+            .padding(.trailing, 2)
     }
 
     private func pickerRow(_ shot: ScreenshotLocator.Screenshot, isSelected: Bool) -> some View {
@@ -681,7 +705,7 @@ struct CaptureView: View {
         .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous))
         .overlay(
             RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .strokeBorder(theme.border, lineWidth: 1)
+                .strokeBorder(theme.border, lineWidth: 0.5)
         )
     }
 
@@ -722,31 +746,38 @@ struct CaptureView: View {
         return posixFormatted(shot.createdAt, "EEE, MMM d")
     }
 
-    /// One steel chip treatment for every tag (no per-tag colour). The
-    /// prefix-matched tag carries the `accentSoft` / `accentInk` fill.
-    /// The `cal` chip swaps the `#` for a calendar icon to signal it's special.
+    /// Finder-tag-style chips: each tag carries its 7px hue dot; the
+    /// prefix-matched tag tints with its OWN hue (not the accent). The `cal`
+    /// chip is a command, not a tag — calendar glyph, no dot, neutral always.
     private func chip(_ name: String, isMatch: Bool) -> some View {
         let isCal = name.lowercased() == "cal"
-        return HStack(spacing: 4) {
+        let isDark = colorScheme == .dark
+        let hue = TagPalette.entry(for: name)
+        return HStack(spacing: 5) {
             if isCal {
                 Image(systemName: "calendar")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(isMatch ? theme.accent : theme.inkTertiary)
+                    .foregroundStyle(theme.inkTertiary)
             } else {
-                Text("#").foregroundStyle(isMatch ? theme.accent : theme.inkTertiary)
+                Circle()
+                    .fill(hue.dot(dark: isDark))
+                    .frame(width: 7, height: 7)
             }
-            Text(name).foregroundStyle(isMatch ? theme.accentInk : theme.inkSecondary)
+            if !isCal {
+                Text("#").foregroundStyle(isMatch ? hue.label(dark: isDark).opacity(0.7) : theme.inkTertiary)
+            }
+            Text(name).foregroundStyle(isMatch ? hue.label(dark: isDark) : theme.inkSecondary)
         }
         .font(TypeScale.chip)
         .padding(.horizontal, 11)
         .padding(.vertical, 7)
         .background(
             RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .fill(isMatch ? theme.accentSoft : theme.surfaceField)
+                .fill(isMatch && !isCal ? AnyShapeStyle(hue.tint(dark: isDark)) : AnyShapeStyle(theme.chip))
         )
         .overlay(
             RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                .strokeBorder(isMatch ? theme.accent.opacity(0.42) : theme.border, lineWidth: 1)
+                .strokeBorder(isMatch && !isCal ? hue.dot(dark: isDark).opacity(0.35) : .clear, lineWidth: 1)
         )
         .help(isCal ? "Creates a calendar event — type naturally, e.g. \"call Seb tomorrow at 2pm\"" : "")
     }
@@ -950,7 +981,7 @@ private extension AppState {
     )
     .frame(width: 600)
     .padding(40)
-    .background(Color(0xE4EAF0))
+    .background(Color(0xECEDF0))
 }
 
 #Preview("Capture · dark") {
@@ -961,6 +992,6 @@ private extension AppState {
     )
     .frame(width: 600)
     .padding(40)
-    .background(Color(0x161B21))
+    .background(Color(0x141417))
     .preferredColorScheme(.dark)
 }

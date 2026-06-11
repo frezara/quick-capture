@@ -19,66 +19,97 @@ for (const key of ["y", "Y", "p", "P", "d", "D", "x", "X", "c", "C", "s", "S"]) 
     Vim.noremap(key, `"+${key}`, "visual");
 }
 
-// "Misted Steel" palettes — mirror DesignSystem.swift (Theme.light / .dark) so
-// the editor reads as the same surface as the capture bar. The active one
-// follows the system appearance (prefers-color-scheme). Warm colour is confined
-// to the priority orbs.
+// Native-v2 ("Pure System + Color") palettes — mirror DesignSystem.swift
+// (Theme.light / .dark); see design/native-v2/HANDOFF.md. The active one
+// follows the system appearance (prefers-color-scheme). Functional colour
+// only: priority orbs and the per-section tag hues.
+// NOTE: priHigh/Med/Low and accent must stay 6-digit hex — alpha is appended
+// as a hex suffix (`${...}38`) in a few rules below.
 type Palette = typeof lightPalette;
 
 const lightPalette = {
-    surface: "#F7F9FB",
-    surfaceField: "#E8EEF3",
-    surfaceRail: "#EEF2F6",
-    highlight: "#FFFFFF",
-    text: "#1B222B",          // ink
-    soft: "#54616E",          // inkSecondary
-    muted: "#8B97A4",         // inkTertiary
-    accent: "#2F6FA3",
-    accentInk: "#245A86",
-    accentSoft: "#D4E3F1",
+    surface: "#F6F6F8",                       // window
+    surfaceField: "rgba(120, 120, 128, 0.10)", // well
+    surfaceRail: "rgba(0, 0, 0, 0.025)",       // bar
+    highlight: "rgba(255, 255, 255, 0.55)",
+    text: "rgba(0, 0, 0, 0.88)",               // text-1
+    soft: "rgba(60, 60, 67, 0.62)",            // text-2
+    muted: "rgba(60, 60, 67, 0.36)",           // text-3
+    accent: "#007AFF",
+    accentInk: "#0066D6",
+    accentSoft: "rgba(0, 122, 255, 0.12)",
     onAccent: "#FFFFFF",
-    codeBg: "#E8EEF3",        // surfaceField (recessed wells / badge fallback)
-    selection: "#D4E3F1",     // accentSoft
-    borderSoft: "#C2CCD7",    // border
-    borderStrong: "#A7B4C2",
-    priHigh: "#DB5560",
-    priMed: "#D99A3C",
-    priLow: "#4E9E84",
+    codeBg: "rgba(120, 120, 128, 0.10)",       // recessed wells
+    selection: "rgba(0, 122, 255, 0.20)",      // accent-tint-2
+    borderSoft: "rgba(0, 0, 0, 0.14)",         // hairline
+    borderStrong: "rgba(0, 0, 0, 0.28)",       // unchecked checkbox border
+    priHigh: "#FF3B30",
+    priMed: "#FF9500",
+    priLow: "#34C759",
 };
 
 const darkPalette: Palette = {
-    surface: "#242C35",
-    surfaceField: "#1A212A",
-    surfaceRail: "#1E252E",
-    highlight: "#404B57",
-    text: "#EDF1F5",
-    soft: "#A2AEBB",
-    muted: "#6B7682",
-    accent: "#5AA2E0",
-    accentInk: "#8FC2EE",
-    accentSoft: "#23364A",
-    onAccent: "#161B21",
-    codeBg: "#1A212A",
-    selection: "#23364A",
-    borderSoft: "#38424E",
-    borderStrong: "#4A5663",
-    priHigh: "#F0727C",
-    priMed: "#E7B05A",
-    priLow: "#6FBBA0",
+    surface: "#212125",
+    surfaceField: "rgba(120, 120, 128, 0.20)",
+    surfaceRail: "rgba(255, 255, 255, 0.03)",
+    highlight: "rgba(255, 255, 255, 0.10)",
+    text: "rgba(255, 255, 255, 0.92)",
+    soft: "rgba(235, 235, 245, 0.60)",
+    muted: "rgba(235, 235, 245, 0.32)",
+    accent: "#0A84FF",
+    accentInk: "#409CFF",
+    accentSoft: "rgba(10, 132, 255, 0.16)",
+    onAccent: "#FFFFFF",
+    codeBg: "rgba(120, 120, 128, 0.20)",
+    selection: "rgba(10, 132, 255, 0.28)",
+    borderSoft: "rgba(255, 255, 255, 0.13)",
+    borderStrong: "rgba(255, 255, 255, 0.35)",
+    priHigh: "#FF453A",
+    priMed: "#FF9F0A",
+    priLow: "#30D158",
 };
+
+// Finder-tag-style hues for `##` section headings — mirrors TagPalette in
+// TagColor.swift (same DJB2 hash, same curated entries) so a tag's dot in the
+// capture box matches its section dot here. Keep the two in sync.
+const tagHuesLight = ["#E8643F", "#2A9D8F", "#C2479B", "#4F9E4F", "#3B82F6", "#C77800", "#5856D6", "#64748B"];
+const tagHuesDark  = ["#F4795A", "#3DBDAD", "#DA62B4", "#5FBF60", "#5C9DFF", "#E0A33E", "#7D7AFF", "#8B98AB"];
+
+const U64 = (1n << 64n) - 1n;
+const I64_MIN = 1n << 63n;
+
+function tagHue(name: string): string {
+    const normalized = name.toLowerCase();
+    // BigInt with a 64-bit two's-complement wrap — Swift's `Int` is 64-bit and
+    // the hash overflows past ~6 characters, so 32-bit JS arithmetic would
+    // pick different hues than the capture box.
+    let h = 5381n;
+    for (const ch of normalized) {
+        h = (h * 33n + BigInt(ch.codePointAt(0) ?? 0)) & U64;
+    }
+    let signed = h >= I64_MIN ? h - (U64 + 1n) : h;
+    if (signed < 0n) signed = -signed;
+    const hues = palette === darkPalette ? tagHuesDark : tagHuesLight;
+    return hues[Number(signed % BigInt(hues.length))];
+}
 
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 // Mutable so makeHighlight()/makeTheme() (below) read the active palette; the
 // appearance listener reassigns it and reconfigures the theme compartment.
 let palette: Palette = prefersDark.matches ? darkPalette : lightPalette;
 
+const sansFamily = '-apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue", sans-serif';
+
 function makeHighlight() {
     return HighlightStyle.define([
-    // Headings — Obsidian-ish sizing curve, bumped to match the target design.
-    { tag: tags.heading1, fontSize: "2.4em", fontWeight: "800", color: palette.text, lineHeight: "1.2" },
-    { tag: tags.heading2, fontSize: "1.55em", fontWeight: "700", color: palette.text, lineHeight: "1.3" },
-    { tag: tags.heading3, fontSize: "1.25em", fontWeight: "700", color: palette.text },
-    { tag: tags.heading4, fontSize: "1.1em", fontWeight: "700", color: palette.text },
+    // Headings are CHROME, not content — sans, per the native-v2 spec. H1 is
+    // the window title; H2s are small tracked-uppercase section captions
+    // (uppercasing itself is done by the .cm-heading-2 line class so the raw
+    // text keeps its case when revealed for editing).
+    { tag: tags.heading1, fontFamily: sansFamily, fontSize: "22px", fontWeight: "600", letterSpacing: "-0.3px", color: palette.text, lineHeight: "1.4" },
+    { tag: tags.heading2, fontFamily: sansFamily, fontSize: "11px", fontWeight: "600", letterSpacing: "0.8px", color: palette.soft, lineHeight: "2" },
+    { tag: tags.heading3, fontFamily: sansFamily, fontSize: "1.1em", fontWeight: "600", color: palette.text },
+    { tag: tags.heading4, fontFamily: sansFamily, fontSize: "1em", fontWeight: "600", color: palette.text },
     { tag: tags.heading5, fontWeight: "700", color: palette.text },
     { tag: tags.heading6, fontWeight: "700", color: palette.soft },
 
@@ -284,8 +315,19 @@ function makeAttachmentPill(text: string, kind: "folded" | "loading" | "missing"
     return pill;
 }
 
-/// The accent "#" glyph that stands in for the H1 mark — a small filled accent
-/// box with a white hash, matching the editor mockup. H2–H6 marks stay hidden.
+/// The app-mark that stands in for the H1 mark — a small accent-gradient
+/// rounded square with a white hash, per the native-v2 mockup. H2–H6 marks
+/// stay hidden.
+class H1MarkWidget extends WidgetType {
+    toDOM(): HTMLElement {
+        const mark = document.createElement("span");
+        mark.className = "cm-h1-mark";
+        mark.textContent = "#";
+        return mark;
+    }
+    eq(other: WidgetType): boolean { return other instanceof H1MarkWidget; }
+    ignoreEvent(): boolean { return true; }
+}
 
 function buildLivePreview(view: EditorView): DecorationSet {
     // In read mode (Cmd+E) all syntax stays hidden regardless of cursor
@@ -302,12 +344,23 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 const line = view.state.doc.lineAt(node.from);
 
                 // Line class on headings (always on, so layout doesn't shift
-                // when the cursor moves onto the line).
+                // when the cursor moves onto the line). H2 section headings
+                // additionally carry their tag hue as a CSS variable — the
+                // heading text IS the tag name, so its dot matches the capture
+                // box chip (drawn by the .cm-heading-2::before rule).
                 const headingLevel = atxHeadingLevel(node.name);
                 if (headingLevel) {
+                    const attrs: Record<string, string> = {};
+                    if (headingLevel === 2) {
+                        const name = line.text.replace(/^#{1,6}\s*/, "").trim();
+                        if (name) attrs.style = `--qc-section-hue: ${tagHue(name)}`;
+                    }
                     ranges.push({
                         from: line.from, to: line.from,
-                        deco: Decoration.line({ class: `cm-heading cm-heading-${headingLevel}` }),
+                        deco: Decoration.line({
+                            class: `cm-heading cm-heading-${headingLevel}`,
+                            ...(attrs.style ? { attributes: attrs } : {}),
+                        }),
                     });
                     return;
                 }
@@ -321,9 +374,14 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     if (view.state.doc.sliceString(end, end + 1) === " ") end += 1;
                     // Reveal when the cursor is anywhere on the heading line.
                     if (!readMode && selectionOverlaps(view.state, line.from, line.to)) return;
+                    // H1's mark becomes the accent app-mark (rounded square
+                    // with a white "#"); other levels just hide their marks.
+                    const isH1 = /^#\s/.test(line.text);
                     ranges.push({
                         from: node.from, to: end,
-                        deco: Decoration.replace({}),
+                        deco: isH1
+                            ? Decoration.replace({ widget: new H1MarkWidget() })
+                            : Decoration.replace({}),
                     });
                     return;
                 }
@@ -495,8 +553,8 @@ function makeTheme() {
     },
     ".cm-content": {
         fontFamily: 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace',
-        fontSize: "15px",
-        lineHeight: "1.7",
+        fontSize: "13px",
+        lineHeight: "1.6",
         // Full-width content (no left rail, no centered column) per the mockup;
         // generous side padding, extra bottom clearance for the status bar + fab.
         padding: "36px 44px 110px",
@@ -554,16 +612,20 @@ function makeTheme() {
         height: "33px",
         padding: "0 16px",
         backgroundColor: palette.surfaceRail,
-        borderTop: `1px solid ${palette.borderSoft}`,
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        borderTop: `0.5px solid ${palette.borderSoft}`,
+        fontFamily: sansFamily,
         fontSize: "11px",
-        fontWeight: "600",
-        letterSpacing: "0.3px",
+        fontWeight: "500",
+        letterSpacing: "0.2px",
         color: palette.muted,
         userSelect: "none",
         zIndex: "8",
     },
-    ".cm-status-file": { color: palette.soft },
+    // Filename is a path — the one mono element in the status bar.
+    ".cm-status-file": {
+        color: palette.soft,
+        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+    },
     ".cm-status-right": { marginLeft: "auto", display: "flex", gap: "16px" },
     // Empty-state overlay — shown when the document has zero todo lines.
     ".cm-empty-state": {
@@ -578,7 +640,7 @@ function makeTheme() {
         pointerEvents: "none",
         userSelect: "none",
         color: palette.muted,
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontFamily: sansFamily,
         fontSize: "12px",
         lineHeight: "1.6",
         textAlign: "center",
@@ -587,12 +649,12 @@ function makeTheme() {
     // Mode pill — accentSoft (NORMAL) by default; the other vim modes keep the
     // conventional green/amber/red cues so the mode reads at a glance.
     ".cm-mode-badge": {
-        padding: "4px 11px",
-        borderRadius: "6px",
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        padding: "3px 9px",
+        borderRadius: "5px",
+        fontFamily: sansFamily,
         fontSize: "10.5px",
         fontWeight: "600",
-        letterSpacing: "1px",
+        letterSpacing: "0.5px",
         textTransform: "uppercase",
         backgroundColor: palette.accentSoft,
         color: palette.accentInk,
@@ -633,12 +695,14 @@ function makeTheme() {
         gap: "4px",
         padding: "3px 10px 3px 8px",
         borderRadius: "8px",
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontFamily: sansFamily,
         fontSize: "10.5px",
         fontWeight: "600",
         letterSpacing: "0.6px",
         textTransform: "uppercase",
-        backgroundColor: palette.accentSoft,
+        // Floats over content — accentSoft is translucent in the native-v2
+        // palette, so layer it on the opaque surface or text bleeds through.
+        background: `linear-gradient(0deg, ${palette.accentSoft}, ${palette.accentSoft}) ${palette.surface}`,
         color: palette.accentInk,
         border: `1px solid ${palette.accent}33`,
         opacity: "0",
@@ -660,10 +724,12 @@ function makeTheme() {
         maxWidth: "320px",
         padding: "4px",
         borderRadius: "10px",
-        backgroundColor: palette.surfaceField,
-        border: `1px solid ${palette.accent}33`,
+        // Floating card — must be opaque (surfaceField is a translucent well
+        // tint in the native-v2 palette; content would bleed through).
+        backgroundColor: palette.surface,
+        border: `0.5px solid ${palette.borderSoft}`,
         boxShadow: "0 8px 28px rgba(0,0,0,0.28)",
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontFamily: sansFamily,
         fontSize: "12px",
         color: palette.text,
         overflow: "hidden",
@@ -689,10 +755,11 @@ function makeTheme() {
         transform: "translateX(-50%) translateY(6px)",
         padding: "6px 14px",
         borderRadius: "9px",
-        backgroundColor: palette.surfaceField,
-        border: `1px solid ${palette.accent}33`,
+        // Floating toast — opaque surface, not the translucent well tint.
+        backgroundColor: palette.surface,
+        border: `0.5px solid ${palette.borderSoft}`,
         boxShadow: "0 6px 20px rgba(0,0,0,0.22)",
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontFamily: sansFamily,
         fontSize: "11px",
         letterSpacing: "0.4px",
         color: palette.text,
@@ -719,10 +786,10 @@ function makeTheme() {
         flexDirection: "column",
         gap: "5px",
         padding: "5px",
-        borderRadius: "12px",
+        borderRadius: "10px",
         backgroundColor: palette.surface,
-        border: `1px solid ${palette.borderSoft}`,
-        boxShadow: "0 12px 28px -16px rgba(28, 42, 60, 0.45)",
+        border: `0.5px solid ${palette.borderSoft}`,
+        boxShadow: "0 12px 28px -16px rgba(0, 0, 0, 0.45)",
         zIndex: "9",
     },
     ".cm-sidebar-btn": {
@@ -755,10 +822,10 @@ function makeTheme() {
         whiteSpace: "nowrap",
         backgroundColor: palette.surfaceRail,
         color: palette.soft,
-        border: `1px solid ${palette.borderSoft}`,
+        border: `0.5px solid ${palette.borderSoft}`,
         borderRadius: "6px",
         padding: "4px 8px",
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontFamily: sansFamily,
         fontSize: "11px",
         fontWeight: "600",
         letterSpacing: "0.3px",
@@ -777,10 +844,10 @@ function makeTheme() {
         position: "fixed",
         backgroundColor: palette.surfaceRail,
         color: palette.soft,
-        border: `1px solid ${palette.borderSoft}`,
+        border: `0.5px solid ${palette.borderSoft}`,
         borderRadius: "6px",
         padding: "4px 8px",
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontFamily: sansFamily,
         fontSize: "11px",
         fontWeight: "600",
         letterSpacing: "0.3px",
@@ -803,12 +870,12 @@ function makeTheme() {
     ".cm-md-hidden": {
         color: "transparent",
     },
-    // Pink pill behind inline `code`. Applied via decoration only when the
-    // cursor isn't on the line, so editing the raw markdown drops the pill.
+    // Recessed-well pill behind inline `code`. Applied via decoration only
+    // when the cursor isn't on the line, so editing the raw markdown drops it.
     ".cm-inline-code-pill": {
-        backgroundColor: palette.accentSoft,
-        color: palette.accentInk,
-        borderRadius: "6px",
+        backgroundColor: palette.codeBg,
+        color: palette.text,
+        borderRadius: "5px",
         padding: "1px 6px",
         margin: "0 1px",
     },
@@ -823,7 +890,7 @@ function makeTheme() {
         padding: "2px 10px",
         borderRadius: "6px",
         backgroundColor: palette.surfaceField,
-        border: `1px solid ${palette.borderSoft}`,
+        border: `0.5px solid ${palette.borderSoft}`,
         color: palette.muted,
         fontSize: "12px",
         lineHeight: "1.5",
@@ -843,7 +910,7 @@ function makeTheme() {
         maxHeight: "360px",
         margin: "4px 0",
         borderRadius: "8px",
-        border: `1px solid ${palette.borderSoft}`,
+        border: `0.5px solid ${palette.borderSoft}`,
         boxShadow: "0 12px 28px -16px rgba(28, 42, 60, 0.45)",
     },
     // Completed task label — struck through and muted (the checkbox keeps its
@@ -898,10 +965,10 @@ function makeTheme() {
         position: "absolute",
         left: "1.5ch",
         top: "0",
-        // Match the editor's line-height (1.7 × 15px). Bounding the height
+        // Match the editor's line-height (1.6 × 13px). Bounding the height
         // means the guide only spans the FIRST visual line — when the logical
         // line wraps, the guide doesn't bleed down across the wrapped text.
-        height: "1.7em",
+        height: "1.6em",
         width: "1px",
         backgroundColor: palette.borderSoft,
         pointerEvents: "none",
@@ -921,11 +988,11 @@ function makeTheme() {
         // and draws our own border + checkmark.
         appearance: "none",
         WebkitAppearance: "none",
-        width: "16px",
-        height: "16px",
+        width: "15px",
+        height: "15px",
         margin: "0 10px 0 0",
-        border: `1.5px solid ${palette.borderStrong}`,
-        borderRadius: "5px",
+        border: `1px solid ${palette.borderStrong}`,
+        borderRadius: "4px",
         verticalAlign: "-3px",
         cursor: "pointer",
         backgroundColor: palette.surface,
@@ -945,10 +1012,43 @@ function makeTheme() {
     // Heading line treatment. Margins on line decorations break vertical
     // cursor navigation (Down arrow lands in the margin gap and skips lines),
     // so we use padding — which CodeMirror's cursor logic handles correctly —
-    // and keep the values small. The H2 gets a thin separator below it.
+    // and keep the values small.
+    // H2 = tracked-uppercase section caption with its tag-hue dot (the hue
+    // arrives as --qc-section-hue on the line, set by buildLivePreview) and a
+    // hairline rule. The uppercasing is visual only — raw text keeps its case.
     ".cm-heading-2": {
-        paddingBottom: "4px",
-        borderBottom: `1px solid ${palette.borderSoft}`,
+        paddingTop: "10px",
+        paddingBottom: "3px",
+        borderBottom: `0.5px solid ${palette.borderSoft}`,
+        textTransform: "uppercase",
+    },
+    ".cm-heading-2::before": {
+        content: '""',
+        display: "inline-block",
+        width: "7px",
+        height: "7px",
+        borderRadius: "50%",
+        marginRight: "8px",
+        verticalAlign: "1px",
+        backgroundColor: "var(--qc-section-hue, transparent)",
+    },
+    // The H1 app-mark: accent-gradient rounded square with a white hash,
+    // standing in for the hidden `# ` mark.
+    ".cm-h1-mark": {
+        display: "inline-flex",
+        alignItems: "center",
+        justifyContent: "center",
+        width: "26px",
+        height: "26px",
+        marginRight: "10px",
+        borderRadius: "7px",
+        background: `linear-gradient(180deg, ${palette.accent}E6, ${palette.accent})`,
+        color: "#FFFFFF",
+        fontFamily: sansFamily,
+        fontSize: "15px",
+        fontWeight: "700",
+        verticalAlign: "-6px",
+        userSelect: "none",
     },
     }, { dark: palette === darkPalette });
 }
@@ -1783,7 +1883,12 @@ window.qcEditor = {
 // compartment when prefers-color-scheme flips.
 prefersDark.addEventListener("change", (e) => {
     palette = e.matches ? darkPalette : lightPalette;
-    view?.dispatch({ effects: themeComp.reconfigure(themeExtensions()) });
+    // attachmentStateChanged forces a livePreview rebuild — the section-hue
+    // CSS vars are baked into line attributes from the palette-dependent
+    // tagHue(), so a theme swap alone would leave stale light/dark hues.
+    view?.dispatch({
+        effects: [themeComp.reconfigure(themeExtensions()), attachmentStateChanged.of(null)],
+    });
 });
 
 sendToSwift({ type: "ready" });

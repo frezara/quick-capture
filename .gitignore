@@ -71,3 +71,9 @@ tag-input.html
 themes.html
 themes-paper.html
 NOTES.md
+.gstack/
+
+# Personal capture data (the repo root doubles as a live capture target)
+inbox.md
+inbox_archive.md
+attachments/
