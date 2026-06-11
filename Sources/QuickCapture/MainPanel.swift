@@ -14,6 +14,7 @@ import WebKit
 ///   `canDismissOnBlur` guards against false fires during transitions.
 /// - **⌘F** is intercepted in `performKeyEquivalent` *before* it reaches
 ///   CodeMirror/WebKit (which would treat it as "find"), toggling the mode.
+///   All window-level bindings live in `ShortcutRegistry`.
 /// - **Activation policy** is `.regular` while the editor is open so the
 ///   standard menu bar (⌘C/V/Z…) works, then `.accessory` when collapsed.
 /// - **Disk is canonical, one writer by mutual exclusion:** capture-mode
@@ -605,42 +606,45 @@ final class MainPanel: NSPanel {
     override var canBecomeKey: Bool { true }
     override var canBecomeMain: Bool { editorOpen }
 
-    /// Intercept ⌘F (switch mode), ⌘W (dismiss), and ⌘⇧S (attach screenshot)
-    /// before CodeMirror/WebKit or the standard menu items can claim them.
+    /// Intercept the window-level shortcuts (mode switch, dismiss, screenshot
+    /// attach, refile) before CodeMirror/WebKit or the standard menu items can
+    /// claim them. Which keys those are — and in which mode — lives in
+    /// `ShortcutRegistry`, the single source of truth for bindings.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
-        let key = event.charactersIgnoringModifiers?.lowercased()
-
-        // ⌘⇧S carries [.command, .shift], so it must be matched before the
-        // exact-Command guard below would bounce it to super. Capture mode
-        // only — the chip is a capture-surface affordance.
-        if mods == [.command, .shift], key == "s", !editorOpen {
-            openScreenshotPicker()
-            return true
-        }
-
-        guard mods == .command else {
+        guard let action = ShortcutRegistry.interceptedAction(for: event, editorOpen: editorOpen) else {
             return super.performKeyEquivalent(with: event)
         }
-        switch key {
-        case "f":
+        perform(shortcut: action)
+        return true
+    }
+
+    /// Dispatch a shortcut action. Window-intercepted actions call straight
+    /// into panel behavior; editor-local actions are driven over the bridge —
+    /// the key path for those normally goes through CodeMirror's own keymap,
+    /// so this arm only runs for the Editor menu items.
+    func perform(shortcut action: ShortcutAction) {
+        switch action {
+        case .toggleEditor:
             toggleEditor()
-            return true
-        case "w":
+        case .dismissPanel:
             dismiss()
-            return true
-        case "r" where editorOpen:
-            // ⌘R must be caught here: WebKit reserves it for "reload" and would
-            // swallow it before CodeMirror's Mod-r keymap ever runs (same reason
-            // ⌘F is intercepted above). Drive the editor's refile over the bridge.
-            webView.evaluateJavaScript(
-                "window.qcEditor && window.qcEditor.startRefile()",
-                completionHandler: nil
-            )
-            return true
-        default:
-            return super.performKeyEquivalent(with: event)
+        case .attachScreenshot:
+            openScreenshotPicker()
+        case .refile, .readMode, .toggleTask, .save, .reorg:
+            invokeEditorAction(action)
         }
+    }
+
+    /// Run an action inside the editor over the bridge. ⌘R refile takes this
+    /// path on every press — WebKit reserves the raw key for "reload" and would
+    /// swallow it before the editor keymap runs.
+    private func invokeEditorAction(_ action: ShortcutAction) {
+        guard webViewReady,
+              let id = String(data: try! JSONEncoder().encode(action.rawValue), encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.invoke && window.qcEditor.invoke(\(id))",
+            completionHandler: nil
+        )
     }
 
     override func orderOut(_ sender: Any?) {
@@ -682,6 +686,7 @@ final class MainPanel: NSPanel {
         webViewReady = true
         // Set vim before content so the first mount() picks up the right mode.
         pushVimSetting()
+        pushEditorKeymap()
         pushRefileTargets()
         let text = (try? String(contentsOf: loadedFileURL, encoding: .utf8)) ?? ""
         pushContent(text)
@@ -698,6 +703,18 @@ final class MainPanel: NSPanel {
         guard webViewReady else { return }
         webView.evaluateJavaScript(
             "window.qcEditor && window.qcEditor.setVimEnabled(\(appState.vimEnabled))",
+            completionHandler: nil
+        )
+    }
+
+    /// Push the editor-local bindings (`ShortcutRegistry.editorKeymap`) into
+    /// the web layer so CodeMirror builds its app keymap from the same source
+    /// of truth as the window intercepts. Before this lands the editor runs on
+    /// its own baked-in defaults (which the browser harness relies on).
+    private func pushEditorKeymap() {
+        guard webViewReady, let json = ShortcutRegistry.editorKeymapJSON else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.setKeymap && window.qcEditor.setKeymap(\(json))",
             completionHandler: nil
         )
     }
