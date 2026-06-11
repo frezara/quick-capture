@@ -1098,7 +1098,13 @@ function makeTheme() {
         fontFamily: sansFamily,
         fontSize: "15px",
         fontWeight: "700",
-        verticalAlign: "-6px",
+        // Centers the 26px chip on the H1 text (22px / 1.4 line-height →
+        // ~26px inline box). Measured in the harness: at -6px the chip's
+        // center sat 8px below the text's center, so raise by 8 → +2px,
+        // which puts the two centers within 0px of each other without
+        // growing the 30.8px line box (no shift when the cursor swaps the
+        // chip for the raw "#").
+        verticalAlign: "2px",
         userSelect: "none",
     },
     }, { dark: palette === darkPalette });
