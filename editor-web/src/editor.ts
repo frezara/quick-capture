@@ -1173,7 +1173,7 @@ let appKeymap: Record<string, string> = { ...defaultAppKeymap };
 
 const appCommands: Record<string, (v: EditorView) => boolean> = {
     readMode: (v) => { setReadMode(v, !readMode); return true; },
-    toggleTask: (v) => toggleTaskOnCurrentLine(v),
+    toggleTask: (v) => toggleTaskCommand(v),
     save: (v) => { saveNow(v); return true; },
     reorg: (v) => { moveCompletedToBottom(v); return true; },
     refile: (v) => startRefile(v),
@@ -1512,6 +1512,64 @@ function toggleTaskOnCurrentLine(view: EditorView): boolean {
         changes: { from: line.from + indent.length, insert: "- [ ] " },
     });
     return true;
+}
+
+/// Batch toggle for a multi-line (or multi-range) selection. Direction rule:
+/// any unchecked task in the selection → check ALL of them; only when every
+/// task is already checked does the gesture uncheck — a batch never produces
+/// a mixed result. Bare bullets gain a `[ ] ` box (same as single-line ⌘L);
+/// prose lines are skipped — batch mode must not convert paragraphs to tasks
+/// wholesale. One dispatch, so ⌘Z reverts the whole batch and the selection
+/// survives via CodeMirror's change mapping.
+function toggleTasksInSelection(view: EditorView): boolean {
+    const doc = view.state.doc;
+    const lines = new Map<number, { from: number; text: string }>();
+    for (const range of view.state.selection.ranges) {
+        const last = doc.lineAt(range.to).number;
+        for (let n = doc.lineAt(range.from).number; n <= last; n++) {
+            if (!lines.has(n)) {
+                const line = doc.line(n);
+                lines.set(n, { from: line.from, text: line.text });
+            }
+        }
+    }
+
+    const markers: { pos: number; checked: boolean }[] = [];
+    const bullets: number[] = [];
+    for (const line of lines.values()) {
+        const taskMatch = line.text.match(/^(\s*[-*+]\s+)(\[[\sxX]\])/);
+        if (taskMatch) {
+            markers.push({
+                pos: line.from + taskMatch[1].length,
+                checked: /[xX]/.test(taskMatch[2]),
+            });
+            continue;
+        }
+        const bulletMatch = line.text.match(/^(\s*[-*+]\s+)/);
+        if (bulletMatch) bullets.push(line.from + bulletMatch[1].length);
+    }
+    if (markers.length === 0 && bullets.length === 0) return true;
+
+    const checkAll = markers.some((m) => !m.checked);
+    const changes = [
+        ...markers
+            .filter((m) => m.checked !== checkAll)
+            .map((m) => ({ from: m.pos, to: m.pos + 3, insert: checkAll ? "[x]" : "[ ]" })),
+        ...bullets.map((pos) => ({ from: pos, insert: "[ ] " })),
+    ];
+    if (changes.length) view.dispatch({ changes });
+    return true;
+}
+
+/// ⌘L: single-line toggle when the selection is a caret (or sits within one
+/// line); batch toggle when it spans lines or has multiple ranges (mouse
+/// drag, vim visual, multi-cursor).
+function toggleTaskCommand(view: EditorView): boolean {
+    const doc = view.state.doc;
+    const sel = view.state.selection;
+    const isBatch = sel.ranges.length > 1
+        || sel.ranges.some((r) => doc.lineAt(r.from).number !== doc.lineAt(r.to).number);
+    return isBatch ? toggleTasksInSelection(view) : toggleTaskOnCurrentLine(view);
 }
 
 // Filename shown in the status bar. Swift sets the real name via
