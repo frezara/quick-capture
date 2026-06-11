@@ -1505,7 +1505,11 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
         menu.style.left = `${Math.round(coords.left)}px`;
         menu.style.top = `${Math.round(coords.bottom + 4)}px`;
     }
-    document.body.appendChild(menu);
+    // Append inside the editor DOM, not document.body: EditorView.theme() scopes
+    // .cm-refile-dropdown styles under the editor wrapper class, so a menu on
+    // document.body would render completely unstyled (and invisible). The toasts
+    // live in v.dom for the same reason.
+    v.dom.appendChild(menu);
 
     const close = () => {
         if (!refileOpen) return;
@@ -1664,11 +1668,12 @@ function mount(content: string) {
                     run: (v) => { moveCompletedToBottom(v); return true; },
                 },
                 {
-                    // Cmd+R — refile the subtree under the cursor into a chosen
-                    // target inbox. Falls through MainPanel.performKeyEquivalent
-                    // to CodeMirror cleanly (⌘R isn't intercepted at the window).
+                    // Cmd+R — kept for the browser harness only. In the app,
+                    // WebKit eats ⌘R as "reload" before this runs, so Swift
+                    // drives refile via qcEditor.startRefile from the window's
+                    // performKeyEquivalent instead.
                     key: "Mod-r",
-                    run: (v) => startRefile(v),
+                    run: (v) => { startRefile(v); return true; },
                 },
                 // Obsidian-style Tab / Shift-Tab: indent or outdent a list/task
                 // line when the cursor is on one; otherwise fall back to a real
