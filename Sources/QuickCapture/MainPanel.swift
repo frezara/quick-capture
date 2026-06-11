@@ -588,6 +588,15 @@ final class MainPanel: NSPanel {
         case "w":
             dismiss()
             return true
+        case "r" where editorOpen:
+            // ⌘R must be caught here: WebKit reserves it for "reload" and would
+            // swallow it before CodeMirror's Mod-r keymap ever runs (same reason
+            // ⌘F is intercepted above). Drive the editor's refile over the bridge.
+            webView.evaluateJavaScript(
+                "window.qcEditor && window.qcEditor.startRefile()",
+                completionHandler: nil
+            )
+            return true
         default:
             return super.performKeyEquivalent(with: event)
         }

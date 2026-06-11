@@ -977,6 +977,7 @@ declare global {
             attachmentLoaded: (path: string, dataURL: string | null) => void;
             setRefileTargets: (names: string[]) => void;
             refileDidComplete: (targetName: string) => void;
+            startRefile: () => void;
         };
     }
 }
@@ -1767,6 +1768,10 @@ window.qcEditor = {
     refileDidComplete: (targetName: string) => {
         if (view) showRefileToast(view, `Refiled to ${targetName}`);
     },
+    // Entry point for the ⌘R gesture. Swift drives this from the window's
+    // performKeyEquivalent because WebKit eats ⌘R as "reload" before the editor
+    // keymap can run. (The Mod-r keymap entry is kept for the browser harness.)
+    startRefile: () => { if (view) startRefile(view); },
 };
 
 // Follow the system appearance: swap the palette and reconfigure the theme
