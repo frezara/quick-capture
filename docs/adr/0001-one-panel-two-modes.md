@@ -12,7 +12,8 @@ Status: Accepted — briefly amended by ADR-0003, restored by ADR-0004
 > **Update (2026-06, epic #53):** the switch gesture moved from `⌘F` to `⌃⌘E`;
 > `⌘F` is now native find inside the editor. The window-intercept *mechanism*
 > is unchanged — bindings live in `ShortcutRegistry.swift`. Where this document
-> says `⌘F`, read the registry's `toggleEditor` chord.
+> says `⌘F`, read the registry's `toggleEditor` chord. Revised by #69: the
+> chord is now `⌥⌘E` (`⌃⌘` proved hard to press).
 
 ## Context
 

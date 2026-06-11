@@ -80,3 +80,7 @@ still window-intercepted in editor mode, now as a deliberate no-op — WebKit
 would otherwise reload the warm editor. The mutual-exclusion mechanics this
 ADR restores are unchanged; bindings live in `ShortcutRegistry.swift`. Where
 this document says `⌘F`, read the registry's `toggleEditor` chord.
+
+Revised by #69: the namespace moved from `⌃⌘` to `⌥⌘` (`⌥⌘E` toggle, `⌥⌘R`
+refile) — `⌃⌘` proved hard to press in practice. The `⌘R` no-op intercept is
+unchanged.

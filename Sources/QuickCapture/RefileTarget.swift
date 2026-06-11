@@ -1,7 +1,7 @@
 import Foundation
 
 /// A user-configured refile destination: a folder whose `inbox.md` receives
-/// items sent with ⌃⌘R (issue #32). Persisted as an ordered list in
+/// items sent with ⌥⌘R (issue #32). Persisted as an ordered list in
 /// `UserDefaults`; the order is the dropdown order. `label` disambiguates
 /// folders whose basenames collide (e.g. two "inbox" repos).
 struct RefileTarget: Codable, Equatable, Identifiable {

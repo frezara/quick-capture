@@ -1,6 +1,6 @@
 import Foundation
 
-/// The disk pipeline behind the ⌃⌘R refile gesture (issue #32). Operates over
+/// The disk pipeline behind the ⌥⌘R refile gesture (issue #32). Operates over
 /// injected source/target URLs so it can be driven against temp dirs in tests,
 /// leaving only alert/toast/bridge wiring in `MainPanel`.
 ///

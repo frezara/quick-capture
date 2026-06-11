@@ -5,14 +5,14 @@ import WebKit
 
 /// The single floating panel that hosts both app surfaces — the capture box and
 /// the CodeMirror markdown editor — as **mutually-exclusive modes** (ADR-0004).
-/// Both stay mounted (the editor's web view is kept warm); ⌃⌘E crossfades
+/// Both stay mounted (the editor's web view is kept warm); ⌥⌘E crossfades
 /// between them while animating the window frame, so exactly one is visible.
 ///
 /// Behaviors keyed to whether the editor is open (`editorOpen`):
 /// - **Click-away dismiss** only fires in capture mode (`resignKey`); the
 ///   editor survives losing focus so you can copy from other apps.
 ///   `canDismissOnBlur` guards against false fires during transitions.
-/// - **⌃⌘E** is intercepted in `performKeyEquivalent`, toggling the mode.
+/// - **⌥⌘E** is intercepted in `performKeyEquivalent`, toggling the mode.
 ///   ⌘F passes through to CodeMirror's search panel (native find), and ⌘R is
 ///   swallowed in editor mode so WebKit can't reload the warm editor. All
 ///   window-level bindings live in `ShortcutRegistry`.
@@ -133,7 +133,7 @@ final class MainPanel: NSPanel {
             forName: .vimModeDidChange, object: nil, queue: .main
         ) { [weak self] _ in self?.pushVimSetting() }
 
-        // Refile targets edited in Settings take effect in the editor's ⌃⌘R
+        // Refile targets edited in Settings take effect in the editor's ⌥⌘R
         // dropdown without a restart (R35) — the editor can't read settings, so
         // we re-push the effective list whenever it changes.
         refileTargetsObserver = NotificationCenter.default.addObserver(
@@ -264,7 +264,7 @@ final class MainPanel: NSPanel {
     func openEditor() {
         guard !editorOpen else { return }
         editorOpen = true
-        // The picker is a capture-surface affordance; ⌃⌘E into the editor closes
+        // The picker is a capture-surface affordance; ⌥⌘E into the editor closes
         // it. editorOpen is set first so the capture re-measure this triggers is
         // already guarded; openEditor's own animateFrame places the geometry.
         pickerOpen = false
@@ -498,7 +498,7 @@ final class MainPanel: NSPanel {
 
     // MARK: - Screenshot attach
 
-    /// Detection runs only on a fresh summon (R20) — never on the ⌃⌘E return —
+    /// Detection runs only on a fresh summon (R20) — never on the ⌥⌘E return —
     /// so a detached chip stays detached for the rest of the capture session.
     private func detectRecentScreenshot() {
         attachLookupGeneration += 1
@@ -640,7 +640,7 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// Run an action inside the editor over the bridge. Refile (⌃⌘R) takes
+    /// Run an action inside the editor over the bridge. Refile (⌥⌘R) takes
     /// this path on every press — window-intercepted chords never reach the
     /// web view's keymap, so Swift drives them explicitly.
     private func invokeEditorAction(_ action: ShortcutAction) {
@@ -725,7 +725,7 @@ final class MainPanel: NSPanel {
     }
 
     /// Push the effective refile targets (display names) into the editor so the
-    /// ⌃⌘R dropdown can render them. The editor refers to a target by its index
+    /// ⌥⌘R dropdown can render them. The editor refers to a target by its index
     /// in this list when it posts a `refile` message. Pushed on editor entry and
     /// whenever Settings change the list.
     private func pushRefileTargets() {

@@ -6,15 +6,24 @@ final class ShortcutRegistryTests: XCTestCase {
 
     // MARK: - Window interception
 
-    func testControlCommandETogglesEditorInBothModes() {
+    func testOptionCommandETogglesEditorInBothModes() {
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .control], editorOpen: false),
+            ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .option], editorOpen: false),
             .toggleEditor
         )
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .control], editorOpen: true),
+            ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .option], editorOpen: true),
             .toggleEditor
         )
+    }
+
+    /// The first namespace pick (#55) was ⌃⌘ — retired by #69 because the
+    /// chord is hard to press. It must stay unbound, not silently aliased.
+    func testRetiredControlCommandChordsPassThrough() {
+        for editorOpen in [false, true] {
+            XCTAssertNil(ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .control], editorOpen: editorOpen))
+            XCTAssertNil(ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .control], editorOpen: editorOpen))
+        }
     }
 
     /// ⌘F is native find (CodeMirror's search panel) — the window must let it
@@ -35,13 +44,13 @@ final class ShortcutRegistryTests: XCTestCase {
         )
     }
 
-    func testControlCommandRRefilesOnlyInEditorMode() {
+    func testOptionCommandRRefilesOnlyInEditorMode() {
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .control], editorOpen: true),
+            ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .option], editorOpen: true),
             .refile
         )
         XCTAssertNil(
-            ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .control], editorOpen: false)
+            ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .option], editorOpen: false)
         )
     }
 
@@ -112,6 +121,7 @@ final class ShortcutRegistryTests: XCTestCase {
         XCTAssertEqual(KeyChord(key: "'", modifiers: .command).codeMirrorSpec, "Mod-'")
         XCTAssertEqual(KeyChord(key: "s", modifiers: [.command, .shift]).codeMirrorSpec, "Shift-Mod-s")
         XCTAssertEqual(KeyChord(key: "e", modifiers: [.command, .control]).codeMirrorSpec, "Ctrl-Mod-e")
+        XCTAssertEqual(KeyChord(key: "r", modifiers: [.command, .option]).codeMirrorSpec, "Alt-Mod-r")
     }
 
     // MARK: - Registry hygiene
