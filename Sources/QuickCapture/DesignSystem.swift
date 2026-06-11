@@ -1,8 +1,9 @@
 import SwiftUI
 
-// "Misted Steel" design system — see design/HANDOFF.md. Cool monochrome with a
-// single steel-blue accent; warm colour is allowed ONLY for the priority orbs.
-// Everything visual (colour, spacing, radii, fonts, tracking) is read from the
+// "Pure System + Color" (native v2) design system — see design/native-v2/HANDOFF.md.
+// First-party-Apple feel: system typography, frosted materials, 0.5px hairlines,
+// system blue as THE accent. Functional color only: tag hues (TagColor.swift),
+// priority orbs, and the settings row icons. Everything visual is read from the
 // tokens below — no hard-coded values in the views.
 
 extension Color {
@@ -19,9 +20,10 @@ extension Color {
 
 /// Theme-independent metrics (shared across light/dark).
 enum Metrics {
-    static let radiusWindow: CGFloat = 14
-    static let radiusField:  CGFloat = 10
-    static let radiusChip:   CGFloat = 7
+    static let radiusPanel:  CGFloat = 16   // frosted floating panels (capture, picker)
+    static let radiusWindow: CGFloat = 12   // opaque windows (editor, settings)
+    static let radiusField:  CGFloat = 8
+    static let radiusChip:   CGFloat = 6
     static let s1: CGFloat = 6    // tight
     static let s2: CGFloat = 10
     static let s3: CGFloat = 16   // panel padding
@@ -33,52 +35,88 @@ struct Theme {
     let bg, bgHaze, surface, surfaceField, surfaceRail: Color
     let border, borderStrong, highlight: Color
     let ink, inkSecondary, inkTertiary: Color
-    let accent, accentInk, accentSoft, onAccent: Color
-    let priHigh, priMed, priLow: Color    // priority orbs — the ONLY warm colour
+    let accent, accentInk, accentSoft, accentRing, onAccent: Color
+    let panel, control, chip, chipHover, rowHover, group: Color
+    let priHigh, priMed, priLow: Color    // priority orbs
 }
 
 extension Theme {
     static let light = Theme(
-        bg:           Color(0xE4EAF0),  // desktop / behind-window haze
-        bgHaze:       Color(0xD4DDE7),
-        surface:      Color(0xF7F9FB),  // panels & windows
-        surfaceField: Color(0xE8EEF3),  // recessed input wells
-        surfaceRail:  Color(0xEEF2F6),  // status bar / floating cluster card
-        border:       Color(0xC2CCD7),
-        borderStrong: Color(0xA7B4C2),
-        highlight:    Color(0xFFFFFF),  // brushed top-edge light
-        ink:          Color(0x1B222B),  // primary entered text
-        inkSecondary: Color(0x54616E),  // labels, glyphs
-        inkTertiary:  Color(0x8B97A4),  // placeholder
-        accent:       Color(0x2F6FA3),  // THE single accent (steel blue)
-        accentInk:    Color(0x245A86),  // accent text on soft fill
-        accentSoft:   Color(0xD4E3F1),  // accent low-opacity fill
-        onAccent:     Color(0xFFFFFF),  // text/icon on a solid accent fill
-        priHigh:      Color(0xDB5560),  // high  priority
-        priMed:       Color(0xD99A3C),  // med   priority
-        priLow:       Color(0x4E9E84)   // low   priority
+        bg:           Color(0xECEDF0),               // behind-window haze
+        bgHaze:       Color(0xDDE0E5),
+        surface:      Color(0xF6F6F8),               // opaque windows (editor, settings)
+        surfaceField: Color(0x787880, alpha: 0.10),  // recessed input wells
+        surfaceRail:  Color(0x000000, alpha: 0.025), // status-bar wash
+        border:       Color(0x000000, alpha: 0.14),  // hairline separators (0.5px)
+        borderStrong: Color(0x000000, alpha: 0.18),  // 0.5px outer panel ring
+        highlight:    Color(0xFFFFFF, alpha: 0.55),  // inset top-edge light
+        ink:          Color(0x000000, alpha: 0.88),
+        inkSecondary: Color(0x3C3C43, alpha: 0.62),
+        inkTertiary:  Color(0x3C3C43, alpha: 0.36),
+        accent:       Color(0x007AFF),               // THE accent (system blue)
+        accentInk:    Color(0x0066D6),               // accent text on soft fill
+        accentSoft:   Color(0x007AFF, alpha: 0.12),  // soft accent fill
+        accentRing:   Color(0x007AFF, alpha: 0.35),  // 3px focus halo
+        onAccent:     Color(0xFFFFFF),
+        panel:        Color(0xFCFCFE, alpha: 0.66),  // frosted wash over blur material
+        control:      Color(0xFFFFFF, alpha: 0.95),  // push buttons / pop-ups
+        chip:         Color(0x787880, alpha: 0.12),
+        chipHover:    Color(0x787880, alpha: 0.20),
+        rowHover:     Color(0x787880, alpha: 0.07),
+        group:        Color(0xFFFFFF, alpha: 0.62),  // settings group card
+        priHigh:      Color(0xFF3B30),
+        priMed:       Color(0xFF9500),
+        priLow:       Color(0x34C759)
     )
 
     static let dark = Theme(
-        bg:           Color(0x161B21),
-        bgHaze:       Color(0x0D1115),
-        surface:      Color(0x242C35),
-        surfaceField: Color(0x1A212A),
-        surfaceRail:  Color(0x1E252E),
-        border:       Color(0x38424E),
-        borderStrong: Color(0x4A5663),
-        highlight:    Color(0x404B57),
-        ink:          Color(0xEDF1F5),
-        inkSecondary: Color(0xA2AEBB),
-        inkTertiary:  Color(0x6B7682),
-        accent:       Color(0x5AA2E0),
-        accentInk:    Color(0x8FC2EE),
-        accentSoft:   Color(0x23364A),
-        onAccent:     Color(0x161B21),
-        priHigh:      Color(0xF0727C),
-        priMed:       Color(0xE7B05A),
-        priLow:       Color(0x6FBBA0)
+        bg:           Color(0x1E1E22),
+        bgHaze:       Color(0x141417),
+        surface:      Color(0x212125),
+        surfaceField: Color(0x787880, alpha: 0.20),
+        surfaceRail:  Color(0xFFFFFF, alpha: 0.03),
+        border:       Color(0xFFFFFF, alpha: 0.13),
+        borderStrong: Color(0xFFFFFF, alpha: 0.14),
+        highlight:    Color(0xFFFFFF, alpha: 0.10),
+        ink:          Color(0xFFFFFF, alpha: 0.92),
+        inkSecondary: Color(0xEBEBF5, alpha: 0.60),
+        inkTertiary:  Color(0xEBEBF5, alpha: 0.32),
+        accent:       Color(0x0A84FF),
+        accentInk:    Color(0x409CFF),
+        accentSoft:   Color(0x0A84FF, alpha: 0.16),
+        accentRing:   Color(0x0A84FF, alpha: 0.40),
+        onAccent:     Color(0xFFFFFF),
+        panel:        Color(0x26262A, alpha: 0.58),
+        control:      Color(0xFFFFFF, alpha: 0.14),
+        chip:         Color(0x787880, alpha: 0.24),
+        chipHover:    Color(0x787880, alpha: 0.34),
+        rowHover:     Color(0xFFFFFF, alpha: 0.05),
+        group:        Color(0xFFFFFF, alpha: 0.05),
+        priHigh:      Color(0xFF453A),
+        priMed:       Color(0xFF9F0A),
+        priLow:       Color(0x30D158)
     )
+}
+
+// MARK: - Materials
+
+/// Behind-window blur for the frosted floating panels (capture box, picker).
+/// `.active` always — a non-activating panel never becomes key, and the frost
+/// shouldn't die when focus sits elsewhere.
+struct VisualEffectBlur: NSViewRepresentable {
+    var material: NSVisualEffectView.Material = .popover
+
+    func makeNSView(context: Context) -> NSVisualEffectView {
+        let v = NSVisualEffectView()
+        v.material = material
+        v.blendingMode = .behindWindow
+        v.state = .active
+        return v
+    }
+
+    func updateNSView(_ v: NSVisualEffectView, context: Context) {
+        v.material = material
+    }
 }
 
 // MARK: - Wiring to system appearance
@@ -104,45 +142,35 @@ struct ThemedRoot<Content: View>: View {
 
 // MARK: - Typography
 
+/// UI chrome is the system font (SF Pro); monospace (SF Mono) is reserved for
+/// user content — editor text, file paths, keycaps. IBM Plex is retired.
 enum Typeface {
     static func mono(_ s: CGFloat, _ w: Font.Weight = .regular) -> Font {
-        switch w {
-        case .bold, .heavy, .black:
-            return .custom("IBMPlexMono-Bold", size: s)
-        case .semibold, .medium:
-            return .custom("IBMPlexMono-SemiBold", size: s)
-        default:
-            return .custom("IBMPlexMono-Regular", size: s)
-        }
+        .system(size: s, weight: w, design: .monospaced)
     }
     static func ui(_ s: CGFloat, _ w: Font.Weight = .regular) -> Font {
-        switch w {
-        case .bold, .heavy, .black, .semibold, .medium:
-            return .custom("IBMPlexSans-SemiBold", size: s)
-        default:
-            return .custom("IBMPlexSans-Regular", size: s)
-        }
+        .system(size: s, weight: w)
     }
 }
 
-/// Exact per-element scale taken from the mockups.
+/// Per-element scale from the native-v2 mockup.
 enum TypeScale {
-    static let h1        = Typeface.mono(28, .bold)       // heading title
-    static let h1Glyph   = Typeface.mono(26, .bold)       // accent "#" glyph
-    static let h2        = Typeface.mono(17, .semibold)   // section heading
-    static let body      = Typeface.mono(14)              // list items (line spacing ≈ 1.5)
-    static let code      = Typeface.mono(13)              // inline code
-    static let captureLg = Typeface.mono(17)              // standalone capture input
-    static let captureMd = Typeface.mono(15)              // capture input inside editor
-    static let tag       = Typeface.mono(15)              // tag field (14 inside editor)
-    static let chip      = Typeface.mono(13)              // suggestion chip
-    static let status    = Typeface.mono(11, .semibold)   // status bar + mode pill
-    static let caption   = Typeface.ui(11, .semibold)     // UPPERCASE section captions
+    static let h1        = Typeface.ui(22, .semibold)    // editor title
+    static let h1Glyph   = Typeface.ui(15, .bold)        // "#" inside the app-mark
+    static let h2        = Typeface.ui(11, .semibold)    // UPPERCASE section captions
+    static let body      = Typeface.mono(13)             // editor list items
+    static let code      = Typeface.mono(12)             // inline code, file paths
+    static let captureLg = Typeface.ui(16)               // standalone capture input
+    static let captureMd = Typeface.ui(14)               // capture input inside editor
+    static let tag       = Typeface.ui(13)               // tag field
+    static let chip      = Typeface.ui(12)               // suggestion chip
+    static let status    = Typeface.ui(11, .semibold)    // status bar + mode pill
+    static let caption   = Typeface.ui(11, .semibold)    // UPPERCASE UI captions
 }
 
 /// .tracking(...) values in points.
 enum Tracking {
-    static let h1: CGFloat      = -0.4   // tighten the title
-    static let status: CGFloat  =  1.1   // mode pill / status bar
-    static let caption: CGFloat =  1.5   // uppercased UI captions
+    static let h1: CGFloat      = -0.3
+    static let status: CGFloat  =  0.5
+    static let caption: CGFloat =  0.8
 }

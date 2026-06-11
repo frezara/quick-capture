@@ -913,15 +913,16 @@ private final class EditorContainerView: NSView {
     // Dynamic so the panel surface/border track light/dark. Layer colours are
     // CGColors (no auto-update), so applyChrome() re-resolves them against the
     // effective appearance, and we re-apply on appearance change.
-    static let steelSurface = NSColor(name: nil) { a in
+    // Mirrors Theme.surface / Theme.borderStrong (design/native-v2/HANDOFF.md).
+    static let windowSurface = NSColor(name: nil) { a in
         a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0x24/255, green: 0x2C/255, blue: 0x35/255, alpha: 1)
-            : NSColor(srgbRed: 0xF7/255, green: 0xF9/255, blue: 0xFB/255, alpha: 1)
+            ? NSColor(srgbRed: 0x21/255, green: 0x21/255, blue: 0x25/255, alpha: 1)
+            : NSColor(srgbRed: 0xF6/255, green: 0xF6/255, blue: 0xF8/255, alpha: 1)
     }
-    static let steelBorder = NSColor(name: nil) { a in
+    static let windowBorder = NSColor(name: nil) { a in
         a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0x38/255, green: 0x42/255, blue: 0x4E/255, alpha: 1)
-            : NSColor(srgbRed: 0xC2/255, green: 0xCC/255, blue: 0xD7/255, alpha: 1)
+            ? NSColor(white: 1, alpha: 0.14)
+            : NSColor(white: 0, alpha: 0.18)
     }
 
     func configure(web: NSView) {
@@ -937,10 +938,10 @@ private final class EditorContainerView: NSView {
         wantsLayer = true
         layer?.cornerRadius = Metrics.radiusWindow
         layer?.masksToBounds = true
-        layer?.borderWidth = 1
+        layer?.borderWidth = 0.5
         effectiveAppearance.performAsCurrentDrawingAppearance {
-            layer?.borderColor = Self.steelBorder.cgColor
-            layer?.backgroundColor = Self.steelSurface.cgColor
+            layer?.borderColor = Self.windowBorder.cgColor
+            layer?.backgroundColor = Self.windowSurface.cgColor
         }
     }
 

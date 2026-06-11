@@ -10,29 +10,29 @@ extension Color {
     }
 }
 
-/// Deterministic per-tag color palette. Same tag name always picks the same
-/// hue across launches (uses DJB2; Swift's built-in String.hash is salted).
+/// Deterministic per-tag hue (Finder-tag style dots). Same tag name always
+/// picks the same hue across launches (uses DJB2; Swift's built-in String.hash
+/// is salted). The editor (editor-web/src/editor.ts) reimplements this hash and
+/// palette for section-heading dots — keep the two in sync.
 enum TagPalette {
     struct Entry {
-        let primaryHex: UInt32
-        let foregroundHex: UInt32
+        let lightHex: UInt32
+        let darkHex: UInt32
 
-        var bg: Color     { Color(hex: primaryHex, opacity: 0.10) }
-        var fg: Color     { Color(hex: foregroundHex) }
-        var border: Color { Color(hex: primaryHex, opacity: 0.20) }
+        func dot(dark: Bool) -> Color   { Color(hex: dark ? darkHex : lightHex) }
+        func label(dark: Bool) -> Color { Color(hex: dark ? darkHex : lightHex) }
+        func tint(dark: Bool) -> Color  { Color(hex: dark ? darkHex : lightHex, opacity: dark ? 0.16 : 0.11) }
     }
 
     private static let entries: [Entry] = [
-        .init(primaryHex: 0x5E6AD2, foregroundHex: 0x4A52B0), // indigo
-        .init(primaryHex: 0x10B981, foregroundHex: 0x047857), // emerald
-        .init(primaryHex: 0xEF4444, foregroundHex: 0xB91C1C), // red
-        .init(primaryHex: 0x8B5CF6, foregroundHex: 0x6D28D9), // violet
-        .init(primaryHex: 0xF59E0B, foregroundHex: 0xB45309), // amber
-        .init(primaryHex: 0xEC4899, foregroundHex: 0xBE185D), // pink
-        .init(primaryHex: 0x06B6D4, foregroundHex: 0x0E7490), // cyan
-        .init(primaryHex: 0x14B8A6, foregroundHex: 0x0F766E), // teal
-        .init(primaryHex: 0xF43F5E, foregroundHex: 0xBE123C), // rose
-        .init(primaryHex: 0x3B82F6, foregroundHex: 0x1E40AF), // blue
+        .init(lightHex: 0xE8643F, darkHex: 0xF4795A), // coral
+        .init(lightHex: 0x2A9D8F, darkHex: 0x3DBDAD), // teal
+        .init(lightHex: 0xC2479B, darkHex: 0xDA62B4), // magenta
+        .init(lightHex: 0x4F9E4F, darkHex: 0x5FBF60), // green
+        .init(lightHex: 0x3B82F6, darkHex: 0x5C9DFF), // blue
+        .init(lightHex: 0xC77800, darkHex: 0xE0A33E), // amber
+        .init(lightHex: 0x5856D6, darkHex: 0x7D7AFF), // indigo
+        .init(lightHex: 0x64748B, darkHex: 0x8B98AB), // slate
     ]
 
     static func entry(for tag: String) -> Entry {
