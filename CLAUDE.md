@@ -133,7 +133,8 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   (editor.ts). ⌘R is intercepted as a deliberate no-op in editor mode — WebKit
   would otherwise reload the warm editor. Vim owns Escape inside the editor,
   so ⌥⌘E (not Escape) is the switch gesture; ⌘F opens CodeMirror's search
-  panel (top-anchored, themed).
+  panel (top-anchored, themed). ⌥⌘↓/⌥⌘↑ jump to the next/previous `##`
+  section (vim: `]]` / `[[`, count- and operator-aware).
 - **Mode-aware dismiss.** `resignKey` only self-dismisses (click-away) in
   capture mode — the editor must survive losing focus so you can copy from
   other apps. `canBecomeMain` is true only in editor mode.

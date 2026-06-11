@@ -20,6 +20,35 @@ for (const key of ["y", "Y", "p", "P", "d", "D", "x", "X", "c", "C", "s", "S"]) 
     Vim.noremap(key, `"+${key}`, "visual");
 }
 
+// Vim's `]]` / `[[` section motions, redefined for markdown `##` headings
+// (the library only ships `]<char>` symbol jumps). Registered as real
+// *motions* so counts (`3]]`) and operators (`d]]`) compose for free. Like
+// vim, running out of sections lands on the last/first line (#67).
+function markdownSectionPos(
+    cm: { lastLine: () => number; getLine: (n: number) => string },
+    head: { line: number; ch: number },
+    repeat: number,
+    dir: 1 | -1
+): { line: number; ch: number } {
+    const lastLine = cm.lastLine();
+    let line = head.line;
+    for (let i = 0; i < repeat; i++) {
+        let found = -1;
+        for (let n = line + dir; n >= 0 && n <= lastLine; n += dir) {
+            if (/^##\s/.test(cm.getLine(n))) { found = n; break; }
+        }
+        if (found === -1) return { line: dir > 0 ? lastLine : 0, ch: 0 };
+        line = found;
+    }
+    return { line, ch: 0 };
+}
+Vim.defineMotion("moveToNextMarkdownSection", (cm: any, head: any, motionArgs: any) =>
+    markdownSectionPos(cm, head, motionArgs?.repeat ?? 1, 1));
+Vim.defineMotion("moveToPrevMarkdownSection", (cm: any, head: any, motionArgs: any) =>
+    markdownSectionPos(cm, head, motionArgs?.repeat ?? 1, -1));
+Vim.mapCommand("]]", "motion", "moveToNextMarkdownSection", {}, {});
+Vim.mapCommand("[[", "motion", "moveToPrevMarkdownSection", {}, {});
+
 // Native-v2 ("Pure System + Color") palettes — mirror DesignSystem.swift
 // (Theme.light / .dark); see design/native-v2/HANDOFF.md. The active one
 // follows the system appearance (prefers-color-scheme). Functional colour
@@ -1174,6 +1203,8 @@ const defaultAppKeymap: Record<string, string> = {
     toggleTask: "Mod-l",
     save: "Mod-s",
     reorg: "Mod-'",
+    nextSection: "Alt-Mod-ArrowDown",
+    prevSection: "Alt-Mod-ArrowUp",
 };
 let appKeymap: Record<string, string> = { ...defaultAppKeymap };
 
@@ -1183,7 +1214,29 @@ const appCommands: Record<string, (v: EditorView) => boolean> = {
     save: (v) => { saveNow(v); return true; },
     reorg: (v) => { moveCompletedToBottom(v); return true; },
     refile: (v) => startRefile(v),
+    nextSection: (v) => jumpToSection(v, 1),
+    prevSection: (v) => jumpToSection(v, -1),
 };
+
+/// ⌥⌘↓ / ⌥⌘↑ — move the cursor to the next/previous `##` section heading
+/// (column 0, so a follow-up refile acts on the heading's subtree) and pin
+/// it near the viewport top: a jump-to-section wants the section's content
+/// on screen, not the heading centered. Boundary = silent no-op (#67).
+function jumpToSection(view: EditorView, dir: 1 | -1): boolean {
+    const doc = view.state.doc;
+    const current = doc.lineAt(view.state.selection.main.head).number;
+    let target = -1;
+    for (let n = current + dir; n >= 1 && n <= doc.lines; n += dir) {
+        if (/^##\s/.test(doc.line(n).text)) { target = n; break; }
+    }
+    if (target === -1) return true;
+    const pos = doc.line(target).from;
+    view.dispatch({
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 8 }),
+    });
+    return true;
+}
 
 function buildAppKeymap() {
     return keymap.of(

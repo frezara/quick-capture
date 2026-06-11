@@ -127,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         for action in ShortcutRegistry.menuActions {
             let item = NSMenuItem(title: action.menuTitle ?? "",
                                   action: #selector(performShortcutMenuItem(_:)),
-                                  keyEquivalent: action.chord.key)
+                                  keyEquivalent: action.chord.menuKeyEquivalent)
             item.keyEquivalentModifierMask = action.chord.modifiers
             item.target = self
             item.representedObject = action.rawValue
