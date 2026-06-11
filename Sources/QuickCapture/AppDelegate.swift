@@ -3,7 +3,7 @@ import CoreText
 import HotKey
 import SwiftUI
 
-final class AppDelegate: NSObject, NSApplicationDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let appState = AppState()
 
     private var statusItem: NSStatusItem!
@@ -12,6 +12,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     private lazy var settingsController = SettingsWindowController(appState: appState)
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        // Unit tests inject this app as TEST_HOST. Stay inert: the
+        // single-instance guard below would see the dev copy usually running
+        // on this Mac and terminate — killing the test runner with it — and
+        // the status item / hotkey are never exercised by tests.
+        if ProcessInfo.processInfo.environment["XCTestConfigurationFilePath"] != nil { return }
+
         // Single-instance guard. Macs can end up with a stale Quick Capture
         // alongside a freshly-launched one (login-item restore racing with a
         // user double-click, dev builds opened while the installed copy is
@@ -109,6 +115,25 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
                                     action: #selector(NSText.selectAll(_:)),
                                     keyEquivalent: "a"))
 
+        // Editor menu — generated from ShortcutRegistry so the app's shortcuts
+        // are discoverable while editor mode shows the menu bar. Key presses
+        // never actually route through these items (MainPanel's
+        // performKeyEquivalent or CodeMirror's keymap claims them first);
+        // they exist for discovery and mouse access.
+        let editorMenuItem = NSMenuItem()
+        mainMenu.addItem(editorMenuItem)
+        let editorMenu = NSMenu(title: "Editor")
+        editorMenuItem.submenu = editorMenu
+        for action in ShortcutRegistry.menuActions {
+            let item = NSMenuItem(title: action.menuTitle ?? "",
+                                  action: #selector(performShortcutMenuItem(_:)),
+                                  keyEquivalent: action.chord.key)
+            item.keyEquivalentModifierMask = action.chord.modifiers
+            item.target = self
+            item.representedObject = action.rawValue
+            editorMenu.addItem(item)
+        }
+
         // Window menu
         let windowMenuItem = NSMenuItem()
         mainMenu.addItem(windowMenuItem)
@@ -128,6 +153,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
 
         NSApp.mainMenu = mainMenu
         NSApp.windowsMenu = windowMenu
+    }
+
+    /// Editor-menu dispatch: route the item's registry action to the panel.
+    @objc private func performShortcutMenuItem(_ sender: NSMenuItem) {
+        guard let raw = sender.representedObject as? String,
+              let action = ShortcutAction(rawValue: raw) else { return }
+        mainPanel?.perform(shortcut: action)
+    }
+
+    /// Editor-menu items are live only when the panel is up in a mode the
+    /// action applies to — otherwise a ⌘-key press while, say, Settings is
+    /// frontmost would fire an action at a hidden panel.
+    func validateMenuItem(_ item: NSMenuItem) -> Bool {
+        guard item.action == #selector(performShortcutMenuItem(_:)) else { return true }
+        guard let raw = item.representedObject as? String,
+              let action = ShortcutAction(rawValue: raw),
+              let panel = mainPanel, panel.isVisible else { return false }
+        return action.scope.isActive(editorOpen: panel.editorOpen)
     }
 
     // MARK: - Status item

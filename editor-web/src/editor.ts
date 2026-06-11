@@ -1078,6 +1078,8 @@ declare global {
             setRefileTargets: (names: string[]) => void;
             refileDidComplete: (targetName: string) => void;
             startRefile: () => void;
+            setKeymap: (map: Record<string, string>) => void;
+            invoke: (actionId: string) => void;
         };
     }
 }
@@ -1102,6 +1104,38 @@ let readMode = false;
 const vimComp = new Compartment();
 let vimEnabled = true;
 let vimMode: "normal" | "insert" | "visual" | "replace" = "normal";
+
+// App-level shortcut bindings. Swift's ShortcutRegistry is the source of
+// truth and pushes `{actionId: key spec}` via qcEditor.setKeymap on boot
+// (same pattern as setRefileTargets); these defaults exist so the browser
+// harness — which has no bridge — gets working bindings. The command map is
+// also the bridge dispatch table: window-intercepted actions that must run
+// in the editor (⌘R refile — WebKit eats the raw key as "reload") arrive as
+// qcEditor.invoke(actionId).
+const appKeymapComp = new Compartment();
+const defaultAppKeymap: Record<string, string> = {
+    readMode: "Mod-e",
+    toggleTask: "Mod-l",
+    save: "Mod-s",
+    reorg: "Mod-'",
+};
+let appKeymap: Record<string, string> = { ...defaultAppKeymap };
+
+const appCommands: Record<string, (v: EditorView) => boolean> = {
+    readMode: (v) => { setReadMode(v, !readMode); return true; },
+    toggleTask: (v) => toggleTaskOnCurrentLine(v),
+    save: (v) => { saveNow(v); return true; },
+    reorg: (v) => { moveCompletedToBottom(v); return true; },
+    refile: (v) => startRefile(v),
+};
+
+function buildAppKeymap() {
+    return keymap.of(
+        Object.entries(appKeymap)
+            .filter(([id]) => appCommands[id])
+            .map(([id, key]) => ({ key, run: appCommands[id] }))
+    );
+}
 
 function setReadMode(v: EditorView, on: boolean) {
     readMode = on;
@@ -1754,6 +1788,10 @@ function mount(content: string) {
             themeComp.of(themeExtensions()),
             livePreview,
             readModeComp.of([]),
+            // Editor-local app shortcuts (read mode, toggle task, save,
+            // re-org) — built from the registry-pushed bindings, swappable
+            // live via the compartment when Swift re-pushes.
+            appKeymapComp.of(buildAppKeymap()),
             keymap.of([
                 {
                     // Esc dismisses the panel. This only fires when vim is OFF —
@@ -1763,29 +1801,10 @@ function mount(content: string) {
                     run: () => { sendToSwift({ type: "dismiss" }); return true; },
                 },
                 {
-                    key: "Mod-e",
-                    run: (v) => { setReadMode(v, !readMode); return true; },
-                },
-                {
-                    key: "Mod-l",
-                    run: toggleTaskOnCurrentLine,
-                },
-                {
-                    key: "Mod-s",
-                    // Return true so AppKit doesn't beep ("unhandled key").
-                    run: (v) => { saveNow(v); return true; },
-                },
-                {
-                    // Cmd+' — sweep completed tasks to the bottom of each
-                    // section (same as the sidebar button).
-                    key: "Mod-'",
-                    run: (v) => { moveCompletedToBottom(v); return true; },
-                },
-                {
                     // Cmd+R — kept for the browser harness only. In the app,
                     // WebKit eats ⌘R as "reload" before this runs, so Swift
-                    // drives refile via qcEditor.startRefile from the window's
-                    // performKeyEquivalent instead.
+                    // drives refile via qcEditor.invoke("refile") from the
+                    // window's performKeyEquivalent instead.
                     key: "Mod-r",
                     run: (v) => { startRefile(v); return true; },
                 },
@@ -1891,6 +1910,18 @@ window.qcEditor = {
     // performKeyEquivalent because WebKit eats ⌘R as "reload" before the editor
     // keymap can run. (The Mod-r keymap entry is kept for the browser harness.)
     startRefile: () => { if (view) startRefile(view); },
+    // Editor-local bindings pushed from Swift's ShortcutRegistry — the single
+    // source of truth for shortcuts. Before mount this just records the map;
+    // mount() builds the keymap from it.
+    setKeymap: (map: Record<string, string>) => {
+        appKeymap = { ...defaultAppKeymap, ...(map ?? {}) };
+        view?.dispatch({ effects: appKeymapComp.reconfigure(buildAppKeymap()) });
+    },
+    // Generic dispatch for registry actions driven over the bridge (window
+    // intercepts and Editor-menu items).
+    invoke: (actionId: string) => {
+        if (view && appCommands[actionId]) appCommands[actionId](view);
+    },
 };
 
 // Follow the system appearance: swap the palette and reconfigure the theme
