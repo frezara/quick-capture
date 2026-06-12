@@ -694,10 +694,21 @@ final class MainPanel: NSPanel {
             return
         }
         canDismissOnBlur = false
+
+        // Read + parse the capture file at the edge; the palette's pure
+        // view-model filters/sorts this as the query changes. A read failure
+        // (missing file) yields an empty palette rather than blocking summon.
+        let text = (try? String(contentsOf: appState.captureFileURL, encoding: .utf8)) ?? ""
+        let items = CaptureItemParser.parse(text)
+        let tagSummary = CaptureItemParser.tagSummary(text)
+
         palettePanel.open(
+            items: items,
+            tagSummary: tagSummary,
             onActivate: { _ in
-                // U3 stub: rows just dismiss the palette. U5/U6/U7 route
-                // captures/tags/commands to navigation and actions.
+                // U5 wires real capture/tag rows (each carrying its line / tag
+                // name). U6 routes capture → editor line and tag → ## section;
+                // U7 routes commands. For now activation just dismisses.
             },
             onClose: { [weak self] in
                 guard let self else { return }

@@ -10,11 +10,11 @@ final class PaletteViewTests: XCTestCase {
     private func sample() -> [PaletteSection] {
         [
             PaletteSection(title: "Recent captures", rows: [
-                PaletteRow(title: "a", kind: .capture(priority: 3)),
-                PaletteRow(title: "b", kind: .capture(priority: 1)),
+                PaletteRow(title: "a", kind: .capture(priority: 3, line: 1)),
+                PaletteRow(title: "b", kind: .capture(priority: 1, line: 2)),
             ]),
             PaletteSection(title: "Jump to tag", rows: [
-                PaletteRow(title: "work", kind: .tag, detail: "2"),
+                PaletteRow(title: "work", kind: .tag(name: "work"), detail: "2"),
             ]),
             PaletteSection(title: "Commands", rows: [
                 PaletteRow(title: "Settings", kind: .command),

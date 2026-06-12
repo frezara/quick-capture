@@ -48,17 +48,23 @@ final class PalettePanel: NSPanel {
     var isShowing: Bool { isVisible }
 
     /// Build the surface, center it on the active screen, and take key. The
-    /// `isDark` flag is resolved from the panel's effective appearance since a
-    /// child surface can't read SwiftUI's environment colour scheme.
-    /// `onActivate` fires when a row is chosen (Return/click); `onClose` runs
-    /// once after the panel hides, however it was dismissed.
-    func open(onActivate: @escaping (PaletteRow) -> Void,
+    /// `items`/`tagSummary` are the parsed capture file (read by the caller when
+    /// the palette opens) — `PaletteView` filters/sorts them via the pure
+    /// `PaletteViewModel` as the query changes. The `isDark` flag is resolved
+    /// from the panel's effective appearance since a child surface can't read
+    /// SwiftUI's environment colour scheme. `onActivate` fires when a row is
+    /// chosen (Return/click); `onClose` runs once after the panel hides, however
+    /// it was dismissed.
+    func open(items: [CaptureItem],
+              tagSummary: [CaptureTagSummary],
+              onActivate: @escaping (PaletteRow) -> Void,
               onClose: @escaping () -> Void) {
         self.onClose = onClose
 
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
         let view = PaletteView(
-            sections: PaletteView.stubSections,
+            items: items,
+            tagSummary: tagSummary,
             isDark: isDark,
             onActivate: { [weak self] row in
                 onActivate(row)

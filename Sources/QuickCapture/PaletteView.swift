@@ -18,9 +18,14 @@ import SwiftUI
 /// grow these with real capture/tag/command payloads).
 struct PaletteRow: Identifiable, Equatable {
     enum Kind: Equatable {
-        /// A capture item — carries a priority bucket so the row can draw its dot.
-        case capture(priority: Int)
-        case tag
+        /// A capture item — carries a priority bucket so the row can draw its
+        /// dot, and the item's 0-based file `line` so U6 can reveal it in the
+        /// editor. The line is the unambiguous navigation target for a capture.
+        case capture(priority: Int, line: Int)
+        /// A jump-to-tag row — carries the `## section` name it navigates to
+        /// (U6 reveals that section). Distinct from a capture row precisely so
+        /// activation is unambiguous: a tag navigates by name, never by line.
+        case tag(name: String)
         case command
     }
 
@@ -61,9 +66,11 @@ enum PaletteList {
 }
 
 struct PaletteView: View {
-    /// The sections to render. U3 injects stubs; U5 will compute these from the
-    /// parsed capture file + command list as the query changes.
-    let sections: [PaletteSection]
+    /// Parsed capture items + tag counts (read from the capture file when the
+    /// palette opens). `PaletteViewModel` turns these plus the live `query` into
+    /// the rendered sections, so filtering/sorting stays in the pure view-model.
+    let items: [CaptureItem]
+    let tagSummary: [CaptureTagSummary]
     let isDark: Bool
     /// Fired when a row is activated (Return or click). U3 just dismisses; U5/U6
     /// route to navigation/commands.
@@ -75,6 +82,11 @@ struct PaletteView: View {
     @FocusState private var fieldFocused: Bool
 
     private var theme: Theme { isDark ? .dark : .light }
+    /// Sections recomputed from the parsed data + live query via the pure
+    /// view-model. Empty query → Recent + Jump to tag; a query substring-filters.
+    private var sections: [PaletteSection] {
+        PaletteViewModel.sections(items: items, tagSummary: tagSummary, query: query)
+    }
     private var rows: [PaletteRow] { PaletteList.flatten(sections) }
 
     /// Highlight clamped to the live row count — the flattened list shrinks as
@@ -219,7 +231,7 @@ struct PaletteView: View {
     @ViewBuilder
     private func leadingGlyph(_ row: PaletteRow) -> some View {
         switch row.kind {
-        case .capture(let priority):
+        case .capture(let priority, _):
             Circle()
                 .fill(priorityColor(priority))
                 .frame(width: 7, height: 7)
@@ -252,40 +264,35 @@ struct PaletteView: View {
 // MARK: - Previews
 
 #Preview("Palette · light") {
-    PaletteView(sections: PaletteView.stubSections, isDark: false,
-                onActivate: { _ in }, onDismiss: {})
+    PaletteView(items: PaletteView.stubItems, tagSummary: PaletteView.stubTags,
+                isDark: false, onActivate: { _ in }, onDismiss: {})
         .padding(40)
         .background(Color(0xECEDF0))
 }
 
 #Preview("Palette · dark") {
-    PaletteView(sections: PaletteView.stubSections, isDark: true,
-                onActivate: { _ in }, onDismiss: {})
+    PaletteView(items: PaletteView.stubItems, tagSummary: PaletteView.stubTags,
+                isDark: true, onActivate: { _ in }, onDismiss: {})
         .padding(40)
         .background(Color(0x141417))
         .preferredColorScheme(.dark)
 }
 
 extension PaletteView {
-    /// Placeholder content for U3 — the shell renders these until U5 swaps in
-    /// `CaptureItemParser` output. Kept on the view (not the panel) so previews
-    /// and the panel share one source.
-    static var stubSections: [PaletteSection] {
+    /// Sample parsed items for previews, so the live view-model drives the
+    /// preview the same way it drives the running palette.
+    static var stubItems: [CaptureItem] {
         [
-            PaletteSection(title: "Recent captures", rows: [
-                PaletteRow(title: "Buy milk", kind: .capture(priority: 3), detail: "quick-capture"),
-                PaletteRow(title: "Draft the launch email", kind: .capture(priority: 1), detail: "work"),
-                PaletteRow(title: "Renew passport", kind: .capture(priority: 2), detail: "errands"),
-            ]),
-            PaletteSection(title: "Jump to tag", rows: [
-                PaletteRow(title: "work", kind: .tag, detail: "12"),
-                PaletteRow(title: "errands", kind: .tag, detail: "4"),
-            ]),
-            PaletteSection(title: "Commands", rows: [
-                PaletteRow(title: "Open Editor", kind: .command),
-                PaletteRow(title: "Archive completed", kind: .command),
-                PaletteRow(title: "Settings", kind: .command),
-            ]),
+            CaptureItem(displayText: "Buy milk", priorityBucket: 3, tag: "Quick capture", line: 2, createdAt: Date()),
+            CaptureItem(displayText: "Draft the launch email", priorityBucket: 1, tag: "work", line: 5, createdAt: Date().addingTimeInterval(-60)),
+            CaptureItem(displayText: "Renew passport", priorityBucket: 2, tag: "errands", line: 8, createdAt: Date().addingTimeInterval(-120)),
+        ]
+    }
+
+    static var stubTags: [CaptureTagSummary] {
+        [
+            CaptureTagSummary(tag: "work", count: 12),
+            CaptureTagSummary(tag: "errands", count: 4),
         ]
     }
 }
