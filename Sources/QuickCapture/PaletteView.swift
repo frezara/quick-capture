@@ -5,12 +5,13 @@ import SwiftUI
 /// result list. U3 ships the shell — search field, sections, highlight + key
 /// handling — over **stub** rows; U5 wires `CaptureItemParser` output in.
 ///
-/// Like `TagDropdownContent`, this lives inside its own borderless child panel
-/// and so can't read the SwiftUI environment colour scheme — `isDark` is passed
-/// in from `PalettePanel`, which resolves it from the panel's effective
-/// appearance. The opaque-surface treatment (no behind-window frost) mirrors the
-/// floating dropdown lesson (56b274f): a key palette over arbitrary content
-/// reads cleaner as a solid card.
+/// Like `TagDropdownContent`, this is hosted by an `NSHostingView` (the
+/// in-window palette takeover surface inside `MainPanel`, #85) and so can't read
+/// the SwiftUI environment colour scheme — `isDark` is passed in from
+/// `MainPanel`, which resolves it from the panel's effective appearance. The
+/// opaque-surface treatment (no behind-window frost) mirrors the floating
+/// dropdown lesson (56b274f): a palette over arbitrary content reads cleaner as
+/// a solid card.
 
 /// One selectable result row. A section's rows plus its title make a
 /// `PaletteSection`; the whole list flattens to `[PaletteRow]` so a single

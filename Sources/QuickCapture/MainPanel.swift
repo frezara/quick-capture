@@ -49,12 +49,19 @@ final class MainPanel: NSPanel {
     /// centered frame, capture inputs hidden — same window, like editor mode).
     /// Guards `captureContentDidChange` from fighting the fixed picker frame.
     private(set) var pickerOpen = false
+    /// True while the command-palette takeover surface is shown (epic #82 / #85).
+    /// Like `pickerOpen`/`editorOpen`, it's a mutually-exclusive in-window mode
+    /// (ADR-0004): the window morphs to a centred palette card and the palette
+    /// host swaps in over the capture box — no second window. Guards
+    /// `captureContentDidChange` from fighting the fixed palette frame.
+    private(set) var paletteOpen = false
 
     // MARK: Surfaces
 
     private let container = PanelContainerView()
     private var captureHost: NSHostingView<CaptureView>!
     private let editorContainer = EditorContainerView()
+    private var paletteHost: NSHostingView<PaletteView>!
     private let webView: WKWebView
     private let bridge = EditorBridge()
 
@@ -71,11 +78,10 @@ final class MainPanel: NSPanel {
     /// Guards `resignKey()` from self-dismissing during the show transition.
     private var canDismissOnBlur = false
 
-    /// The command palette (epic #82), lazily created and owned here: ⌥⌘O arrives
-    /// through `perform(shortcut:)`, and on close it's MainPanel that must take
-    /// key back and re-arm its own click-away dismiss. Reused across opens so the
-    /// SwiftUI graph (and its warm hosting view) survives.
-    private lazy var palettePanel = PalettePanel()
+    /// Capture size saved when the palette takeover opens, so `closePaletteSurface`
+    /// can shrink the window back to the same centred capture box (the picker
+    /// uses `captureContentSize` directly; the palette mirrors that).
+    private var paletteRestoreSize: CGSize = CGSize(width: 600, height: 100)
 
     /// The app that was frontmost when the panel was summoned, so focus can
     /// return to it on dismiss — the capture flow should be a zero-cost
@@ -191,7 +197,15 @@ final class MainPanel: NSPanel {
         webView.setValue(false, forKey: "drawsBackground")   // no white flash on load
         editorContainer.configure(web: webView)
 
-        container.configure(capture: captureHost, editor: editorContainer)
+        // The palette takeover surface lives as a sibling host (kept warm across
+        // opens, like the editor web view) — shown only while morphed in. It
+        // starts as an empty placeholder; `enterPaletteSurface` swaps the real
+        // PaletteView in with the freshly-parsed capture file.
+        paletteHost = NSHostingView(rootView: makePaletteView(items: [], tagSummary: []))
+        paletteHost.wantsLayer = true
+        paletteHost.frame = initialFrame
+
+        container.configure(capture: captureHost, editor: editorContainer, palette: paletteHost)
         contentView = container
     }
 
@@ -210,6 +224,51 @@ final class MainPanel: NSPanel {
             onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
             onPickerAttach: { [weak self] urls in self?.closePickerSurface(attaching: urls) },
             onPickerCancel: { [weak self] in self?.closePickerSurface(attaching: nil) }
+        )
+    }
+
+    /// Build the palette surface for `items`/`tagSummary`, wiring its callbacks
+    /// straight into MainPanel (it owns the disk/editor/pasteboard flows). The
+    /// palette is a borderless card hosted in our own window, so it can't read
+    /// SwiftUI's environment colour scheme — `isDark` is resolved from the
+    /// panel's effective appearance. The
+    /// hosting view preserves the SwiftUI graph across `rootView` swaps, so a
+    /// `refresh` after a mutating ⌘K action keeps the query/highlight @State.
+    private func makePaletteView(items: [CaptureItem],
+                                 tagSummary: [CaptureTagSummary]) -> PaletteView {
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        return PaletteView(
+            items: items,
+            tagSummary: tagSummary,
+            isDark: isDark,
+            onActivate: { [weak self] row in
+                // U6 routes navigation rows into the editor: a capture reveals
+                // its file line, a tag reveals its `## section`; a command runs.
+                // Close the palette surface first, then route — so `reveal`
+                // morphs on to the editor over a cleared palette.
+                guard let self else { return }
+                switch row.kind {
+                case .capture(_, let line):
+                    // Reveal morphs straight on to the editor — tear the palette
+                    // down synchronously so the editor's own frame owns the next
+                    // morph (no flash of the capture box in between).
+                    self.teardownPaletteSurface()
+                    self.reveal(line: line)
+                case .tag(let name):
+                    self.teardownPaletteSurface()
+                    self.reveal(section: name)
+                case .command(let command):
+                    self.dispatch(command: command)
+                }
+            },
+            onItemAction: { [weak self] action in
+                // Per-item ⌘K actions route to MainPanel, which owns the disk /
+                // editor / pasteboard flows and the post-mutation refresh. The
+                // palette stays open so the user can chain actions (refile is the
+                // exception — it reveals the editor and closes).
+                self?.perform(itemAction: action)
+            },
+            onDismiss: { [weak self] in self?.closePaletteSurface() }
         )
     }
 
@@ -374,8 +433,10 @@ final class MainPanel: NSPanel {
     private func collapseStateReset() {
         editorOpen = false
         pickerOpen = false
+        paletteOpen = false
         isCollapsing = false   // a fresh summon cancels any in-flight collapse
         container.editorActive = false
+        container.paletteActive = false
         editorContainer.isHidden = true
         editorContainer.alphaValue = 0
         captureHost.alphaValue = 1
@@ -397,10 +458,10 @@ final class MainPanel: NSPanel {
     /// recorded size so it dissolves in place on the next switch.
     private func captureContentDidChange(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
-        // The picker takeover fills the window with a fixed centered frame.
-        // Ignore its size entirely — recording it would clobber the saved
-        // capture height that closePickerSurface uses to restore the box.
-        guard !pickerOpen else { return }
+        // The picker and palette takeovers fill the window with a fixed centered
+        // frame. Ignore the size entirely — recording it would clobber the saved
+        // capture height that closePickerSurface/closePaletteSurface restores.
+        guard !pickerOpen, !paletteOpen else { return }
         captureContentSize = size
         container.captureHeight = size.height
         guard !editorOpen else { return }
@@ -691,18 +752,15 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// ⌥⌘O — open the command palette over the current surface. The palette is
-    /// its own key panel; while it's up MainPanel must NOT self-dismiss on losing
-    /// key (the capture box would collapse out from under it), so we drop the
-    /// `canDismissOnBlur` guard for the palette's lifetime — the same suppression
-    /// used around the picker/editor transitions — and re-arm it on close, taking
-    /// key back. A second ⌥⌘O while it's open closes it (toggle).
+    /// ⌥⌘O — morph the current window into the command palette (epic #82 / #85).
+    /// One window, mutually-exclusive surfaces (ADR-0004): the palette is an
+    /// in-window takeover (like the screenshot picker), never a second window. A
+    /// second ⌥⌘O while it's open morphs back (toggle).
     private func openPalette() {
-        if palettePanel.isShowing {
-            palettePanel.dismissPalette()
+        if paletteOpen {
+            closePaletteSurface()
             return
         }
-        canDismissOnBlur = false
 
         // Read + parse the capture file at the edge; the palette's pure
         // view-model filters/sorts this as the query changes. A read failure
@@ -710,47 +768,146 @@ final class MainPanel: NSPanel {
         let text = (try? String(contentsOf: appState.captureFileURL, encoding: .utf8)) ?? ""
         let items = CaptureItemParser.parse(text)
         let tagSummary = CaptureItemParser.tagSummary(text)
+        paletteHost.rootView = makePaletteView(items: items, tagSummary: tagSummary)
+        enterPaletteSurface()
+    }
 
-        palettePanel.open(
-            items: items,
-            tagSummary: tagSummary,
-            onActivate: { [weak self] row in
-                // U6 routes navigation rows into the editor: a capture reveals
-                // its file line, a tag reveals its `## section`. (U7 will route
-                // command rows.) The palette dismisses itself first, then this
-                // runs — so `reveal` enters editor mode over a cleared palette.
-                guard let self else { return }
-                switch row.kind {
-                case .capture(_, let line):
-                    self.reveal(line: line)
-                case .tag(let name):
-                    self.reveal(section: name)
-                case .command(let command):
-                    self.dispatch(command: command)
-                }
-            },
-            onItemAction: { [weak self] action in
-                self?.perform(itemAction: action)
-            },
-            onClose: { [weak self] in
-                guard let self else { return }
-                // Re-take key (the palette had it) and re-arm click-away dismiss,
-                // mirroring the guard window used by show()/closeEditor().
-                self.makeKeyAndOrderFront(nil)
-                self.editorOpen ? self.focusEditor() : self.focusCapture()
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-                    self?.canDismissOnBlur = true
-                }
+    /// Centred palette frame: a comfortable card sized to the palette's own
+    /// fixed width (560 + the host's chrome), tall enough for its capped list.
+    private func paletteFrame(in screen: NSRect) -> NSRect {
+        paletteHost.layoutSubtreeIfNeeded()
+        let fitting = paletteHost.fittingSize
+        let width = min(max(fitting.width, 560), screen.width - 80)
+        let height = min(fitting.height, screen.height * 0.82)
+        return NSRect(x: screen.midX - width / 2,
+                      y: screen.midY - height / 2,
+                      width: width, height: height)
+    }
+
+    /// Morph the window into the centred palette card. The palette is summonable
+    /// from either capture or editor mode; `paletteRestoreSize` records the frame
+    /// to shrink back to (the capture box) once the palette closes. The palette
+    /// host swaps in over the capture box (capture pinned behind it via
+    /// `paletteActive`), and the SwiftUI `onAppear` inside PaletteView takes the
+    /// search field's keyboard focus.
+    private func enterPaletteSurface() {
+        guard !paletteOpen, let screen = currentScreenVisibleFrame() else { return }
+        paletteOpen = true
+        canDismissOnBlur = false
+        // The palette can be summoned from either mode (scope .anyMode). From
+        // editor mode we flush to keep disk canonical (ADR-0004), drop the
+        // editor surface, and demote back to .accessory — the palette is a
+        // capture-style surface, and on close we always land on the capture box.
+        if editorOpen {
+            flushEditorSave()
+            editorOpen = false
+            demoteToAccessory()
+        }
+        isMovableByWindowBackground = true
+        container.editorActive = false
+        editorContainer.isHidden = true
+        editorContainer.alphaValue = 0
+        captureHost.alphaValue = 1
+        paletteRestoreSize = captureContentSize
+        container.paletteActive = true   // pin capture behind, reveal palette host
+
+        let target = paletteFrame(in: screen)
+        anchorCenterY = target.midY
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.24
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            // Take key so the palette's search field can hold focus, and re-arm
+            // click-away dismiss after the morph settles (mirrors the picker).
+            self.makeKeyAndOrderFront(nil)
+            self.focusPalette()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.canDismissOnBlur = true }
+        })
+    }
+
+    /// Focus the palette's search field. PaletteView's own `onAppear` requests
+    /// SwiftUI focus, but the host is reused across opens (un-hidden rather than
+    /// freshly inserted), so `onAppear` may not re-fire — we drive AppKit's first
+    /// responder onto its text view directly, retrying until the field realizes,
+    /// the same belt-and-braces approach as `focusCapture`.
+    private func focusPalette(retriesLeft: Int = 10) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.paletteOpen else { return }
+            self.paletteHost.layoutSubtreeIfNeeded()
+            if let tv = self.firstTextView(in: self.paletteHost), self.makeFirstResponder(tv) {
+                return
             }
-        )
+            guard retriesLeft > 0 else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.03) {
+                self.focusPalette(retriesLeft: retriesLeft - 1)
+            }
+        }
+    }
+
+    /// Morph back to the centred capture box. `paletteOpen` stays true until the
+    /// shrink finishes so the capture re-measure can't fire a competing
+    /// non-animated setFrame (same guard the picker uses). When a selection is
+    /// driving this (reveal/dispatch), the caller re-morphs to the editor right
+    /// after — so we hand the capture host back its layout but don't force focus
+    /// if an editor entry is already in flight.
+    private func closePaletteSurface() {
+        guard paletteOpen, let screen = currentScreenVisibleFrame() else { paletteOpen = false; return }
+        canDismissOnBlur = false
+        anchorCenterY = screen.midY
+        let target = NSRect(x: screen.midX - captureWidth / 2,
+                            y: screen.midY - paletteRestoreSize.height / 2,
+                            width: captureWidth, height: paletteRestoreSize.height)
+        NSAnimationContext.runAnimationGroup({ ctx in
+            ctx.duration = 0.24
+            ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+            animator().setFrame(target, display: true)
+        }, completionHandler: { [weak self] in
+            guard let self else { return }
+            self.container.paletteActive = false
+            self.paletteOpen = false
+            // If a selection morphed straight on to the editor, that path owns
+            // focus now; otherwise (Esc / toggle / item-action close) the capture
+            // box is showing and wants the input.
+            if !self.editorOpen { self.focusCapture() }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { self.canDismissOnBlur = true }
+        })
+    }
+
+    /// Drop the palette takeover state synchronously, without any frame
+    /// animation. Used when a selection routes straight to another surface
+    /// (the editor, Settings, a fresh capture) — that surface's own
+    /// presentation owns the next frame, so morphing back to the capture box
+    /// first would just flash it.
+    private func teardownPaletteSurface() {
+        guard paletteOpen else { return }
+        paletteOpen = false
+        canDismissOnBlur = false
+        container.paletteActive = false
     }
 
     /// Palette → command dispatch (epic #82, U7). Each command runs its existing
-    /// entry point. We defer to the next runloop tick so the action lands *after*
-    /// the palette's dismiss/`onClose` sequence has re-taken key for MainPanel —
-    /// otherwise Settings (a separate window) and New capture would have their
-    /// focus yanked back the instant they opened.
+    /// entry point. The palette is an in-window takeover (#85), so the first job
+    /// is to vacate it: editor-bound commands tear it down synchronously and let
+    /// the editor's own morph own the next frame; commands that leave the capture
+    /// box on screen (archive, Settings) morph the window home first. We defer the
+    /// actual entry point to the next runloop tick so Settings (a separate window)
+    /// and New capture don't have their focus yanked back the instant they open.
     func dispatch(command: PaletteCommand) {
+        switch command {
+        case .openEditor, .reorganize, .refile:
+            // Editor-bound: drop the takeover now so `showInEditor`/
+            // `enterEditorThenInvoke` morphs straight on to the editor frame.
+            teardownPaletteSurface()
+        case .newCapture:
+            // `showCapture()` → `show()` resets the window to the capture box, so
+            // just clear the takeover state (no competing morph-home animation).
+            teardownPaletteSurface()
+        case .archiveCompleted, .settings:
+            // These leave our window showing the capture box — morph it home.
+            closePaletteSurface()
+        }
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
             switch command {
@@ -807,10 +964,10 @@ final class MainPanel: NSPanel {
 
         case .refile:
             // Reuse the editor's refile gesture so the target picker and the
-            // crash-safe RefileService pipeline aren't duplicated. Dismiss the
-            // palette, reveal the item's line in the editor (placing the cursor
-            // on it so ⌥⌘R resolves the right subtree), then invoke refile.
-            palettePanel.dismissPalette()
+            // crash-safe RefileService pipeline aren't duplicated. Vacate the
+            // palette takeover, reveal the item's line in the editor (placing the
+            // cursor on it so ⌥⌘R resolves the right subtree), then invoke refile.
+            teardownPaletteSurface()
             reveal(line: action.line)
             DispatchQueue.main.async { [weak self] in
                 self?.enterEditorThenInvoke(.refile)
@@ -835,10 +992,22 @@ final class MainPanel: NSPanel {
         }
         // Re-read + re-parse so the still-open palette reflects the change (the
         // file is canonical). We re-read rather than reuse `updated` to stay
-        // consistent with how the palette first loaded its items.
+        // consistent with how the palette first loaded its items. Swapping the
+        // hosting view's rootView preserves the SwiftUI graph, so the query and
+        // highlight @State survive the rebuild.
         let fresh = (try? String(contentsOf: url, encoding: .utf8)) ?? updated
-        palettePanel.refresh(items: CaptureItemParser.parse(fresh),
-                             tagSummary: CaptureItemParser.tagSummary(fresh))
+        refreshPalette(items: CaptureItemParser.parse(fresh),
+                       tagSummary: CaptureItemParser.tagSummary(fresh))
+    }
+
+    /// Re-render the open palette takeover with freshly parsed items after a
+    /// mutating ⌘K action (done/undone, delete). A no-op if the palette isn't
+    /// the active surface. The card height tracks its content, so re-layout the
+    /// centred host afterward.
+    private func refreshPalette(items: [CaptureItem], tagSummary: [CaptureTagSummary]) {
+        guard paletteOpen else { return }
+        paletteHost.rootView = makePaletteView(items: items, tagSummary: tagSummary)
+        container.relayoutPalette()
     }
 
     /// Palette → editor navigation (epic #82, U6). Enter editor mode (warming
@@ -1170,6 +1339,7 @@ final class MainPanel: NSPanel {
 private final class PanelContainerView: NSView {
     private var captureHost: NSView?
     private var editorHost: NSView?
+    private var paletteHost: NSView?
 
     /// Measured capture-content height; sizes the centred capture box while the
     /// editor is the active surface.
@@ -1195,34 +1365,74 @@ private final class PanelContainerView: NSView {
         }
     }
 
-    private let captureWidth: CGFloat = 600
-
-    func configure(capture: NSView, editor: NSView) {
-        self.captureHost = capture
-        self.editorHost = editor
-        addSubview(editor)    // editor behind…
-        addSubview(capture)   // …capture in front (crossfade decides what shows)
-        capture.frame = bounds
-        editor.frame = bounds
+    /// True while the palette takeover surface is the active surface (and through
+    /// its open/close morph). Like `editorActive` for the capture host, this pins
+    /// the capture host to a fixed centred box so it doesn't stretch behind the
+    /// palette as the window morphs, and centres the palette host at its
+    /// intrinsic size (the palette is a fixed-width card, never full-bleed).
+    var paletteActive = false {
+        didSet {
+            guard paletteActive != oldValue else { return }
+            if paletteActive {
+                captureHost?.autoresizingMask = []   // pin behind the palette
+                paletteHost?.isHidden = false
+                layoutSurfaces()
+            } else {
+                paletteHost?.isHidden = true
+                captureHost?.autoresizingMask = [.width, .height]
+                captureHost?.frame = bounds
+            }
+        }
     }
 
-    // Only re-pin while the editor is active. In capture mode the host is sized
-    // purely by its autoresizing mask — touching its frame here (during AppKit's
-    // layout pass) corrupts the hosting view's intrinsic measurement.
+    private let captureWidth: CGFloat = 600
+
+    func configure(capture: NSView, editor: NSView, palette: NSView) {
+        self.captureHost = capture
+        self.editorHost = editor
+        self.paletteHost = palette
+        addSubview(editor)    // editor behind…
+        addSubview(capture)   // …capture next…
+        addSubview(palette)   // …palette in front (shown only during takeover)
+        capture.frame = bounds
+        editor.frame = bounds
+        palette.isHidden = true
+    }
+
+    /// Re-centre the palette host after its content (and so its fittingSize)
+    /// changes — a ⌘K mutation can grow/shrink the list. Cheap no-op when the
+    /// palette isn't the active surface.
+    func relayoutPalette() {
+        if paletteActive { layoutSurfaces() }
+    }
+
+    // Re-pin while either the editor or the palette owns the layout. In capture
+    // mode the host is sized purely by its autoresizing mask — touching its frame
+    // here (during AppKit's layout pass) corrupts the hosting view's intrinsic
+    // measurement.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if editorActive { layoutSurfaces() }
+        if editorActive || paletteActive { layoutSurfaces() }
     }
 
     private func layoutSurfaces() {
         guard let captureHost, let editorHost else { return }
         editorHost.frame = bounds
         // Centred fixed-width box; in capture mode the window equals this size so
-        // it reads as full-bleed, and in editor mode it stays put while hidden.
+        // it reads as full-bleed, and in editor/palette mode it stays put while
+        // hidden behind the active surface.
         let h = min(captureHeight, bounds.height)
         captureHost.frame = NSRect(x: (bounds.width - captureWidth) / 2,
                                    y: (bounds.height - h) / 2,
                                    width: captureWidth, height: h)
+        // Centre the palette at its intrinsic size (a fixed-width card). Its own
+        // SwiftUI body caps the list height, so fittingSize is stable.
+        if let paletteHost, paletteActive {
+            let size = paletteHost.fittingSize
+            paletteHost.frame = NSRect(x: (bounds.width - size.width) / 2,
+                                       y: (bounds.height - size.height) / 2,
+                                       width: size.width, height: size.height)
+        }
     }
 }
 
