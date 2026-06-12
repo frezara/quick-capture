@@ -1171,6 +1171,8 @@ declare global {
             startRefile: () => void;
             setKeymap: (map: Record<string, string>) => void;
             invoke: (actionId: string) => void;
+            revealLine: (line: number) => void;
+            revealSection: (name: string) => void;
         };
     }
 }
@@ -1241,6 +1243,27 @@ function jumpToSection(view: EditorView, dir: 1 | -1): boolean {
         effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 8 }),
     });
     return true;
+}
+
+/// Clamp a requested 1-based line number into `[1, lines]`. The palette parses
+/// the file independently and may hand us a line that no longer exists (the file
+/// shrank between parse and reveal), so we reveal the nearest valid line rather
+/// than erroring. Exported for unit testing.
+export function clampLine(requested: number, lines: number): number {
+    if (lines < 1) return 1;
+    if (!Number.isFinite(requested)) return 1;
+    return Math.min(lines, Math.max(1, Math.round(requested)));
+}
+
+/// Scroll a 1-based line to the top of the viewport and place the cursor at its
+/// start — the shared mechanics behind reveal-by-line and reveal-section.
+function revealAt(view: EditorView, line1: number): void {
+    const doc = view.state.doc;
+    const pos = doc.line(clampLine(line1, doc.lines)).from;
+    view.dispatch({
+        selection: { anchor: pos },
+        effects: EditorView.scrollIntoView(pos, { y: "start", yMargin: 8 }),
+    });
 }
 
 function buildAppKeymap() {
@@ -2121,6 +2144,23 @@ window.qcEditor = {
     // intercepts and Editor-menu items).
     invoke: (actionId: string) => {
         if (view && appCommands[actionId]) appCommands[actionId](view);
+    },
+    // Palette navigation (epic #82, U6): reveal a capture by its 0-based file
+    // line (clamped — the file may have changed since the palette parsed it).
+    revealLine: (line: number) => {
+        if (view) revealAt(view, line + 1);
+    },
+    // Palette navigation: reveal a `## <name>` section heading. Falls back to a
+    // no-op if no matching heading exists (the section may have been renamed or
+    // emptied since the palette parsed the file).
+    revealSection: (name: string) => {
+        if (!view) return;
+        const doc = view.state.doc;
+        for (let n = 1; n <= doc.lines; n++) {
+            const text = doc.line(n).text;
+            const m = /^##\s+(.*?)\s*$/.exec(text);
+            if (m && m[1] === name) { revealAt(view, n); return; }
+        }
     },
 };
 

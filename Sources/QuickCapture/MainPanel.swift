@@ -92,6 +92,9 @@ final class MainPanel: NSPanel {
     /// ignore our own writes instead of looping them back as external changes.
     private var lastSyncedContent = ""
     private var webViewReady = false
+    /// A palette reveal (U6) requested before the editor finished loading, held
+    /// so it can replay after the first content push in `editorDidBecomeReady`.
+    private var pendingReveal: String?
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var fileDescriptor: CInt = -1
     private var vimObserver: NSObjectProtocol?
@@ -705,10 +708,20 @@ final class MainPanel: NSPanel {
         palettePanel.open(
             items: items,
             tagSummary: tagSummary,
-            onActivate: { _ in
-                // U5 wires real capture/tag rows (each carrying its line / tag
-                // name). U6 routes capture → editor line and tag → ## section;
-                // U7 routes commands. For now activation just dismisses.
+            onActivate: { [weak self] row in
+                // U6 routes navigation rows into the editor: a capture reveals
+                // its file line, a tag reveals its `## section`. (U7 will route
+                // command rows.) The palette dismisses itself first, then this
+                // runs — so `reveal` enters editor mode over a cleared palette.
+                guard let self else { return }
+                switch row.kind {
+                case .capture(_, let line):
+                    self.reveal(line: line)
+                case .tag(let name):
+                    self.reveal(section: name)
+                case .command:
+                    break
+                }
             },
             onClose: { [weak self] in
                 guard let self else { return }
@@ -721,6 +734,42 @@ final class MainPanel: NSPanel {
                 }
             }
         )
+    }
+
+    /// Palette → editor navigation (epic #82, U6). Enter editor mode (warming
+    /// the web view forward) and scroll a captured item's 0-based file `line`
+    /// into view with the cursor on it. If the editor wasn't already showing,
+    /// `showInEditor` brings it up; the reveal is posted right after — the warm
+    /// web view applies it immediately, and if it was still cold the same call
+    /// queued behind `setContent` lands once CodeMirror has the document.
+    func reveal(line: Int) {
+        enterEditorThenReveal("window.qcEditor.revealLine(\(line))")
+    }
+
+    /// Palette → editor navigation: enter editor mode and reveal a tag's
+    /// `## section` heading by name (same scroll/cursor mechanics as `reveal(line:)`).
+    func reveal(section name: String) {
+        guard let json = try? JSONEncoder().encode(name),
+              let nameString = String(data: json, encoding: .utf8) else { return }
+        enterEditorThenReveal("window.qcEditor.revealSection(\(nameString))")
+    }
+
+    /// Shared sequencing for the two palette reveals: enter editor mode if not
+    /// already there, then post the reveal JS over the bridge. The editor's web
+    /// view is kept warm across mode switches, so when it was already open the
+    /// reveal is immediate; on a cold open the `evaluateJavaScript` queues behind
+    /// the content push and runs once the document is in place.
+    private func enterEditorThenReveal(_ js: String) {
+        if !editorOpen { showInEditor() }
+        // On a cold web view the document isn't mounted yet, so a reveal posted
+        // now would land before `setContent` and silently no-op (CodeMirror's
+        // `view` is still null). Hold it and replay once `editorDidBecomeReady`
+        // has pushed the content. When the editor is already warm, run it now.
+        if webViewReady {
+            webView.evaluateJavaScript("window.qcEditor && \(js)", completionHandler: nil)
+        } else {
+            pendingReveal = js
+        }
     }
 
     /// Run an action inside the editor over the bridge. Refile (⌥⌘R) takes
@@ -783,6 +832,12 @@ final class MainPanel: NSPanel {
         // finished loading (e.g. "Open Editor…" at cold launch), focus it now.
         // Otherwise leave focus with the capture input.
         if editorOpen { focusEditor() }
+        // A palette reveal requested before the editor loaded now has its content
+        // mounted — replay it so the navigation isn't dropped (U6).
+        if let js = pendingReveal {
+            pendingReveal = nil
+            webView.evaluateJavaScript("window.qcEditor && \(js)", completionHandler: nil)
+        }
     }
 
     /// Push the current vim setting into the editor. Safe before the view
