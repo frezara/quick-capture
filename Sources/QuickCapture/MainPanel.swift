@@ -251,12 +251,14 @@ final class MainPanel: NSPanel {
                 case .capture(_, let line):
                     // Reveal morphs straight on to the editor — tear the palette
                     // down synchronously so the editor's own frame owns the next
-                    // morph (no flash of the capture box in between).
+                    // morph (no flash of the capture box in between). The morph is
+                    // animated so the window grows from the palette card to the
+                    // editor frame rather than snapping (#87).
                     self.teardownPaletteSurface()
-                    self.reveal(line: line)
+                    self.reveal(line: line, animated: true)
                 case .tag(let name):
                     self.teardownPaletteSurface()
-                    self.reveal(section: name)
+                    self.reveal(section: name, animated: true)
                 case .command(let command):
                     self.dispatch(command: command)
                 }
@@ -312,8 +314,11 @@ final class MainPanel: NSPanel {
     }
 
     /// Summon straight into the split (the menu-bar "Open Editor…" route),
-    /// without the grow animation.
-    func showInEditor() {
+    /// without the grow animation. `animated` morphs the frame instead of
+    /// snapping — used when handing off from a visible takeover (the palette),
+    /// so the editor's frame visibly takes over rather than the old surface's
+    /// frame lingering for a beat (#87).
+    func showInEditor(animated: Bool = false) {
         recordPreviousApp()   // before promote/activate steals frontmost from it
         editorOpen = true
         isMovableByWindowBackground = false
@@ -321,20 +326,39 @@ final class MainPanel: NSPanel {
         reconcileEditorFile()
         container.editorActive = true
         editorContainer.isHidden = false
-        editorContainer.alphaValue = 1
         captureHost.alphaValue = 0
-        if let screen = currentScreenVisibleFrame() {
-            let target = splitFrame(in: screen)
-            anchorCenterY = target.midY
-            setFrame(target, display: false)
-        }
         canDismissOnBlur = false
         NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
         orderFrontRegardless()
-        focusEditor()
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
-            self?.canDismissOnBlur = true
+        guard let screen = currentScreenVisibleFrame() else {
+            editorContainer.alphaValue = 1
+            focusEditor()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.canDismissOnBlur = true
+            }
+            return
+        }
+        let target = splitFrame(in: screen)
+        anchorCenterY = target.midY
+        if animated {
+            // The editor surface starts transparent and fades up as the window
+            // morphs from the (just-vacated) takeover frame to the split frame —
+            // the editor owns the final geometry, no stale palette frame flashes.
+            editorContainer.alphaValue = 0
+            animateFrame(to: target, fadeEditorTo: 1) { [weak self] in
+                self?.focusEditor()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    self?.canDismissOnBlur = true
+                }
+            }
+        } else {
+            editorContainer.alphaValue = 1
+            setFrame(target, display: false)
+            focusEditor()
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                self?.canDismissOnBlur = true
+            }
         }
     }
 
@@ -614,7 +638,8 @@ final class MainPanel: NSPanel {
         attachLookupGeneration += 1
         let generation = attachLookupGeneration
         ScreenshotLocator.recent(limit: 10) { [weak self] result in
-            guard let self, generation == self.attachLookupGeneration, !self.editorOpen else { return }
+            guard let self, generation == self.attachLookupGeneration,
+                  !self.editorOpen, !self.paletteOpen else { return }
             if result.accessDenied {
                 // Spotlight may still have returned names, but every thumbnail
                 // would be a placeholder — the actionable hint wins over both the
@@ -645,7 +670,10 @@ final class MainPanel: NSPanel {
     /// active surface (CaptureView swaps its own content to the picker), so no
     /// crossfade host is involved — just the frame animation.
     private func enterPickerSurface() {
-        guard !pickerOpen, !editorOpen, let screen = currentScreenVisibleFrame() else { return }
+        // Belt-and-braces against a second takeover (#87): the registry already
+        // suppresses ⌥⌘S while the palette is up, but the lookup is async, so
+        // guard here too — the picker must never open over the palette.
+        guard !pickerOpen, !editorOpen, !paletteOpen, let screen = currentScreenVisibleFrame() else { return }
         pickerOpen = true
         canDismissOnBlur = false
         let target = pickerFrame(in: screen)
@@ -705,7 +733,7 @@ final class MainPanel: NSPanel {
     /// claim them. Which keys those are — and in which mode — lives in
     /// `ShortcutRegistry`, the single source of truth for bindings.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        if let action = ShortcutRegistry.interceptedAction(for: event, editorOpen: editorOpen) {
+        if let action = ShortcutRegistry.interceptedAction(for: event, editorOpen: editorOpen, paletteOpen: paletteOpen) {
             perform(shortcut: action)
             return true
         }
@@ -912,7 +940,7 @@ final class MainPanel: NSPanel {
             guard let self else { return }
             switch command {
             case .openEditor:
-                if !self.editorOpen { self.showInEditor() }
+                if !self.editorOpen { self.showInEditor(animated: true) }
             case .archiveCompleted:
                 // Same entry point the editor's archive button drives over the
                 // bridge; the file watcher reloads the warm editor afterward.
@@ -922,9 +950,9 @@ final class MainPanel: NSPanel {
                 // then invoke it over the bridge, mirroring the menu item. Routes
                 // through `enterEditorThenReveal` so a cold editor replays the
                 // invoke once its content has mounted, rather than dropping it.
-                self.enterEditorThenInvoke(.reorg)
+                self.enterEditorThenInvoke(.reorg, animated: !self.editorOpen)
             case .refile:
-                self.enterEditorThenInvoke(.refile)
+                self.enterEditorThenInvoke(.refile, animated: !self.editorOpen)
             case .settings:
                 (NSApp.delegate as? AppDelegate)?.showSettings()
             case .newCapture:
@@ -968,7 +996,7 @@ final class MainPanel: NSPanel {
             // palette takeover, reveal the item's line in the editor (placing the
             // cursor on it so ⌥⌘R resolves the right subtree), then invoke refile.
             teardownPaletteSurface()
-            reveal(line: action.line)
+            reveal(line: action.line, animated: true)
             DispatchQueue.main.async { [weak self] in
                 self?.enterEditorThenInvoke(.refile)
             }
@@ -1016,16 +1044,16 @@ final class MainPanel: NSPanel {
     /// `showInEditor` brings it up; the reveal is posted right after — the warm
     /// web view applies it immediately, and if it was still cold the same call
     /// queued behind `setContent` lands once CodeMirror has the document.
-    func reveal(line: Int) {
-        enterEditorThenReveal("window.qcEditor.revealLine(\(line))")
+    func reveal(line: Int, animated: Bool = false) {
+        enterEditorThenReveal("window.qcEditor.revealLine(\(line))", animated: animated)
     }
 
     /// Palette → editor navigation: enter editor mode and reveal a tag's
     /// `## section` heading by name (same scroll/cursor mechanics as `reveal(line:)`).
-    func reveal(section name: String) {
+    func reveal(section name: String, animated: Bool = false) {
         guard let json = try? JSONEncoder().encode(name),
               let nameString = String(data: json, encoding: .utf8) else { return }
-        enterEditorThenReveal("window.qcEditor.revealSection(\(nameString))")
+        enterEditorThenReveal("window.qcEditor.revealSection(\(nameString))", animated: animated)
     }
 
     /// Shared sequencing for the two palette reveals: enter editor mode if not
@@ -1033,8 +1061,8 @@ final class MainPanel: NSPanel {
     /// view is kept warm across mode switches, so when it was already open the
     /// reveal is immediate; on a cold open the `evaluateJavaScript` queues behind
     /// the content push and runs once the document is in place.
-    private func enterEditorThenReveal(_ js: String) {
-        if !editorOpen { showInEditor() }
+    private func enterEditorThenReveal(_ js: String, animated: Bool = false) {
+        if !editorOpen { showInEditor(animated: animated) }
         // On a cold web view the document isn't mounted yet, so a reveal posted
         // now would land before `setContent` and silently no-op (CodeMirror's
         // `view` is still null). Hold it and replay once `editorDidBecomeReady`
@@ -1062,9 +1090,9 @@ final class MainPanel: NSPanel {
     /// invoke the bridge action — reusing `enterEditorThenReveal`'s warm/cold
     /// sequencing so a cold web view replays the invoke once its content mounts
     /// (a cold `invokeEditorAction` would silently no-op on `webViewReady`).
-    private func enterEditorThenInvoke(_ action: ShortcutAction) {
+    private func enterEditorThenInvoke(_ action: ShortcutAction, animated: Bool = false) {
         guard let id = String(data: try! JSONEncoder().encode(action.rawValue), encoding: .utf8) else { return }
-        enterEditorThenReveal("window.qcEditor.invoke && window.qcEditor.invoke(\(id))")
+        enterEditorThenReveal("window.qcEditor.invoke && window.qcEditor.invoke(\(id))", animated: animated)
     }
 
     override func orderOut(_ sender: Any?) {

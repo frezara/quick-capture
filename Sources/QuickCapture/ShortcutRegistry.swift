@@ -50,7 +50,7 @@ struct KeyChord: Equatable {
     }
 }
 
-/// When a shortcut is live, keyed off the panel's mode (the two surfaces are
+/// When a shortcut is live, keyed off the panel's surface (the takeovers are
 /// mutually exclusive, ADR-0004).
 enum ShortcutScope {
     case captureMode
@@ -137,6 +137,23 @@ enum ShortcutAction: String, CaseIterable {
         }
     }
 
+    /// Whether this action stays live while the command palette takeover owns
+    /// the window (#85/#87). The palette is a third in-window takeover that the
+    /// `editorOpen`-keyed `scope` doesn't model: while it's up the editor is
+    /// closed, so capture/`anyMode` chords would otherwise fire and spawn a
+    /// *second* takeover over the palette (⌥⌘S → screenshot picker, ⌥⌘E →
+    /// editor). The palette is a transient "go to / do" surface, so only its own
+    /// toggle (⌥⌘O, to morph back) and the dismiss chord (⌘W) survive it; every
+    /// other action is a deliberate no-op until the palette is gone.
+    var allowedDuringPalette: Bool {
+        switch self {
+        case .openPalette, .dismissPanel:
+            return true
+        default:
+            return false
+        }
+    }
+
     /// Title for the Editor menu in the menu bar (visible while editor mode
     /// holds `.regular`). nil = no menu item: ⌘W is already the Window menu's
     /// Close, and capture-only actions have no menu bar to live in
@@ -164,19 +181,27 @@ enum ShortcutRegistry {
     /// event through to WebKit / the menu bar.
     static func interceptedAction(key: String?,
                                   modifiers: NSEvent.ModifierFlags,
-                                  editorOpen: Bool) -> ShortcutAction? {
+                                  editorOpen: Bool,
+                                  paletteOpen: Bool = false) -> ShortcutAction? {
         ShortcutAction.allCases.first { action in
             action.isWindowIntercepted
-                && action.scope.isActive(editorOpen: editorOpen)
+                // While the palette owns the window, suppress every action that
+                // isn't palette-safe so a second takeover can't open over it
+                // (#87). Otherwise fall back to the editor/capture scope.
+                && (paletteOpen ? action.allowedDuringPalette
+                                : action.scope.isActive(editorOpen: editorOpen))
                 && action.chord.matches(key: key, modifiers: modifiers)
         }
     }
 
-    static func interceptedAction(for event: NSEvent, editorOpen: Bool) -> ShortcutAction? {
+    static func interceptedAction(for event: NSEvent,
+                                  editorOpen: Bool,
+                                  paletteOpen: Bool = false) -> ShortcutAction? {
         interceptedAction(
             key: event.charactersIgnoringModifiers?.lowercased(),
             modifiers: event.modifierFlags.intersection(.deviceIndependentFlagsMask),
-            editorOpen: editorOpen
+            editorOpen: editorOpen,
+            paletteOpen: paletteOpen
         )
     }
 
