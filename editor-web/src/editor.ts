@@ -227,22 +227,19 @@ function selectionOverlaps(state: EditorState, from: number, to: number): boolea
     return false;
 }
 
-// MARK: - Attachment image lines (folded preview)
+// MARK: - Attachment image lines (always-on inline preview)
 //
 // An indented `![label](path)` child line (written under a todo by the
-// capture flow) renders as a compact folded pill; clicking it expands an
-// inline preview. Image bytes come over the JS↔Swift bridge as a data URL —
-// the web view's file read-access is scoped to the app bundle, so a relative
-// <img src> could never resolve against the capture file's folder.
+// capture flow) renders its image inline at a modest size, always visible —
+// no click to expand (#43). Image bytes come over the JS↔Swift bridge as a
+// data URL — the web view's file read-access is scoped to the app bundle, so
+// a relative <img src> could never resolve against the capture file's folder.
 
-/// Expansion is view-local by design: reloads (external file changes) reset
-/// to folded. Keyed by the link's relative path.
-const expandedAttachments = new Set<string>();
 /// path → data URL, or null when Swift reported the file missing.
 const attachmentCache = new Map<string, string | null>();
 // An empty dispatch does not satisfy the livePreview update guard, so
-// attachment state changes (cache fill, expansion toggle) carry an explicit
-// effect — livePreview checks for it and rebuilds decorations deterministically.
+// attachment state changes (cache fill) carry an explicit effect — livePreview
+// checks for it and rebuilds decorations deterministically.
 const attachmentStateChanged = StateEffect.define<null>();
 
 class ImageWidget extends WidgetType {
@@ -253,30 +250,16 @@ class ImageWidget extends WidgetType {
         wrap.className = "cm-attachment";
         wrap.dataset.path = this.path;
         wrap.dataset.label = this.label;
+        // Pull the bytes the moment the widget mounts so the preview shows
+        // without any interaction (#43).
+        requestAttachmentIfNeeded(this.path);
         renderAttachment(wrap, this.path, this.label);
-        // Keep CodeMirror from treating the click as a cursor placement —
-        // a cursor on the line would reveal the raw markdown and replace the
-        // widget mid-click.
+        // Keep CodeMirror from treating a click on the image as a cursor
+        // placement — a cursor on the line would reveal the raw markdown and
+        // replace the widget mid-click.
         wrap.addEventListener("mousedown", (e) => {
             e.preventDefault();
             e.stopPropagation();
-        });
-        wrap.addEventListener("click", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
-            if (expandedAttachments.has(this.path)) {
-                expandedAttachments.delete(this.path);
-            } else {
-                expandedAttachments.add(this.path);
-                requestAttachmentIfNeeded(this.path);
-            }
-            for (const el of attachmentElements(this.path)) {
-                renderAttachment(el, this.path, this.label);
-            }
-            // Expansion state changed — carry an explicit effect so the
-            // livePreview update guard fires and decorations are reconciled.
-            view?.dispatch({ effects: attachmentStateChanged.of(null) });
-            view?.requestMeasure();
         });
         return wrap;
     }
@@ -301,13 +284,7 @@ function requestAttachmentIfNeeded(path: string) {
 }
 
 function renderAttachment(el: HTMLElement, path: string, label: string) {
-    const expanded = expandedAttachments.has(path);
-    el.classList.toggle("cm-attachment--expanded", expanded);
     el.innerHTML = "";
-    if (!expanded) {
-        el.appendChild(makeAttachmentPill(label, "folded"));
-        return;
-    }
     const data = attachmentCache.get(path);
     if (data === undefined) {
         el.appendChild(makeAttachmentPill("Loading…", "loading"));
@@ -317,12 +294,13 @@ function renderAttachment(el: HTMLElement, path: string, label: string) {
         const img = document.createElement("img");
         img.className = "cm-attachment-img";
         img.src = data;
+        img.alt = label;
         img.addEventListener("load", () => view?.requestMeasure());
         el.appendChild(img);
     }
 }
 
-function makeAttachmentPill(text: string, kind: "folded" | "loading" | "missing"): HTMLElement {
+function makeAttachmentPill(text: string, kind: "loading" | "missing"): HTMLElement {
     const pill = document.createElement("span");
     pill.className = `cm-attachment-pill cm-attachment-pill--${kind}`;
     pill.innerHTML = kind === "missing"
@@ -967,7 +945,7 @@ function makeTheme() {
     },
     // Attachment image line — folded pill / expanded inline preview.
     ".cm-attachment": {
-        cursor: "pointer",
+        cursor: "default",
     },
     ".cm-attachment-pill": {
         display: "inline-flex",
@@ -992,8 +970,9 @@ function makeTheme() {
     },
     ".cm-attachment-img": {
         display: "block",
-        maxWidth: "min(560px, 92%)",
-        maxHeight: "360px",
+        // Modest always-on preview (#43) — readable, not a hero image.
+        maxWidth: "min(360px, 92%)",
+        maxHeight: "200px",
         margin: "4px 0",
         borderRadius: "8px",
         border: `0.5px solid ${palette.borderSoft}`,
@@ -1950,9 +1929,7 @@ function mount(content: string) {
     const parent = document.getElementById("editor")!;
     suppressNextSave = true;
 
-    // Reload = fresh disk truth: the cache may be stale (file replaced on disk)
-    // and fold state resets to folded by design.
-    expandedAttachments.clear();
+    // Reload = fresh disk truth: the cache may be stale (file replaced on disk).
     attachmentCache.clear();
 
     if (view) {
