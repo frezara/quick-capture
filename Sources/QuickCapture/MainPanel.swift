@@ -71,6 +71,12 @@ final class MainPanel: NSPanel {
     /// Guards `resignKey()` from self-dismissing during the show transition.
     private var canDismissOnBlur = false
 
+    /// The command palette (epic #82), lazily created and owned here: ⌥⌘O arrives
+    /// through `perform(shortcut:)`, and on close it's MainPanel that must take
+    /// key back and re-arm its own click-away dismiss. Reused across opens so the
+    /// SwiftUI graph (and its warm hosting view) survives.
+    private lazy var palettePanel = PalettePanel()
+
     /// The app that was frontmost when the panel was summoned, so focus can
     /// return to it on dismiss — the capture flow should be a zero-cost
     /// interruption. Recorded on every fresh summon (capture or editor) before
@@ -86,6 +92,9 @@ final class MainPanel: NSPanel {
     /// ignore our own writes instead of looping them back as external changes.
     private var lastSyncedContent = ""
     private var webViewReady = false
+    /// A palette reveal (U6) requested before the editor finished loading, held
+    /// so it can replay after the first content push in `editorDidBecomeReady`.
+    private var pendingReveal: String?
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var fileDescriptor: CInt = -1
     private var vimObserver: NSObjectProtocol?
@@ -665,12 +674,200 @@ final class MainPanel: NSPanel {
             } else {
                 openScreenshotPicker()
             }
+        case .openPalette:
+            openPalette()
         case .swallowReload:
             // Deliberate no-op: ⌘R must never reach WebKit in editor mode or
             // it reloads the page, destroying the warm editor's state.
             break
         case .refile, .readMode, .toggleTask, .save, .reorg, .nextSection, .prevSection:
             invokeEditorAction(action)
+        }
+    }
+
+    /// ⌥⌘O — open the command palette over the current surface. The palette is
+    /// its own key panel; while it's up MainPanel must NOT self-dismiss on losing
+    /// key (the capture box would collapse out from under it), so we drop the
+    /// `canDismissOnBlur` guard for the palette's lifetime — the same suppression
+    /// used around the picker/editor transitions — and re-arm it on close, taking
+    /// key back. A second ⌥⌘O while it's open closes it (toggle).
+    private func openPalette() {
+        if palettePanel.isShowing {
+            palettePanel.dismissPalette()
+            return
+        }
+        canDismissOnBlur = false
+
+        // Read + parse the capture file at the edge; the palette's pure
+        // view-model filters/sorts this as the query changes. A read failure
+        // (missing file) yields an empty palette rather than blocking summon.
+        let text = (try? String(contentsOf: appState.captureFileURL, encoding: .utf8)) ?? ""
+        let items = CaptureItemParser.parse(text)
+        let tagSummary = CaptureItemParser.tagSummary(text)
+
+        palettePanel.open(
+            items: items,
+            tagSummary: tagSummary,
+            onActivate: { [weak self] row in
+                // U6 routes navigation rows into the editor: a capture reveals
+                // its file line, a tag reveals its `## section`. (U7 will route
+                // command rows.) The palette dismisses itself first, then this
+                // runs — so `reveal` enters editor mode over a cleared palette.
+                guard let self else { return }
+                switch row.kind {
+                case .capture(_, let line):
+                    self.reveal(line: line)
+                case .tag(let name):
+                    self.reveal(section: name)
+                case .command(let command):
+                    self.dispatch(command: command)
+                }
+            },
+            onItemAction: { [weak self] action in
+                self?.perform(itemAction: action)
+            },
+            onClose: { [weak self] in
+                guard let self else { return }
+                // Re-take key (the palette had it) and re-arm click-away dismiss,
+                // mirroring the guard window used by show()/closeEditor().
+                self.makeKeyAndOrderFront(nil)
+                self.editorOpen ? self.focusEditor() : self.focusCapture()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    self?.canDismissOnBlur = true
+                }
+            }
+        )
+    }
+
+    /// Palette → command dispatch (epic #82, U7). Each command runs its existing
+    /// entry point. We defer to the next runloop tick so the action lands *after*
+    /// the palette's dismiss/`onClose` sequence has re-taken key for MainPanel —
+    /// otherwise Settings (a separate window) and New capture would have their
+    /// focus yanked back the instant they opened.
+    func dispatch(command: PaletteCommand) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            switch command {
+            case .openEditor:
+                if !self.editorOpen { self.showInEditor() }
+            case .archiveCompleted:
+                // Same entry point the editor's archive button drives over the
+                // bridge; the file watcher reloads the warm editor afterward.
+                self.archive()
+            case .reorganize:
+                // Editor-context action — enter the editor (warming the web view)
+                // then invoke it over the bridge, mirroring the menu item. Routes
+                // through `enterEditorThenReveal` so a cold editor replays the
+                // invoke once its content has mounted, rather than dropping it.
+                self.enterEditorThenInvoke(.reorg)
+            case .refile:
+                self.enterEditorThenInvoke(.refile)
+            case .settings:
+                (NSApp.delegate as? AppDelegate)?.showSettings()
+            case .newCapture:
+                // Reset to the capture box and focus it (the menu-bar "Capture…"
+                // route), so New capture always ends with the input ready.
+                (NSApp.delegate as? AppDelegate)?.showCapture()
+            }
+        }
+    }
+
+    /// Palette → per-item action (epic #82, U8 / R12). `⌘K` on a highlighted
+    /// capture row routes here. Toggle and delete are pure `FileWriter` line
+    /// edits with a verify-before-write drift guard (the file may have changed
+    /// since the palette parsed it); on success the file is rewritten atomically
+    /// — the file watcher reloads the warm editor, same as archive/refile — and
+    /// the palette re-reads + re-parses so its list reflects the change. Copy
+    /// puts the row's display text on the pasteboard. Refile reuses the editor's
+    /// target-dropdown gesture rather than duplicating the refile pipeline or a
+    /// target picker: reveal the item, then trigger ⌥⌘R so the user picks a
+    /// target in the editor's existing, tested flow.
+    func perform(itemAction action: PaletteItemAction) {
+        switch action.kind {
+        case .copy:
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(action.displayText, forType: .string)
+
+        case .toggleDone:
+            mutateCaptureFile { content in
+                FileWriter.toggleDone(atLine: action.line, expecting: action.displayText, in: content)
+            }
+
+        case .delete:
+            mutateCaptureFile { content in
+                FileWriter.deleteSubtree(atLine: action.line, expecting: action.displayText, in: content)
+            }
+
+        case .refile:
+            // Reuse the editor's refile gesture so the target picker and the
+            // crash-safe RefileService pipeline aren't duplicated. Dismiss the
+            // palette, reveal the item's line in the editor (placing the cursor
+            // on it so ⌥⌘R resolves the right subtree), then invoke refile.
+            palettePanel.dismissPalette()
+            reveal(line: action.line)
+            DispatchQueue.main.async { [weak self] in
+                self?.enterEditorThenInvoke(.refile)
+            }
+        }
+    }
+
+    /// Apply a pure, drift-guarded `FileWriter` line edit to the **on-disk**
+    /// capture file (re-read so we edit the canonical bytes, not the palette's
+    /// snapshot), write atomically, and refresh the palette. A nil result means
+    /// the target line drifted — a safe no-op, no write, no wrong-line mutation.
+    /// The file watcher reloads the warm editor from the new bytes.
+    private func mutateCaptureFile(_ transform: (String) -> String?) {
+        let url = appState.captureFileURL
+        let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        guard let updated = transform(content) else { return }
+        do {
+            try updated.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            NSLog("Palette item action failed to write \(url.path): \(error)")
+            return
+        }
+        // Re-read + re-parse so the still-open palette reflects the change (the
+        // file is canonical). We re-read rather than reuse `updated` to stay
+        // consistent with how the palette first loaded its items.
+        let fresh = (try? String(contentsOf: url, encoding: .utf8)) ?? updated
+        palettePanel.refresh(items: CaptureItemParser.parse(fresh),
+                             tagSummary: CaptureItemParser.tagSummary(fresh))
+    }
+
+    /// Palette → editor navigation (epic #82, U6). Enter editor mode (warming
+    /// the web view forward) and scroll a captured item's 0-based file `line`
+    /// into view with the cursor on it. If the editor wasn't already showing,
+    /// `showInEditor` brings it up; the reveal is posted right after — the warm
+    /// web view applies it immediately, and if it was still cold the same call
+    /// queued behind `setContent` lands once CodeMirror has the document.
+    func reveal(line: Int) {
+        enterEditorThenReveal("window.qcEditor.revealLine(\(line))")
+    }
+
+    /// Palette → editor navigation: enter editor mode and reveal a tag's
+    /// `## section` heading by name (same scroll/cursor mechanics as `reveal(line:)`).
+    func reveal(section name: String) {
+        guard let json = try? JSONEncoder().encode(name),
+              let nameString = String(data: json, encoding: .utf8) else { return }
+        enterEditorThenReveal("window.qcEditor.revealSection(\(nameString))")
+    }
+
+    /// Shared sequencing for the two palette reveals: enter editor mode if not
+    /// already there, then post the reveal JS over the bridge. The editor's web
+    /// view is kept warm across mode switches, so when it was already open the
+    /// reveal is immediate; on a cold open the `evaluateJavaScript` queues behind
+    /// the content push and runs once the document is in place.
+    private func enterEditorThenReveal(_ js: String) {
+        if !editorOpen { showInEditor() }
+        // On a cold web view the document isn't mounted yet, so a reveal posted
+        // now would land before `setContent` and silently no-op (CodeMirror's
+        // `view` is still null). Hold it and replay once `editorDidBecomeReady`
+        // has pushed the content. When the editor is already warm, run it now.
+        if webViewReady {
+            webView.evaluateJavaScript("window.qcEditor && \(js)", completionHandler: nil)
+        } else {
+            pendingReveal = js
         }
     }
 
@@ -684,6 +881,15 @@ final class MainPanel: NSPanel {
             "window.qcEditor && window.qcEditor.invoke && window.qcEditor.invoke(\(id))",
             completionHandler: nil
         )
+    }
+
+    /// Palette → editor-context command (U7). Enter editor mode if needed, then
+    /// invoke the bridge action — reusing `enterEditorThenReveal`'s warm/cold
+    /// sequencing so a cold web view replays the invoke once its content mounts
+    /// (a cold `invokeEditorAction` would silently no-op on `webViewReady`).
+    private func enterEditorThenInvoke(_ action: ShortcutAction) {
+        guard let id = String(data: try! JSONEncoder().encode(action.rawValue), encoding: .utf8) else { return }
+        enterEditorThenReveal("window.qcEditor.invoke && window.qcEditor.invoke(\(id))")
     }
 
     override func orderOut(_ sender: Any?) {
@@ -734,6 +940,12 @@ final class MainPanel: NSPanel {
         // finished loading (e.g. "Open Editor…" at cold launch), focus it now.
         // Otherwise leave focus with the capture input.
         if editorOpen { focusEditor() }
+        // A palette reveal requested before the editor loaded now has its content
+        // mounted — replay it so the navigation isn't dropped (U6).
+        if let js = pendingReveal {
+            pendingReveal = nil
+            webView.evaluateJavaScript("window.qcEditor && \(js)", completionHandler: nil)
+        }
     }
 
     /// Push the current vim setting into the editor. Safe before the view
