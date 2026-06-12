@@ -53,7 +53,7 @@ final class HotKeyConfigTests: XCTestCase {
         // when `key` is nil, so a persisted standard combo must still resolve.
         let decoded = try roundTrip(.default)
         XCTAssertNotNil(decoded.key, "default hotkey must map to a HotKey.Key so it can register")
-        XCTAssertEqual(decoded.key, Key(carbonKeyCode: 17))
+        XCTAssertEqual(decoded.key, Key(carbonKeyCode: 35))   // kVK_ANSI_P (⌥⌘P)
     }
 
     func testDisplayStringOrdersModifiersAndAppendsName() {

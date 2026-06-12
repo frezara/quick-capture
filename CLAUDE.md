@@ -7,7 +7,7 @@ Project hand-off doc for Claude Code. Read this first.
 **Quick Capture** is a personal macOS menu bar app. A single floating
 `NSPanel` (`MainPanel`) hosts two surfaces and animates between them:
 
-1. **Capture mode** — global hotkey (default `⌥T`) summons a small floating
+1. **Capture mode** — global hotkey (default `⌥⌘P`) summons a small floating
    box. Type a thought, hit Enter, it's appended as `- [ ] <text>` to
    a markdown file. Tags route entries under `## tag` headings; untagged
    items go under `## Quick capture`. `#cal` re-interprets the input as a
@@ -126,7 +126,10 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
 - **Shortcuts live in `ShortcutRegistry.swift`** (epic #53). Scheme: plain ⌘
   keys keep their native/Obsidian editor meaning (⌘F find, ⌘S save, ⌘E read
   mode, ⌘L toggle task); **⌥⌘ is the app's namespace** for panel-level actions
-  (⌥⌘E mode toggle, ⌥⌘R refile). `MainPanel.performKeyEquivalent` is a generic
+  (⌥⌘E mode toggle, ⌥⌘S screenshot picker — both press-again toggles — and ⌥⌘R
+  refile). The global summon (⌥⌘P) shares the namespace visually but is a
+  separate Carbon hotkey (`HotKeyConfig`), not a registry entry.
+  `MainPanel.performKeyEquivalent` is a generic
   registry lookup; editor-local bindings are pushed into CodeMirror via
   `qcEditor.setKeymap` on boot. Adding a shortcut = one registry case + a
   handler arm (`MainPanel.perform(shortcut:)`) or one `appCommands` entry

@@ -75,7 +75,7 @@ struct SettingsView: View {
                 t.border.frame(height: 0.5).padding(.leading, 50)
                 settingsRow(
                     label: "Auto-attach screenshot window",
-                    note: "Screenshots newer than this pre-attach to the capture box. ⌘⇧S pulls in the latest anytime.",
+                    note: "Screenshots newer than this pre-attach to the capture box. ⌥⌘S pulls in the latest anytime.",
                     symbol: "camera",
                     iconColor: Color(0x30B0C7)
                 ) {

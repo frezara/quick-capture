@@ -102,7 +102,7 @@ enum ShortcutAction: String, CaseIterable {
         switch self {
         case .toggleEditor:     return KeyChord(key: "e", modifiers: [.command, .option])
         case .dismissPanel:     return KeyChord(key: "w", modifiers: .command)
-        case .attachScreenshot: return KeyChord(key: "s", modifiers: [.command, .shift])
+        case .attachScreenshot: return KeyChord(key: "s", modifiers: [.command, .option])
         case .refile:           return KeyChord(key: "r", modifiers: [.command, .option])
         case .swallowReload:    return KeyChord(key: "r", modifiers: .command)
         case .readMode:         return KeyChord(key: "e", modifiers: .command)

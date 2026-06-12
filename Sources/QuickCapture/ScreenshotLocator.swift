@@ -23,7 +23,7 @@ enum ScreenshotLocator {
     /// Asynchronously find the newest `limit` screenshots, newest first. Same
     /// contract as `mostRecent` (main thread, main-queue completion) — the
     /// Spotlight and folder-scan results are merged, deduped by path, and the
-    /// newest `limit` win. Drives the ⌘⇧S screenshot picker.
+    /// newest `limit` win. Drives the ⌥⌘S screenshot picker.
     static func recent(limit: Int = 5, timeout: TimeInterval = 0.6, completion: @escaping ([Screenshot]) -> Void) {
         let folder = screenshotFolder()
         let folderPath = folder.standardizedFileURL.path

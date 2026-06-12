@@ -121,7 +121,7 @@ final class AppState: ObservableObject {
     @Published var recentTags: [String] = []
 
     // Capture-session state (not persisted). Lives here rather than in
-    // CaptureView @State so MainPanel (detection, ⌘⇧S pull-in) and the view
+    // CaptureView @State so MainPanel (detection, ⌥⌘S pull-in) and the view
     // share it; it survives the ⌥⌘E editor round-trip and is cleared on the
     // `.capturePanelDidHide` notification alongside the typed text.
 
@@ -130,12 +130,12 @@ final class AppState: ObservableObject {
     /// indented `![…]` child line under the captured todo. Deduped by path so
     /// the same screenshot can't attach twice.
     @Published var pendingAttachments: [URL] = []
-    /// When non-nil, the ⌘⇧S screenshot picker is open over the capture box,
+    /// When non-nil, the ⌥⌘S screenshot picker is open over the capture box,
     /// offering these recent screenshots (newest first). Cleared on attach,
     /// Esc, mode switch, and full dismiss.
     @Published var screenshotPickerItems: [ScreenshotLocator.Screenshot]?
     /// A screenshot exists on disk but is outside the auto-attach window —
-    /// drives the "⌘⇧S to attach screenshot" hint.
+    /// drives the "⌥⌘S to attach screenshot" hint.
     @Published var recentScreenshotExists = false
     /// Transient feedback for the pull-in keystroke (e.g. "No screenshots
     /// found"). CaptureView clears it after a beat.
