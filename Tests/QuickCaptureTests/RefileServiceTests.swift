@@ -141,8 +141,8 @@ final class RefileServiceTests: XCTestCase {
         let source = try makeTempDir(); defer { try? FileManager.default.removeItem(at: source) }
         let target = try makeTempDir(); defer { try? FileManager.default.removeItem(at: target) }
         let sourceInbox = source.appendingPathComponent("inbox.md")
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
-        let childToken = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_600_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
+        let childToken = "<!--qc:2020-09-13T12:26:40Z-->"
         try """
         # Inbox
 

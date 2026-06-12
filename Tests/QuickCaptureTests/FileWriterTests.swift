@@ -332,12 +332,10 @@ final class FileWriterTests: XCTestCase {
         try FileWriter.appendTodo("fix layout !!", tag: "work", to: url, attachmentLinks: ["attachments/shot.png"])
 
         let content = try String(contentsOf: url, encoding: .utf8)
-        // The parent line now carries a hidden creation token after its text, so
-        // the child follows the token (still directly after the parent line).
-        let regex = try NSRegularExpression(pattern: #"- \[ \] fix layout !! <!--qc:\S+-->\n  !\[screenshot\]\(attachments/shot\.png\)"#)
+        let regex = try NSRegularExpression(pattern: #"- \[ \] fix layout !!\n  !\[screenshot\]\(attachments/shot\.png\)"#)
         XCTAssertEqual(
             regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)), 1,
-            "attachment child line must directly follow the todo (after its hidden token), leaving priority markers on the todo line; got:\n\(content)"
+            "attachment child line must directly follow the todo, leaving priority markers on the todo line; got:\n\(content)"
         )
     }
 
@@ -348,10 +346,10 @@ final class FileWriterTests: XCTestCase {
         try FileWriter.appendTodo("buy milk", to: url, attachmentLinks: ["attachments/milk.png"])
 
         let content = try String(contentsOf: url, encoding: .utf8)
-        let regex = try NSRegularExpression(pattern: #"## Quick capture\n- \[ \] buy milk <!--qc:\S+-->\n  !\[screenshot\]\(attachments/milk\.png\)"#)
+        let regex = try NSRegularExpression(pattern: #"## Quick capture\n- \[ \] buy milk\n  !\[screenshot\]\(attachments/milk\.png\)"#)
         XCTAssertEqual(
             regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)), 1,
-            "untagged pair routes under ## Quick capture (parent carries its hidden token); got:\n\(content)"
+            "untagged pair routes under ## Quick capture; got:\n\(content)"
         )
     }
 
@@ -392,11 +390,10 @@ final class FileWriterTests: XCTestCase {
         )
 
         let content = try String(contentsOf: url, encoding: .utf8)
-        // The parent line ends in its hidden token; the three child lines follow in order.
-        let regex = try NSRegularExpression(pattern: #"- \[ \] ship it <!--qc:\S+-->\n  !\[screenshot\]\(attachments/a\.png\)\n  !\[screenshot\]\(attachments/b\.png\)\n  !\[screenshot\]\(attachments/c\.png\)"#)
+        let regex = try NSRegularExpression(pattern: #"- \[ \] ship it\n  !\[screenshot\]\(attachments/a\.png\)\n  !\[screenshot\]\(attachments/b\.png\)\n  !\[screenshot\]\(attachments/c\.png\)"#)
         XCTAssertEqual(
             regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)), 1,
-            "each attachment writes its own indented child line, in selection order, after the parent's token; got:\n\(content)"
+            "each attachment writes its own indented child line, in selection order, after the parent; got:\n\(content)"
         )
     }
 
@@ -664,41 +661,24 @@ final class FileWriterTests: XCTestCase {
         )
     }
 
-    // MARK: - Hidden creation-time token (U1)
+    // MARK: - No hidden creation-time token (recency feature removed)
 
-    func testAppendTodoWritesWellFormedCreationToken() throws {
+    func testAppendTodoWritesNoCreationToken() throws {
         let url = makeTempFile()
         defer { try? FileManager.default.removeItem(at: url) }
-        let fixed = Date(timeIntervalSince1970: 1_700_000_000)   // 2023-11-14T22:13:20Z
+        let fixed = Date(timeIntervalSince1970: 1_700_000_000)
 
         try FileWriter.appendTodo("buy milk", to: url, now: fixed)
 
         let content = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(
-            content.contains("- [ ] buy milk <!--qc:2023-11-14T22:13:20Z-->"),
-            "the item line must end in a well-formed ISO8601 creation token; got:\n\(content)"
+        XCTAssertTrue(content.contains("- [ ] buy milk"), "got:\n\(content)")
+        XCTAssertFalse(
+            content.contains("<!--qc:"),
+            "the recency token must no longer be written — the file stays clean prose; got:\n\(content)"
         )
     }
 
-    func testCreationTokenWrittenEvenWithoutVisibleTimestamp() throws {
-        let url = makeTempFile()
-        defer { try? FileManager.default.removeItem(at: url) }
-
-        // includeTimestamp:false — the visible ➕ must be absent, but the hidden
-        // token is written unconditionally.
-        try FileWriter.appendTodo("plain", to: url, includeTimestamp: false, now: Date())
-
-        let content = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertFalse(content.contains(FileWriter.createdMarker), "no visible ➕ when timestamping is off")
-        let regex = try NSRegularExpression(pattern: #"<!--qc:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z-->"#)
-        XCTAssertEqual(
-            regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)),
-            1,
-            "the hidden creation token is written even without the visible timestamp; got:\n\(content)"
-        )
-    }
-
-    func testCreationTokenTrailsVisibleTimestamp() throws {
+    func testAppendTodoVisibleTimestampWritesMarkerButNoToken() throws {
         let url = makeTempFile()
         defer { try? FileManager.default.removeItem(at: url) }
         let fixed = Date(timeIntervalSince1970: 1_700_000_000)
@@ -706,17 +686,15 @@ final class FileWriterTests: XCTestCase {
         try FileWriter.appendTodo("buy milk", to: url, includeTimestamp: true, now: fixed)
 
         let content = try String(contentsOf: url, encoding: .utf8)
-        // The token must come AFTER the ➕ DATE TIME marker.
-        let regex = try NSRegularExpression(pattern: #"- \[ \] buy milk ➕ \S+ \S+ <!--qc:\S+-->"#)
-        XCTAssertEqual(
-            regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)),
-            1,
-            "the hidden token must trail the visible ➕ timestamp; got:\n\(content)"
-        )
+        // The opt-in visible ➕ marker is unaffected by the token removal.
+        XCTAssertTrue(content.contains("- [ ] buy milk ➕ "),
+                      "the visible ➕ timestamp still writes; got:\n\(content)")
+        XCTAssertFalse(content.contains("<!--qc:"),
+                       "no hidden token trails the ➕ marker; got:\n\(content)")
     }
 
     func testPriorityBucketIgnoresCreationToken() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
         // Same bucket with vs. without the token, across priority levels.
         XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] task"),
                        FileWriter.priorityBucket(for: "- [ ] task \(token)"))
@@ -733,7 +711,7 @@ final class FileWriterTests: XCTestCase {
     }
 
     func testPriorityBucketIgnoresCreationTokenCombinedWithTimestamp() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
         let plain = "- [ ] task !!! ➕ 2023-11-14 22:13"
         let tokened = "\(plain) \(token)"
         XCTAssertEqual(FileWriter.priorityBucket(for: plain), FileWriter.priorityBucket(for: tokened))
@@ -747,34 +725,9 @@ final class FileWriterTests: XCTestCase {
         XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] hand authored"), 3)
     }
 
-    func testCreationDateRoundTrips() {
-        let fixed = Date(timeIntervalSince1970: 1_700_000_000)
-        let line = "- [ ] buy milk \(FileWriter.creationToken(for: fixed))"
-        XCTAssertEqual(FileWriter.creationDate(in: line), fixed)
-    }
-
-    func testCreationDateNilForTokenlessLine() {
-        XCTAssertNil(FileWriter.creationDate(in: "- [ ] no token here"))
-    }
-
-    func testStrippingCreationTokenRemovesTokenAndTimestamp() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
-        XCTAssertEqual(
-            FileWriter.strippingCreationToken("- [ ] buy milk !!! ➕ 2023-11-14 22:13 \(token)"),
-            "- [ ] buy milk !!!",
-            "display strip removes the hidden token and the ➕ suffix, leaving text + priority markers"
-        )
-        XCTAssertEqual(
-            FileWriter.strippingCreationToken("- [ ] just text \(token)"),
-            "- [ ] just text"
-        )
-        // Tokenless / hand-authored line is returned intact.
-        XCTAssertEqual(FileWriter.strippingCreationToken("- [ ] plain"), "- [ ] plain")
-    }
-
     func testInsertPreservesTokenOnMovedLineAndNeighbors() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
-        let existingToken = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_600_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
+        let existingToken = "<!--qc:2020-09-13T12:26:40Z-->"
         let content = """
         # Inbox
 
@@ -797,7 +750,7 @@ final class FileWriterTests: XCTestCase {
         defer { try? FileManager.default.removeItem(at: url) }
         let archive = FileWriter.archiveURL(for: url)
         defer { try? FileManager.default.removeItem(at: archive) }
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
 
         let content = """
         # Inbox
@@ -816,7 +769,7 @@ final class FileWriterTests: XCTestCase {
     }
 
     func testArchiveCompletedPreservesTokenOnFlattenedIndentedItem() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
         let content = """
         # Inbox
 
@@ -828,127 +781,6 @@ final class FileWriterTests: XCTestCase {
         XCTAssertEqual(items.count, 1)
         XCTAssertEqual(items[0].text, "- [x] nested done \(token)",
                        "an indented checked item flattens to top level but keeps its token")
-    }
-
-    // MARK: - Per-item palette actions (epic #82, U8)
-
-    func testToggleDoneMarksOpenItemCheckedAndPreservesTokenAndOtherLines() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
-        let content = """
-        # Inbox
-
-        ## Quick capture
-        - [ ] buy milk \(token)
-        - [ ] mow lawn
-        """
-        // Display text the palette would show for the buy-milk line (line 3, 0-based).
-        let expected = CaptureItemParser.displayText(for: "- [ ] buy milk \(token)")
-        guard let toggled = FileWriter.toggleDone(atLine: 3, expecting: expected, in: content) else {
-            return XCTFail("toggle should succeed on a matching line")
-        }
-
-        var lines = content.components(separatedBy: "\n")
-        lines[3] = "- [x] buy milk \(token)"
-        let expectedFile = lines.joined(separator: "\n")
-        XCTAssertEqual(toggled, expectedFile,
-                       "only the checkbox flips; token + every other line byte-identical")
-
-        // Toggling again restores the open state.
-        let restored = FileWriter.toggleDone(atLine: 3, expecting: expected, in: toggled)
-        XCTAssertEqual(restored, content, "a second toggle restores `[ ]` exactly")
-    }
-
-    func testToggleDoneNoOpsWhenLineDrifted() {
-        let content = """
-        # Inbox
-
-        ## Quick capture
-        - [ ] buy milk
-        - [ ] mow lawn
-        """
-        // The palette thought line 3 read "renew passport" — it doesn't. No write,
-        // and crucially the *other* lines aren't mutated by mistake.
-        let result = FileWriter.toggleDone(atLine: 3, expecting: "renew passport", in: content)
-        XCTAssertNil(result, "a drifted target line is a safe no-op, never a wrong-line flip")
-    }
-
-    func testToggleDoneNoOpsOnNonTaskLine() {
-        let content = "# Inbox\n\n## Quick capture\n- [ ] buy milk"
-        // Line 2 is the heading, not a task.
-        XCTAssertNil(FileWriter.toggleDone(atLine: 2, expecting: "Quick capture", in: content))
-        // Out of range.
-        XCTAssertNil(FileWriter.toggleDone(atLine: 99, expecting: "x", in: content))
-    }
-
-    func testDeleteSubtreeRemovesItemWithNestedAndAttachmentLinesOnly() {
-        let content = """
-        # Inbox
-
-        ## Quick capture
-        - [ ] keep this
-        - [ ] move me
-          ![screenshot](attachments/a.png)
-          - [ ] nested child
-        - [ ] keep this too
-        """
-        let expected = CaptureItemParser.displayText(for: "- [ ] move me")
-        let result = FileWriter.deleteSubtree(atLine: 4, expecting: expected, in: content)
-        let want = """
-        # Inbox
-
-        ## Quick capture
-        - [ ] keep this
-        - [ ] keep this too
-        """
-        XCTAssertEqual(result, want,
-                       "the item + its attachment + nested child go; surrounding items stay")
-    }
-
-    func testDeleteSubtreeNoOpsWhenLineDrifted() {
-        let content = """
-        # Inbox
-
-        ## Quick capture
-        - [ ] keep this
-        - [ ] move me
-        """
-        XCTAssertNil(FileWriter.deleteSubtree(atLine: 4, expecting: "something else", in: content),
-                     "drifted target line is a safe no-op — never deletes the wrong subtree")
-    }
-
-    /// Palette-refile smoke: the per-item refile reuses the editor's ⌥⌘R gesture,
-    /// which resolves the subtree from the cursor line via `subtreeRange` and
-    /// hands it to `RefileService` (covered by `RefileServiceTests`). This asserts
-    /// the line the palette targets resolves to the same subtree refile would
-    /// move — the seam between the palette's item line and the refile pipeline.
-    func testRefileSubtreeResolvesFromPaletteItemLine() {
-        let content = """
-        # Inbox
-
-        ## Quick capture
-        - [ ] keep this
-        - [ ] move me
-          ![screenshot](attachments/a.png)
-        - [ ] keep this too
-        """
-        // The palette's item line for "move me" is 4 (0-based).
-        let range = FileWriter.subtreeRange(in: content, atLine: 4)
-        XCTAssertEqual(range, 4..<6, "the item + its attachment line form the refiled subtree")
-        let lines = content.components(separatedBy: "\n")
-        let subtree = lines[range!].joined(separator: "\n")
-        XCTAssertEqual(subtree, "- [ ] move me\n  ![screenshot](attachments/a.png)")
-    }
-
-    func testCaptureItemDisplayTextStripsTokenMarkersForCopy() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
-        // What the palette's Copy action puts on the pasteboard is exactly the
-        // row's display text — token, `➕` suffix, list syntax, and priority
-        // markers all stripped.
-        // Real capture order: typed text + priority markers, then the `➕`
-        // timestamp, then the hidden token.
-        let line = "- [ ] buy milk !! ➕ 2024-01-02 09:30 \(token)"
-        XCTAssertEqual(CaptureItemParser.displayText(for: line), "buy milk",
-                       "copy text is the clean thought — no token, marker, syntax, or priority")
     }
 
     // MARK: - Helpers
