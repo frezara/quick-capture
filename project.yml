@@ -54,6 +54,23 @@ targets:
         COMBINE_HIDPI_IMAGES: YES
         ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
         CODE_SIGN_ENTITLEMENTS: QuickCapture.entitlements
+      configs:
+        # Debug builds sign with a stable self-signed identity so the macOS TCC
+        # grant (Desktop/Files access for screenshots) survives rebuilds (#77).
+        # Ad-hoc signing gives a fresh cdhash each build, which resets the grant.
+        # Create the identity once: bash scripts/make-signing-cert.sh
+        # (CI overrides CODE_SIGN_IDENTITY=- so it never needs the cert).
+        Debug:
+          CODE_SIGN_STYLE: Manual
+          CODE_SIGN_IDENTITY: "QuickCapture Dev"
+          PROVISIONING_PROFILE_SPECIFIER: ""
+          # A real (non-ad-hoc) signature keeps hardened runtime on, whose
+          # library validation rejects the differently-signed XCTest bundle
+          # ("different Team IDs"). Ad-hoc builds dodged this because Xcode
+          # auto-disables hardened runtime for them. It's a Release/notarization
+          # concern only and doesn't affect the designated requirement TCC keys
+          # on, so turn it off for local Debug.
+          ENABLE_HARDENED_RUNTIME: NO
 
   QuickCaptureTests:
     type: bundle.unit-test
