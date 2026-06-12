@@ -1,6 +1,6 @@
 ---
 title: "feat: ⌥⌘ + letter toggle family for panel shortcuts"
-status: active
+status: completed
 date: 2026-06-12
 type: feat
 ---
