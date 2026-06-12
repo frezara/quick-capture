@@ -80,6 +80,7 @@ enum ShortcutAction: String, CaseIterable {
     case toggleEditor
     case dismissPanel
     case attachScreenshot
+    case openPalette
     case refile
     /// ⌘R must stay swallowed in editor mode even though refile moved to ⌥⌘R:
     /// WebKit reserves the key for "reload", which would blow away the warm
@@ -103,6 +104,7 @@ enum ShortcutAction: String, CaseIterable {
         case .toggleEditor:     return KeyChord(key: "e", modifiers: [.command, .option])
         case .dismissPanel:     return KeyChord(key: "w", modifiers: .command)
         case .attachScreenshot: return KeyChord(key: "s", modifiers: [.command, .option])
+        case .openPalette:      return KeyChord(key: "o", modifiers: [.command, .option])
         case .refile:           return KeyChord(key: "r", modifiers: [.command, .option])
         case .swallowReload:    return KeyChord(key: "r", modifiers: .command)
         case .readMode:         return KeyChord(key: "e", modifiers: .command)
@@ -116,7 +118,7 @@ enum ShortcutAction: String, CaseIterable {
 
     var scope: ShortcutScope {
         switch self {
-        case .toggleEditor, .dismissPanel:
+        case .toggleEditor, .dismissPanel, .openPalette:
             return .anyMode
         case .attachScreenshot:
             return .captureMode
@@ -128,7 +130,7 @@ enum ShortcutAction: String, CaseIterable {
 
     var isWindowIntercepted: Bool {
         switch self {
-        case .toggleEditor, .dismissPanel, .attachScreenshot, .refile, .swallowReload:
+        case .toggleEditor, .dismissPanel, .attachScreenshot, .openPalette, .refile, .swallowReload:
             return true
         case .readMode, .toggleTask, .save, .reorg, .nextSection, .prevSection:
             return false
@@ -144,6 +146,7 @@ enum ShortcutAction: String, CaseIterable {
         case .toggleEditor:     return "Toggle Editor"
         case .dismissPanel:     return nil
         case .attachScreenshot: return nil
+        case .openPalette:      return "Search…"
         case .refile:           return "Refile…"
         case .swallowReload:    return nil
         case .readMode:         return "Toggle Read Mode"

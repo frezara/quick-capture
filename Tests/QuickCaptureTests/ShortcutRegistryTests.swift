@@ -66,6 +66,20 @@ final class ShortcutRegistryTests: XCTestCase {
         )
     }
 
+    /// ⌥⌘O opens the command palette in either mode (anyMode, app-active
+    /// summon, epic #82) — window-intercepted so it fires before WebKit can
+    /// claim the key in editor mode.
+    func testOptionCommandOOpensPaletteInBothModes() {
+        XCTAssertEqual(
+            ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: false),
+            .openPalette
+        )
+        XCTAssertEqual(
+            ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: true),
+            .openPalette
+        )
+    }
+
     func testOptionCommandSAttachesOnlyInCaptureMode() {
         XCTAssertEqual(
             ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .option], editorOpen: false),

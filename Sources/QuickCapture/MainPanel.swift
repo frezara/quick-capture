@@ -71,6 +71,12 @@ final class MainPanel: NSPanel {
     /// Guards `resignKey()` from self-dismissing during the show transition.
     private var canDismissOnBlur = false
 
+    /// The command palette (epic #82), lazily created and owned here: ⌥⌘O arrives
+    /// through `perform(shortcut:)`, and on close it's MainPanel that must take
+    /// key back and re-arm its own click-away dismiss. Reused across opens so the
+    /// SwiftUI graph (and its warm hosting view) survives.
+    private lazy var palettePanel = PalettePanel()
+
     /// The app that was frontmost when the panel was summoned, so focus can
     /// return to it on dismiss — the capture flow should be a zero-cost
     /// interruption. Recorded on every fresh summon (capture or editor) before
@@ -665,6 +671,8 @@ final class MainPanel: NSPanel {
             } else {
                 openScreenshotPicker()
             }
+        case .openPalette:
+            openPalette()
         case .swallowReload:
             // Deliberate no-op: ⌘R must never reach WebKit in editor mode or
             // it reloads the page, destroying the warm editor's state.
@@ -672,6 +680,36 @@ final class MainPanel: NSPanel {
         case .refile, .readMode, .toggleTask, .save, .reorg, .nextSection, .prevSection:
             invokeEditorAction(action)
         }
+    }
+
+    /// ⌥⌘O — open the command palette over the current surface. The palette is
+    /// its own key panel; while it's up MainPanel must NOT self-dismiss on losing
+    /// key (the capture box would collapse out from under it), so we drop the
+    /// `canDismissOnBlur` guard for the palette's lifetime — the same suppression
+    /// used around the picker/editor transitions — and re-arm it on close, taking
+    /// key back. A second ⌥⌘O while it's open closes it (toggle).
+    private func openPalette() {
+        if palettePanel.isShowing {
+            palettePanel.dismissPalette()
+            return
+        }
+        canDismissOnBlur = false
+        palettePanel.open(
+            onActivate: { _ in
+                // U3 stub: rows just dismiss the palette. U5/U6/U7 route
+                // captures/tags/commands to navigation and actions.
+            },
+            onClose: { [weak self] in
+                guard let self else { return }
+                // Re-take key (the palette had it) and re-arm click-away dismiss,
+                // mirroring the guard window used by show()/closeEditor().
+                self.makeKeyAndOrderFront(nil)
+                self.editorOpen ? self.focusEditor() : self.focusCapture()
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+                    self?.canDismissOnBlur = true
+                }
+            }
+        )
     }
 
     /// Run an action inside the editor over the bridge. Refile (⌥⌘R) takes
