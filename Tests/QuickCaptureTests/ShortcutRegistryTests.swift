@@ -118,6 +118,53 @@ final class ShortcutRegistryTests: XCTestCase {
         }
     }
 
+    // MARK: - Palette-aware gating (#87)
+
+    /// The palette is a third in-window takeover; while it's up the editor is
+    /// closed, so `.captureMode`/`anyMode` chords would otherwise fire and open
+    /// a second takeover over the palette. ⌥⌘S must be a deliberate no-op there.
+    func testOptionCommandSIsSuppressedWhilePaletteOpen() {
+        XCTAssertNil(
+            ShortcutRegistry.interceptedAction(
+                key: "s", modifiers: [.command, .option], editorOpen: false, paletteOpen: true
+            )
+        )
+    }
+
+    /// ⌥⌘E would otherwise morph the editor in *over* the palette host — a
+    /// colliding takeover. It must not fire while the palette owns the window.
+    func testToggleEditorIsSuppressedWhilePaletteOpen() {
+        XCTAssertNil(
+            ShortcutRegistry.interceptedAction(
+                key: "e", modifiers: [.command, .option], editorOpen: false, paletteOpen: true
+            )
+        )
+    }
+
+    /// ⌥⌘O stays live so a second press morphs the palette back home (toggle),
+    /// and ⌘W still dismisses — the only two actions that survive the palette.
+    func testPaletteToggleAndDismissSurviveThePalette() {
+        XCTAssertEqual(
+            ShortcutRegistry.interceptedAction(
+                key: "o", modifiers: [.command, .option], editorOpen: false, paletteOpen: true
+            ),
+            .openPalette
+        )
+        XCTAssertEqual(
+            ShortcutRegistry.interceptedAction(
+                key: "w", modifiers: .command, editorOpen: false, paletteOpen: true
+            ),
+            .dismissPanel
+        )
+    }
+
+    /// Exactly two actions are palette-safe; every other window-intercepted
+    /// action is suppressed while the palette owns the window.
+    func testOnlyPaletteSafeActionsAreAllowedDuringPalette() {
+        let allowed = ShortcutAction.allCases.filter { $0.allowedDuringPalette }
+        XCTAssertEqual(Set(allowed), [.openPalette, .dismissPanel])
+    }
+
     // MARK: - Editor keymap push
 
     func testEditorKeymapContainsExactlyTheEditorLocalActions() {
