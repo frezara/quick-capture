@@ -476,6 +476,23 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 if (view.state.doc.sliceString(endPos, endPos + 1) === " ") endPos += 1;
                 const onLine = !readMode && selectionOverlaps(view.state, line.from, line.to);
 
+                // Hidden creation-time token: `<!--qc:…-->` appended by capture
+                // (after any `➕` marker). Never displayed — hide it off-cursor,
+                // exactly like Obsidian reading view drops HTML comments. The
+                // priority suffix-hide below stops before it so the two replace
+                // ranges never overlap. `contentEnd` is the line length minus the
+                // token, so priority/label logic ignores the token entirely.
+                const tokenMatch = line.text.match(/\s*<!--qc:[^>]*-->\s*$/);
+                const contentEnd = tokenMatch && tokenMatch.index !== undefined
+                    ? line.from + tokenMatch.index
+                    : line.from + line.text.length;
+                if (tokenMatch && tokenMatch.index !== undefined && !onLine) {
+                    ranges.push({
+                        from: contentEnd, to: line.from + line.text.length,
+                        deco: Decoration.replace({}),
+                    });
+                }
+
                 // Checkbox widget — only render when the cursor isn't in the
                 // syntax range (same condition as before).
                 if (readMode || !selectionOverlaps(view.state, startPos, endPos)) {
@@ -488,8 +505,9 @@ function buildLivePreview(view: EditorView): DecorationSet {
                             widget: new CheckboxWidget(checked, widthInChars, taskOffset),
                         }),
                     });
-                    // Strike + mute the label of a completed task.
-                    const labelEnd = line.from + line.text.length;
+                    // Strike + mute the label of a completed task. The hidden
+                    // token is excluded (contentEnd) so the strike never spans it.
+                    const labelEnd = contentEnd;
                     if (checked && labelEnd > endPos) {
                         ranges.push({
                             from: endPos, to: labelEnd,
@@ -500,9 +518,11 @@ function buildLivePreview(view: EditorView): DecorationSet {
 
                 // Priority suffix: trailing ` !`/` !!`/` !!!` paints a colored
                 // dot at the far-right of the line via a ::after pseudo (line
-                // class), and hides the raw `!`s off-cursor. Tolerant of an
-                // optional ` ➕ DATE TIME` timestamp tail that appendTodo adds.
-                const priority = line.text.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
+                // class), and hides the raw `!`s off-cursor. Matched against the
+                // line with the hidden token stripped, so a captured
+                // `task !!! <!--qc:…-->` still classifies and hides correctly.
+                const priorityText = line.text.slice(0, contentEnd - line.from);
+                const priority = priorityText.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 if (priority && priority.index !== undefined) {
                     const level = priority[2].length;
                     const priorityLabel = level === 3 ? "High priority (!!!)"
@@ -518,7 +538,7 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     if (!onLine) {
                         const suffixStart = line.from + priority.index;
                         ranges.push({
-                            from: suffixStart, to: line.from + line.text.length,
+                            from: suffixStart, to: contentEnd,
                             deco: Decoration.replace({}),
                         });
                     }
@@ -1310,14 +1330,22 @@ function moveCompletedToBottom(view: EditorView): void {
             }
             const isChecked = /[xX]/.test(taskMatch[3]);
             if (isChecked) {
-                groupLines[0] = groupLines[0]
+                // Split off the hidden `<!--qc:…-->` creation token first so it
+                // survives the priority-marker strip, then re-append it. Strip
+                // priority (and the `➕` group, preserved as $1) from the body.
+                const tokenSplit = groupLines[0].match(/^(.*?)(\s*<!--qc:[^>]*-->)?\s*$/s);
+                const body = tokenSplit ? tokenSplit[1] : groupLines[0];
+                const token = tokenSplit && tokenSplit[2] ? tokenSplit[2] : "";
+                groupLines[0] = body
                     .replace(/^\s+/, "")
-                    .replace(/\s+!{1,3}(\s+➕\s+\S+\s+\S+)?\s*$/, "$1");
+                    .replace(/\s+!{1,3}(\s+➕\s+\S+\s+\S+)?\s*$/, "$1")
+                    + token;
                 groups.push({ bucket: 4, lines: groupLines });
             } else {
-                // Optional ` ➕ DATE TIME` timestamp tail is tolerated, so a
-                // captured `task !!! ➕ ...` still classifies as priority 3.
-                const priority = line.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
+                // Optional ` ➕ DATE TIME` timestamp tail and the hidden
+                // `<!--qc:…-->` token are tolerated, so a captured
+                // `task !!! ➕ … <!--qc:…-->` still classifies as priority 3.
+                const priority = line.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?(?:\s*<!--qc:[^>]*-->)?\s*$/);
                 const level = priority ? priority[1].length : 0;
                 const bucket = level === 0 ? 3 : 3 - level;
                 groups.push({ bucket, lines: groupLines });

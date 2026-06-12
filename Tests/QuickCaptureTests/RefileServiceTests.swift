@@ -137,6 +137,35 @@ final class RefileServiceTests: XCTestCase {
                        "the source is left completely intact — the item never vanishes (the central safety guarantee)")
     }
 
+    func testRefilePreservesHiddenTokenOnEachLine() throws {
+        let source = try makeTempDir(); defer { try? FileManager.default.removeItem(at: source) }
+        let target = try makeTempDir(); defer { try? FileManager.default.removeItem(at: target) }
+        let sourceInbox = source.appendingPathComponent("inbox.md")
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let childToken = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_600_000_000))
+        try """
+        # Inbox
+
+        ## Quick capture
+        - [ ] keep this \(childToken)
+        - [ ] move me !! \(token)
+          - [ ] nested \(childToken)
+        - [ ] keep this too
+        """.write(to: sourceInbox, atomically: true, encoding: .utf8)
+
+        let subtree = "- [ ] move me !! \(token)\n  - [ ] nested \(childToken)"
+        try RefileService.refile(subtree: subtree, range: 4..<6, from: sourceInbox, toFolder: target)
+
+        let targetInbox = try String(contentsOf: target.appendingPathComponent("inbox.md"), encoding: .utf8)
+        XCTAssertTrue(targetInbox.contains("- [ ] move me !! \(token)\n  - [ ] nested \(childToken)"),
+                      "the refiled subtree keeps the hidden token on every line; got:\n\(targetInbox)")
+
+        let newSource = try String(contentsOf: sourceInbox, encoding: .utf8)
+        XCTAssertTrue(newSource.contains("- [ ] keep this \(childToken)"),
+                      "the untouched neighbor keeps its token; got:\n\(newSource)")
+        XCTAssertFalse(newSource.contains("move me"), "source loses the refiled subtree")
+    }
+
     // MARK: - Helpers
 
     private func makeTempDir() throws -> URL {

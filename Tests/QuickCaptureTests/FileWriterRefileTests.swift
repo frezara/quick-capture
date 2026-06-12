@@ -205,4 +205,46 @@ final class FileWriterRefileTests: XCTestCase {
         XCTAssertTrue(result.contains(subtree),
                       "priority markers, checkbox state, and the ➕ timestamp are preserved verbatim; got:\n\(result)")
     }
+
+    // MARK: - Hidden creation-time token (U1) — refile core carries it
+
+    func testVerifyAndRemoveCarriesTokenedSubtree() throws {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let content = """
+        # Inbox
+
+        ## Quick capture
+        - [ ] keep me
+        - [ ] move me \(token)
+          ![screenshot](attachments/a.png)
+        - [ ] keep me too
+        """
+        let subtree = "- [ ] move me \(token)\n  ![screenshot](attachments/a.png)"
+        let result = try FileWriter.verifyAndRemove(subtree: subtree, at: 4..<6, in: content)
+        XCTAssertEqual(result, """
+        # Inbox
+
+        ## Quick capture
+        - [ ] keep me
+        - [ ] keep me too
+        """, "verifyAndRemove matches the tokened subtree byte-for-byte and removes exactly it")
+    }
+
+    func testDedentPreservesTokenOnRootLine() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let subtree = "  - [ ] child \(token)\n    ![screenshot](attachments/a.png)"
+        XCTAssertEqual(
+            FileWriter.dedent(subtree),
+            "- [ ] child \(token)\n  ![screenshot](attachments/a.png)",
+            "dedent shifts indentation but never touches the trailing token"
+        )
+    }
+
+    func testAppendUnderInboxPreservesTokenVerbatim() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let subtree = "- [ ] refiled \(token)"
+        let result = FileWriter.appendUnderInbox(subtree: subtree, to: "# Inbox\n")
+        XCTAssertTrue(result.contains(subtree),
+                      "the hidden token survives the inbox append verbatim; got:\n\(result)")
+    }
 }

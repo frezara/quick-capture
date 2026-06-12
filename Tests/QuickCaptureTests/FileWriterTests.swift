@@ -332,9 +332,12 @@ final class FileWriterTests: XCTestCase {
         try FileWriter.appendTodo("fix layout !!", tag: "work", to: url, attachmentLinks: ["attachments/shot.png"])
 
         let content = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(
-            content.contains("- [ ] fix layout !!\n  ![screenshot](attachments/shot.png)"),
-            "attachment child line must directly follow the todo, leaving trailing priority markers on the todo line; got:\n\(content)"
+        // The parent line now carries a hidden creation token after its text, so
+        // the child follows the token (still directly after the parent line).
+        let regex = try NSRegularExpression(pattern: #"- \[ \] fix layout !! <!--qc:\S+-->\n  !\[screenshot\]\(attachments/shot\.png\)"#)
+        XCTAssertEqual(
+            regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)), 1,
+            "attachment child line must directly follow the todo (after its hidden token), leaving priority markers on the todo line; got:\n\(content)"
         )
     }
 
@@ -345,9 +348,10 @@ final class FileWriterTests: XCTestCase {
         try FileWriter.appendTodo("buy milk", to: url, attachmentLinks: ["attachments/milk.png"])
 
         let content = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(
-            content.contains("## Quick capture\n- [ ] buy milk\n  ![screenshot](attachments/milk.png)"),
-            "untagged pair routes under ## Quick capture; got:\n\(content)"
+        let regex = try NSRegularExpression(pattern: #"## Quick capture\n- \[ \] buy milk <!--qc:\S+-->\n  !\[screenshot\]\(attachments/milk\.png\)"#)
+        XCTAssertEqual(
+            regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)), 1,
+            "untagged pair routes under ## Quick capture (parent carries its hidden token); got:\n\(content)"
         )
     }
 
@@ -388,14 +392,11 @@ final class FileWriterTests: XCTestCase {
         )
 
         let content = try String(contentsOf: url, encoding: .utf8)
-        XCTAssertTrue(
-            content.contains("""
-            - [ ] ship it
-              ![screenshot](attachments/a.png)
-              ![screenshot](attachments/b.png)
-              ![screenshot](attachments/c.png)
-            """),
-            "each attachment writes its own indented child line, in selection order; got:\n\(content)"
+        // The parent line ends in its hidden token; the three child lines follow in order.
+        let regex = try NSRegularExpression(pattern: #"- \[ \] ship it <!--qc:\S+-->\n  !\[screenshot\]\(attachments/a\.png\)\n  !\[screenshot\]\(attachments/b\.png\)\n  !\[screenshot\]\(attachments/c\.png\)"#)
+        XCTAssertEqual(
+            regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)), 1,
+            "each attachment writes its own indented child line, in selection order, after the parent's token; got:\n\(content)"
         )
     }
 
@@ -661,6 +662,172 @@ final class FileWriterTests: XCTestCase {
             result.contains("- [ ] fix layout !!\n  ![screenshot](attachments/a.png)\n  second child line\n- [ ] existing plain"),
             "both child lines must land consecutively after the parent in order; got:\n\(result)"
         )
+    }
+
+    // MARK: - Hidden creation-time token (U1)
+
+    func testAppendTodoWritesWellFormedCreationToken() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fixed = Date(timeIntervalSince1970: 1_700_000_000)   // 2023-11-14T22:13:20Z
+
+        try FileWriter.appendTodo("buy milk", to: url, now: fixed)
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertTrue(
+            content.contains("- [ ] buy milk <!--qc:2023-11-14T22:13:20Z-->"),
+            "the item line must end in a well-formed ISO8601 creation token; got:\n\(content)"
+        )
+    }
+
+    func testCreationTokenWrittenEvenWithoutVisibleTimestamp() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+
+        // includeTimestamp:false — the visible ➕ must be absent, but the hidden
+        // token is written unconditionally.
+        try FileWriter.appendTodo("plain", to: url, includeTimestamp: false, now: Date())
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        XCTAssertFalse(content.contains(FileWriter.createdMarker), "no visible ➕ when timestamping is off")
+        let regex = try NSRegularExpression(pattern: #"<!--qc:\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z-->"#)
+        XCTAssertEqual(
+            regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)),
+            1,
+            "the hidden creation token is written even without the visible timestamp; got:\n\(content)"
+        )
+    }
+
+    func testCreationTokenTrailsVisibleTimestamp() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let fixed = Date(timeIntervalSince1970: 1_700_000_000)
+
+        try FileWriter.appendTodo("buy milk", to: url, includeTimestamp: true, now: fixed)
+
+        let content = try String(contentsOf: url, encoding: .utf8)
+        // The token must come AFTER the ➕ DATE TIME marker.
+        let regex = try NSRegularExpression(pattern: #"- \[ \] buy milk ➕ \S+ \S+ <!--qc:\S+-->"#)
+        XCTAssertEqual(
+            regex.numberOfMatches(in: content, range: NSRange(content.startIndex..., in: content)),
+            1,
+            "the hidden token must trail the visible ➕ timestamp; got:\n\(content)"
+        )
+    }
+
+    func testPriorityBucketIgnoresCreationToken() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        // Same bucket with vs. without the token, across priority levels.
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] task"),
+                       FileWriter.priorityBucket(for: "- [ ] task \(token)"))
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] task !"),
+                       FileWriter.priorityBucket(for: "- [ ] task ! \(token)"))
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] task !!"),
+                       FileWriter.priorityBucket(for: "- [ ] task !! \(token)"))
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] task !!!"),
+                       FileWriter.priorityBucket(for: "- [ ] task !!! \(token)"))
+        // Explicit bucket values so a regression in the regex is loud.
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] task !!! \(token)"), 0)
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] task \(token)"), 3)
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [x] done \(token)"), 4)
+    }
+
+    func testPriorityBucketIgnoresCreationTokenCombinedWithTimestamp() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let plain = "- [ ] task !!! ➕ 2023-11-14 22:13"
+        let tokened = "\(plain) \(token)"
+        XCTAssertEqual(FileWriter.priorityBucket(for: plain), FileWriter.priorityBucket(for: tokened))
+        XCTAssertEqual(FileWriter.priorityBucket(for: tokened), 0,
+                       "token + ➕ marker + !!! must still classify as the !!! bucket")
+    }
+
+    func testPriorityBucketTokenlessLineUnaffected() {
+        // A hand-authored line with no token classifies normally.
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] hand authored !!"), 1)
+        XCTAssertEqual(FileWriter.priorityBucket(for: "- [ ] hand authored"), 3)
+    }
+
+    func testCreationDateRoundTrips() {
+        let fixed = Date(timeIntervalSince1970: 1_700_000_000)
+        let line = "- [ ] buy milk \(FileWriter.creationToken(for: fixed))"
+        XCTAssertEqual(FileWriter.creationDate(in: line), fixed)
+    }
+
+    func testCreationDateNilForTokenlessLine() {
+        XCTAssertNil(FileWriter.creationDate(in: "- [ ] no token here"))
+    }
+
+    func testStrippingCreationTokenRemovesTokenAndTimestamp() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        XCTAssertEqual(
+            FileWriter.strippingCreationToken("- [ ] buy milk !!! ➕ 2023-11-14 22:13 \(token)"),
+            "- [ ] buy milk !!!",
+            "display strip removes the hidden token and the ➕ suffix, leaving text + priority markers"
+        )
+        XCTAssertEqual(
+            FileWriter.strippingCreationToken("- [ ] just text \(token)"),
+            "- [ ] just text"
+        )
+        // Tokenless / hand-authored line is returned intact.
+        XCTAssertEqual(FileWriter.strippingCreationToken("- [ ] plain"), "- [ ] plain")
+    }
+
+    func testInsertPreservesTokenOnMovedLineAndNeighbors() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let existingToken = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_600_000_000))
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] existing plain \(existingToken)
+        """
+        let result = FileWriter.insert(
+            item: "- [ ] urgent !!! \(token)",
+            underHeading: "work",
+            in: content
+        )
+        XCTAssertTrue(
+            result.contains("- [ ] urgent !!! \(token)\n- [ ] existing plain \(existingToken)"),
+            "insert must carry the token on both the moved line and the neighbor; got:\n\(result)"
+        )
+    }
+
+    func testArchiveCompletedPreservesTokenOnMovedItem() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let archive = FileWriter.archiveURL(for: url)
+        defer { try? FileManager.default.removeItem(at: archive) }
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+
+        let content = """
+        # Inbox
+
+        ## work
+        - [x] shipped \(token)
+        - [ ] still open
+        """
+        try content.write(to: url, atomically: true, encoding: .utf8)
+
+        try FileWriter.archiveCompleted(at: url)
+
+        let archived = try String(contentsOf: archive, encoding: .utf8)
+        XCTAssertTrue(archived.contains("- [x] shipped \(token)"),
+                      "archived item must keep its hidden token; got:\n\(archived)")
+    }
+
+    func testArchiveCompletedPreservesTokenOnFlattenedIndentedItem() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let content = """
+        # Inbox
+
+        ## work
+        - [ ] parent
+            - [x] nested done \(token)
+        """
+        let (_, items) = FileWriter.extractCompletedItems(from: content)
+        XCTAssertEqual(items.count, 1)
+        XCTAssertEqual(items[0].text, "- [x] nested done \(token)",
+                       "an indented checked item flattens to top level but keeps its token")
     }
 
     // MARK: - Helpers

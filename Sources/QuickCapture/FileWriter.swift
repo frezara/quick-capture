@@ -26,6 +26,31 @@ enum FileWriter {
     /// Obsidian Tasks plugin's "created date" marker.
     static let createdMarker = "➕"
 
+    /// A stable, UTC, fixed-format ISO8601 formatter so the hidden creation-time
+    /// token is byte-stable regardless of the runner's locale or timezone (the
+    /// same reason `timestampString` forces `en_US_POSIX`).
+    static let tokenDateFormatter: ISO8601DateFormatter = {
+        let f = ISO8601DateFormatter()
+        f.formatOptions = [.withInternetDateTime]
+        f.timeZone = TimeZone(identifier: "UTC")
+        return f
+    }()
+
+    /// The never-displayed creation-time token appended to every new capture as
+    /// a trailing HTML comment — `<!--qc:<ISO8601>-->`. It rides on the item
+    /// line after the text (and after any `➕ DATE TIME` marker), invisible in
+    /// the editor's live preview and in Obsidian reading view (HTML comments
+    /// don't render). The capture file stays the single source of truth for
+    /// recency (R9/R10).
+    static func creationToken(for date: Date) -> String {
+        return "<!--qc:\(tokenDateFormatter.string(from: date))-->"
+    }
+
+    /// Regex fragment matching an optional trailing creation-time token. Shared
+    /// by every helper that classifies or trims a line so the token can never be
+    /// mistaken for content. Kept in sync with `editor.ts`'s `qc:` hiding regex.
+    static let creationTokenPattern = #"(?:\s*<!--qc:[^>]*-->)?"#
+
     /// Append `text` as a `- [ ] …` todo to `url`, routed under a `## tag` H2
     /// section when `tag` is non-empty. Untagged items go under `## Quick capture`.
     /// The file always starts with a `# Inbox` H1.
@@ -46,7 +71,12 @@ enum FileWriter {
         guard !trimmedText.isEmpty else { return }
 
         let heading = sectionName(for: tag)
+        // The hidden creation-time token is written unconditionally on every
+        // new capture, independent of the visible `➕` timestamp setting. It
+        // trails the line (after any `➕` marker) so it never displaces the
+        // priority suffix that classification keys on.
         let item = todoLine(trimmedText, includeTimestamp: includeTimestamp, now: now)
+            + " " + creationToken(for: now)
         var seen = Set<String>()
         let children = attachmentLinks
             .filter { seen.insert($0).inserted }
@@ -207,15 +237,21 @@ enum FileWriter {
     }
 
     /// 0 = unchecked `!!!`, 1 = `!!`, 2 = `!`, 3 = no priority, 4 = checked.
-    /// Tolerant of a trailing `➕ DATE TIME` timestamp suffix so `appendTodo`'s
-    /// timestamped output still classifies correctly.
+    /// Tolerant of a trailing `➕ DATE TIME` timestamp suffix and the hidden
+    /// `<!--qc:…-->` creation-time token so `appendTodo`'s output still
+    /// classifies correctly — both are stripped before the `!` count.
     static func priorityBucket(for line: String) -> Int {
         if line.range(of: #"^\s*[-*+]\s+\[[xX]\]"#, options: .regularExpression) != nil {
             return 4
         }
-        let pattern = #"\s(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$"#
-        if let range = line.range(of: pattern, options: .regularExpression) {
-            let count = line[range].filter { $0 == "!" }.count
+        // Count `!`s from the captured priority group only — the hidden token's
+        // `<!--` opener contains an `!`, so counting over the whole match range
+        // would inflate the level.
+        let pattern = #"\s(!{1,3})(?:\s+➕\s+\S+\s+\S+)?"# + creationTokenPattern + #"\s*$"#
+        if let regex = try? NSRegularExpression(pattern: pattern),
+           let match = regex.firstMatch(in: line, range: NSRange(line.startIndex..., in: line)),
+           let groupRange = Range(match.range(at: 1), in: line) {
+            let count = line[groupRange].count
             if count == 3 { return 0 }
             if count == 2 { return 1 }
             if count == 1 { return 2 }
@@ -225,6 +261,35 @@ enum FileWriter {
 
     private static func isTopLevelTaskLine(_ line: String) -> Bool {
         return line.range(of: #"^[-*+]\s+\["#, options: .regularExpression) != nil
+    }
+
+    /// The `Date` encoded in a line's hidden `<!--qc:…-->` token, or `nil` if the
+    /// line carries no (parseable) token. Used by the palette parser to rank
+    /// captures by recency (R10).
+    static func creationDate(in line: String) -> Date? {
+        guard let range = line.range(of: #"<!--qc:([^>]*)-->"#, options: .regularExpression) else {
+            return nil
+        }
+        let matched = String(line[range])
+        let iso = matched
+            .replacingOccurrences(of: "<!--qc:", with: "")
+            .replacingOccurrences(of: "-->", with: "")
+        return tokenDateFormatter.date(from: iso)
+    }
+
+    /// A capture line stripped of its hidden creation-time token and the visible
+    /// `➕ DATE TIME` marker — what the palette shows as the item's text. The
+    /// list/checkbox syntax and any priority markers are left intact; callers
+    /// that want bare display text strip those separately. Tolerant of a
+    /// tokenless, hand-authored line (returns it trimmed of trailing space).
+    static func strippingCreationToken(_ line: String) -> String {
+        var result = line.replacingOccurrences(
+            of: #"\s*<!--qc:[^>]*-->\s*$"#, with: "", options: .regularExpression
+        )
+        result = result.replacingOccurrences(
+            of: #"\s+➕\s+\S+\s+\S+\s*$"#, with: "", options: .regularExpression
+        )
+        return result
     }
 
     /// Matches a line that is an indented continuation of its parent task:
