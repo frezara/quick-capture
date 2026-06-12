@@ -164,3 +164,31 @@ final class ShortcutRegistryTests: XCTestCase {
         XCTAssertEqual(HotKeyConfig.default.displayString, "⌥⌘P")
     }
 }
+
+/// Capture mode runs as `.accessory` with no menu bar, so the standard editing
+/// chords (⌘V/⌘C/⌘X/⌘A) have no Edit-menu key-equivalent to dispatch them —
+/// `MainPanel` routes them to the first responder itself (#78). This covers the
+/// pure key→selector mapping that decides which ones get routed.
+final class CaptureEditingChordTests: XCTestCase {
+
+    func testStandardEditingChordsMapToTheirSelectors() {
+        XCTAssertEqual(CaptureEditingChord.selector(key: "v", modifiers: .command), #selector(NSText.paste(_:)))
+        XCTAssertEqual(CaptureEditingChord.selector(key: "c", modifiers: .command), #selector(NSText.copy(_:)))
+        XCTAssertEqual(CaptureEditingChord.selector(key: "x", modifiers: .command), #selector(NSText.cut(_:)))
+        XCTAssertEqual(CaptureEditingChord.selector(key: "a", modifiers: .command), #selector(NSText.selectAll(_:)))
+    }
+
+    func testNonEditingCommandChordsAreNotRouted() {
+        // ⌘F/⌘S/⌘E etc. keep their native/registry meaning — not our concern.
+        XCTAssertNil(CaptureEditingChord.selector(key: "f", modifiers: .command))
+        XCTAssertNil(CaptureEditingChord.selector(key: "s", modifiers: .command))
+        XCTAssertNil(CaptureEditingChord.selector(key: nil, modifiers: .command))
+    }
+
+    func testEditingKeysRequireExactlyCommand() {
+        // Plain key, or ⌘ plus another modifier, must not route — only bare ⌘V etc.
+        XCTAssertNil(CaptureEditingChord.selector(key: "v", modifiers: []))
+        XCTAssertNil(CaptureEditingChord.selector(key: "v", modifiers: [.command, .shift]))
+        XCTAssertNil(CaptureEditingChord.selector(key: "v", modifiers: [.command, .option]))
+    }
+}

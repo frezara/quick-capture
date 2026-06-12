@@ -3,6 +3,23 @@ import Darwin
 import SwiftUI
 import WebKit
 
+/// The standard editing chords AppKit normally dispatches through the Edit menu.
+/// Capture mode runs as `.accessory` with no menu bar (only editor mode bumps to
+/// `.regular`), so ⌘V/⌘C/⌘X/⌘A would be dropped — `MainPanel` sends them down the
+/// responder chain itself (#78). Bare ⌘ only: ⌘⇧V and friends aren't ours.
+enum CaptureEditingChord {
+    static func selector(key: String?, modifiers: NSEvent.ModifierFlags) -> Selector? {
+        guard modifiers == .command else { return nil }
+        switch key {
+        case "v": return #selector(NSText.paste(_:))
+        case "c": return #selector(NSText.copy(_:))
+        case "x": return #selector(NSText.cut(_:))
+        case "a": return #selector(NSText.selectAll(_:))
+        default:  return nil
+        }
+    }
+}
+
 /// The single floating panel that hosts both app surfaces — the capture box and
 /// the CodeMirror markdown editor — as **mutually-exclusive modes** (ADR-0004).
 /// Both stay mounted (the editor's web view is kept warm); ⌥⌘E crossfades
@@ -612,11 +629,22 @@ final class MainPanel: NSPanel {
     /// claim them. Which keys those are — and in which mode — lives in
     /// `ShortcutRegistry`, the single source of truth for bindings.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
-        guard let action = ShortcutRegistry.interceptedAction(for: event, editorOpen: editorOpen) else {
-            return super.performKeyEquivalent(with: event)
+        if let action = ShortcutRegistry.interceptedAction(for: event, editorOpen: editorOpen) {
+            perform(shortcut: action)
+            return true
         }
-        perform(shortcut: action)
-        return true
+        // Capture mode has no menu bar, so the standard editing chords
+        // (⌘V/⌘C/⌘X/⌘A) have nothing to dispatch them — route them down the
+        // responder chain to the focused field. Editor mode keeps its menu bar,
+        // so leave those to the standard Edit-menu path.
+        if !editorOpen,
+           let selector = CaptureEditingChord.selector(
+               key: event.charactersIgnoringModifiers?.lowercased(),
+               modifiers: event.modifierFlags.intersection(.deviceIndependentFlagsMask)),
+           NSApp.sendAction(selector, to: nil, from: self) {
+            return true
+        }
+        return super.performKeyEquivalent(with: event)
     }
 
     /// Dispatch a shortcut action. Window-intercepted actions call straight
