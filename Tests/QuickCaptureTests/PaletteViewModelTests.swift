@@ -136,4 +136,62 @@ final class PaletteViewModelTests: XCTestCase {
         let sections = PaletteViewModel.sections(items: [], tagSummary: tags, query: "")
         XCTAssertEqual(rows(sections, titled: "Jump to tag").map(\.title), ["work"])
     }
+
+    // MARK: - 7. Global commands (U7)
+
+    /// Pull the `PaletteCommand` id out of a command row, or nil if it isn't one.
+    private func commandID(_ row: PaletteRow?) -> PaletteCommand? {
+        guard case .command(let command)? = row?.kind else { return nil }
+        return command
+    }
+
+    func testEmptyQueryShowsAllCommands() {
+        let sections = PaletteViewModel.sections(items: [], tagSummary: [], query: "")
+        let commands = rows(sections, titled: "Commands")
+        XCTAssertEqual(
+            commands.map(\.title),
+            ["Open Editor", "Archive completed", "Re-organize", "Refile", "Settings", "New capture"])
+    }
+
+    func testQueryArchSurfacesArchiveCompletedCommand() {
+        let sections = PaletteViewModel.sections(items: [], tagSummary: [], query: "arch")
+        let commands = rows(sections, titled: "Commands")
+        XCTAssertEqual(commands.map(\.title), ["Archive completed"])
+    }
+
+    func testCommandTitlesMatchCaseInsensitively() {
+        let sections = PaletteViewModel.sections(items: [], tagSummary: [], query: "SETTINGS")
+        let commands = rows(sections, titled: "Commands")
+        XCTAssertEqual(commands.map(\.title), ["Settings"])
+    }
+
+    func testQueryMatchingNoCommandHidesCommandsSection() {
+        // "buy" matches no command title — the Commands section is dropped.
+        let sections = PaletteViewModel.sections(
+            items: [item("Buy milk", line: 1)], tagSummary: [], query: "buy")
+        XCTAssertNil(sections.first { $0.title == "Commands" })
+    }
+
+    func testCommandRowCarriesStableIdentifierForTitle() {
+        let sections = PaletteViewModel.sections(items: [], tagSummary: [], query: "")
+        let commands = rows(sections, titled: "Commands")
+
+        XCTAssertEqual(commandID(commands.first { $0.title == "Open Editor" }), .openEditor)
+        XCTAssertEqual(commandID(commands.first { $0.title == "Archive completed" }), .archiveCompleted)
+        XCTAssertEqual(commandID(commands.first { $0.title == "Re-organize" }), .reorganize)
+        XCTAssertEqual(commandID(commands.first { $0.title == "Refile" }), .refile)
+        XCTAssertEqual(commandID(commands.first { $0.title == "Settings" }), .settings)
+        XCTAssertEqual(commandID(commands.first { $0.title == "New capture" }), .newCapture)
+    }
+
+    func testQueryMatchingOnlyCommandShowsJustCommandsSection() {
+        // A query that hits a command but no capture/tag yields exactly the
+        // Commands section (the others are dropped as empty).
+        let sections = PaletteViewModel.sections(
+            items: [item("Buy milk", line: 1)],
+            tagSummary: [CaptureTagSummary(tag: "work", count: 2)],
+            query: "refile")
+        XCTAssertEqual(sections.map(\.title), ["Commands"])
+        XCTAssertEqual(commandID(rows(sections, titled: "Commands").first), .refile)
+    }
 }

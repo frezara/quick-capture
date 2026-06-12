@@ -26,7 +26,10 @@ struct PaletteRow: Identifiable, Equatable {
         /// (U6 reveals that section). Distinct from a capture row precisely so
         /// activation is unambiguous: a tag navigates by name, never by line.
         case tag(name: String)
-        case command
+        /// A global command (U7) — carries the `PaletteCommand` it runs so
+        /// `MainPanel` can dispatch to the right existing entry point. The id is
+        /// the stable navigation target, the same way a capture carries its line.
+        case command(PaletteCommand)
     }
 
     let id = UUID()
@@ -241,8 +244,8 @@ struct PaletteView: View {
                 .font(.system(size: 12, weight: .semibold))
                 .foregroundStyle(theme.inkTertiary)
                 .frame(width: 16)
-        case .command:
-            Image(systemName: "command")
+        case .command(let command):
+            Image(systemName: command.systemImage)
                 .font(.system(size: 11, weight: .semibold))
                 .foregroundStyle(theme.inkTertiary)
                 .frame(width: 16)

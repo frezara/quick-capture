@@ -17,7 +17,7 @@ final class PaletteViewTests: XCTestCase {
                 PaletteRow(title: "work", kind: .tag(name: "work"), detail: "2"),
             ]),
             PaletteSection(title: "Commands", rows: [
-                PaletteRow(title: "Settings", kind: .command),
+                PaletteRow(title: "Settings", kind: .command(.settings)),
             ]),
         ]
     }
@@ -32,7 +32,7 @@ final class PaletteViewTests: XCTestCase {
     func testFlattenSkipsEmptySectionsImplicitly() {
         let sections = [
             PaletteSection(title: "Empty", rows: []),
-            PaletteSection(title: "One", rows: [PaletteRow(title: "x", kind: .command)]),
+            PaletteSection(title: "One", rows: [PaletteRow(title: "x", kind: .command(.settings))]),
         ]
         XCTAssertEqual(PaletteList.flatten(sections).map(\.title), ["x"])
     }

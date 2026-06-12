@@ -719,8 +719,8 @@ final class MainPanel: NSPanel {
                     self.reveal(line: line)
                 case .tag(let name):
                     self.reveal(section: name)
-                case .command:
-                    break
+                case .command(let command):
+                    self.dispatch(command: command)
                 }
             },
             onClose: { [weak self] in
@@ -734,6 +734,39 @@ final class MainPanel: NSPanel {
                 }
             }
         )
+    }
+
+    /// Palette → command dispatch (epic #82, U7). Each command runs its existing
+    /// entry point. We defer to the next runloop tick so the action lands *after*
+    /// the palette's dismiss/`onClose` sequence has re-taken key for MainPanel —
+    /// otherwise Settings (a separate window) and New capture would have their
+    /// focus yanked back the instant they opened.
+    func dispatch(command: PaletteCommand) {
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            switch command {
+            case .openEditor:
+                if !self.editorOpen { self.showInEditor() }
+            case .archiveCompleted:
+                // Same entry point the editor's archive button drives over the
+                // bridge; the file watcher reloads the warm editor afterward.
+                self.archive()
+            case .reorganize:
+                // Editor-context action — enter the editor (warming the web view)
+                // then invoke it over the bridge, mirroring the menu item. Routes
+                // through `enterEditorThenReveal` so a cold editor replays the
+                // invoke once its content has mounted, rather than dropping it.
+                self.enterEditorThenInvoke(.reorg)
+            case .refile:
+                self.enterEditorThenInvoke(.refile)
+            case .settings:
+                (NSApp.delegate as? AppDelegate)?.showSettings()
+            case .newCapture:
+                // Reset to the capture box and focus it (the menu-bar "Capture…"
+                // route), so New capture always ends with the input ready.
+                (NSApp.delegate as? AppDelegate)?.showCapture()
+            }
+        }
     }
 
     /// Palette → editor navigation (epic #82, U6). Enter editor mode (warming
@@ -782,6 +815,15 @@ final class MainPanel: NSPanel {
             "window.qcEditor && window.qcEditor.invoke && window.qcEditor.invoke(\(id))",
             completionHandler: nil
         )
+    }
+
+    /// Palette → editor-context command (U7). Enter editor mode if needed, then
+    /// invoke the bridge action — reusing `enterEditorThenReveal`'s warm/cold
+    /// sequencing so a cold web view replays the invoke once its content mounts
+    /// (a cold `invokeEditorAction` would silently no-op on `webViewReady`).
+    private func enterEditorThenInvoke(_ action: ShortcutAction) {
+        guard let id = String(data: try! JSONEncoder().encode(action.rawValue), encoding: .utf8) else { return }
+        enterEditorThenReveal("window.qcEditor.invoke && window.qcEditor.invoke(\(id))")
     }
 
     override func orderOut(_ sender: Any?) {

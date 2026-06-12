@@ -1,5 +1,43 @@
 import Foundation
 
+/// The global commands the palette can run (R11). Each case maps 1:1 to an
+/// existing app entry point; `MainPanel.dispatch(command:)` does the routing.
+/// The enum *is* the stable identifier a `.command` row carries, so dispatch
+/// never depends on the (localizable) display title. `allCases` is the canonical
+/// order the Commands section renders in.
+enum PaletteCommand: String, CaseIterable, Equatable {
+    case openEditor
+    case archiveCompleted
+    case reorganize
+    case refile
+    case settings
+    case newCapture
+
+    /// The row's display text — also the substring-match target.
+    var title: String {
+        switch self {
+        case .openEditor:       return "Open Editor"
+        case .archiveCompleted: return "Archive completed"
+        case .reorganize:       return "Re-organize"
+        case .refile:           return "Refile"
+        case .settings:         return "Settings"
+        case .newCapture:       return "New capture"
+        }
+    }
+
+    /// SF Symbol drawn as the row's leading glyph.
+    var systemImage: String {
+        switch self {
+        case .openEditor:       return "doc.text"
+        case .archiveCompleted: return "archivebox"
+        case .reorganize:       return "arrow.up.arrow.down"
+        case .refile:           return "tray.and.arrow.down"
+        case .settings:         return "gearshape"
+        case .newCapture:       return "square.and.pencil"
+        }
+    }
+}
+
 /// Pure, AppKit-free logic that turns parsed capture items + tag counts + a
 /// query string into the `[PaletteSection]` the `PaletteView` renders. All I/O
 /// (reading the capture file) happens at the edge in `PalettePanel`/`MainPanel`;
@@ -8,10 +46,10 @@ import Foundation
 /// Section model:
 /// - **Empty query** → Recent captures (recency-sorted via
 ///   `CaptureItemParser.recencySorted`, capped to `recentCap`) + Jump to tag
-///   (non-empty tags, with counts). Commands is left empty here — U7 fills it.
+///   (non-empty tags, with counts) + Commands (all of them, in `allCases` order).
 /// - **Non-empty query** → captures whose `displayText` contains the query
-///   (substring, case-insensitive), plus tags whose name matches the query.
-///   Empty sections are dropped so the list shows only what hit.
+///   (substring, case-insensitive), tags whose name matches, and commands whose
+///   title matches. Empty sections are dropped so the list shows only what hit.
 ///
 /// Row kinds carry their navigation target so a later unit (U6) can act on a
 /// selection unambiguously: a capture row carries its 0-based `line`, a tag row
@@ -39,8 +77,8 @@ enum PaletteViewModel {
 
     // MARK: - Empty query
 
-    /// Recent captures (recency order, capped) + Jump to tag (non-empty tags).
-    /// Commands is intentionally omitted until U7.
+    /// Recent captures (recency order, capped) + Jump to tag (non-empty tags) +
+    /// Commands (all of them — the empty state advertises the full launcher).
     private static func emptyQuerySections(items: [CaptureItem],
                                            tagSummary: [CaptureTagSummary],
                                            recentCap: Int) -> [PaletteSection] {
@@ -54,6 +92,7 @@ enum PaletteViewModel {
         if !tags.isEmpty {
             sections.append(PaletteSection(title: "Jump to tag", rows: tags.map(tagRow)))
         }
+        sections.append(PaletteSection(title: "Commands", rows: PaletteCommand.allCases.map(commandRow)))
         return sections
     }
 
@@ -77,12 +116,19 @@ enum PaletteViewModel {
             $0.count > 0 && $0.tag.lowercased().contains(needle)
         }
 
+        let commands = PaletteCommand.allCases.filter {
+            $0.title.lowercased().contains(needle)
+        }
+
         var sections: [PaletteSection] = []
         if !captures.isEmpty {
             sections.append(PaletteSection(title: "Captures", rows: captures.map(captureRow)))
         }
         if !tags.isEmpty {
             sections.append(PaletteSection(title: "Jump to tag", rows: tags.map(tagRow)))
+        }
+        if !commands.isEmpty {
+            sections.append(PaletteSection(title: "Commands", rows: commands.map(commandRow)))
         }
         return sections
     }
@@ -106,6 +152,16 @@ enum PaletteViewModel {
             title: summary.tag,
             kind: .tag(name: summary.tag),
             detail: String(summary.count)
+        )
+    }
+
+    /// A command row: the command's title + the command itself as the kind, so
+    /// `MainPanel` dispatches by the stable id rather than the display string.
+    private static func commandRow(_ command: PaletteCommand) -> PaletteRow {
+        PaletteRow(
+            title: command.title,
+            kind: .command(command),
+            detail: nil
         )
     }
 }
