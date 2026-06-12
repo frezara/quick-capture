@@ -641,7 +641,13 @@ function makeTheme() {
         gap: "16px",
         height: "33px",
         padding: "0 16px",
-        backgroundColor: palette.surfaceRail,
+        // Floats over the scroller (zIndex 8), which fills the full editor
+        // height, so document lines scroll behind this band. surfaceRail is a
+        // translucent tint in the native-v2 palette — on its own the bar is
+        // ~97% see-through and content bleeds through / reads as clipped under
+        // it. Layer the tint on the opaque surface so it fully occludes, in
+        // both palettes (same fix family as the floating cards, 56b274f).
+        background: `linear-gradient(0deg, ${palette.surfaceRail}, ${palette.surfaceRail}) ${palette.surface}`,
         borderTop: `0.5px solid ${palette.borderSoft}`,
         fontFamily: sansFamily,
         fontSize: "11px",
