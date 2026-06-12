@@ -77,6 +77,9 @@ Tests/QuickCaptureTests/
 Requires Xcode 16+, [XcodeGen](https://github.com/yonaskolb/XcodeGen), Node 18+.
 
 ```sh
+# One-time per machine: create the local code-signing identity (see below).
+bash scripts/make-signing-cert.sh
+
 # One-time / after adding-removing Swift files:
 xcodegen generate
 
@@ -90,6 +93,15 @@ xcodebuild -project QuickCapture.xcodeproj -scheme QuickCapture -configuration D
 # Tests:
 xcodebuild -project QuickCapture.xcodeproj -scheme QuickCapture test
 ```
+
+**Debug signing (one-time).** Debug builds sign with a stable self-signed
+identity, **"QuickCapture Dev"**, so the macOS TCC grant for Desktop/Files
+access (the `⌥⌘S` screenshot picker) survives rebuilds — ad-hoc signing gives a
+fresh cdhash every build, which makes macOS re-prompt each time (#77). Run
+`scripts/make-signing-cert.sh` once to create the identity in your login
+keychain; `project.yml` points Debug at it (Manual signing, hardened runtime
+off so the XCTest bundle still loads). CI overrides `CODE_SIGN_IDENTITY=-`, so
+the cert is local-only and never needed on the runner.
 
 `editor-web/dist/` is bundled into the `.app` as a folder reference (see
 `project.yml`), so `Bundle.main.url(forResource:..., subdirectory: "dist")`
