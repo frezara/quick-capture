@@ -26,6 +26,11 @@ final class PalettePanel: NSPanel {
     /// Invoked after the panel orders out (Esc, activate, or an external close),
     /// exactly once per open. MainPanel uses it to restore key + re-arm dismiss.
     private var onClose: (() -> Void)?
+    /// The row-activation and per-item-action callbacks, retained so `refresh`
+    /// can rebuild the SwiftUI view after a mutating action (done/undone, delete)
+    /// re-parses the file — same handlers, fresh items.
+    private var onActivate: ((PaletteRow) -> Void)?
+    private var onItemAction: ((PaletteItemAction) -> Void)?
 
     init() {
         super.init(
@@ -58,29 +63,14 @@ final class PalettePanel: NSPanel {
     func open(items: [CaptureItem],
               tagSummary: [CaptureTagSummary],
               onActivate: @escaping (PaletteRow) -> Void,
+              onItemAction: @escaping (PaletteItemAction) -> Void,
               onClose: @escaping () -> Void) {
         self.onClose = onClose
+        self.onActivate = onActivate
+        self.onItemAction = onItemAction
 
         let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-        let view = PaletteView(
-            items: items,
-            tagSummary: tagSummary,
-            isDark: isDark,
-            onActivate: { [weak self] row in
-                onActivate(row)
-                self?.dismissPalette()
-            },
-            onDismiss: { [weak self] in self?.dismissPalette() }
-        )
-        let host: NSHostingView<PaletteView>
-        if let existing = hosting {
-            existing.rootView = view
-            host = existing
-        } else {
-            host = NSHostingView(rootView: view)
-            contentView = host
-            hosting = host
-        }
+        let host = makeHost(items: items, tagSummary: tagSummary, isDark: isDark)
 
         // Size to the content, then center on the screen under the cursor (the
         // same screen-selection rule MainPanel uses) so the palette floats over
@@ -95,6 +85,51 @@ final class PalettePanel: NSPanel {
 
         makeKeyAndOrderFront(nil)
         orderFrontRegardless()
+    }
+
+    /// Re-render the open palette with freshly parsed items after a mutating
+    /// per-item action (done/undone, delete). The disk is canonical, so MainPanel
+    /// re-reads + re-parses the file and hands the new items back here; we rebuild
+    /// the SwiftUI view with the same retained callbacks so the list reflects the
+    /// change without closing the palette. A no-op if the palette isn't showing.
+    func refresh(items: [CaptureItem], tagSummary: [CaptureTagSummary]) {
+        guard isVisible, hosting != nil else { return }
+        let isDark = effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        _ = makeHost(items: items, tagSummary: tagSummary, isDark: isDark)
+    }
+
+    /// Build (or reuse) the hosting view for `items`/`tagSummary`, wiring the
+    /// retained `onActivate`/`onItemAction` callbacks. Returns the host so `open`
+    /// can size/center it; `refresh` ignores the return.
+    @discardableResult
+    private func makeHost(items: [CaptureItem],
+                          tagSummary: [CaptureTagSummary],
+                          isDark: Bool) -> NSHostingView<PaletteView> {
+        let view = PaletteView(
+            items: items,
+            tagSummary: tagSummary,
+            isDark: isDark,
+            onActivate: { [weak self] row in
+                self?.onActivate?(row)
+                self?.dismissPalette()
+            },
+            onItemAction: { [weak self] action in
+                // Every per-item action routes out to MainPanel, which owns the
+                // disk/editor/pasteboard flows and the post-mutation refresh. The
+                // palette stays open so the user can chain actions — MainPanel
+                // decides when to dismiss (refile reveals the editor and closes).
+                self?.onItemAction?(action)
+            },
+            onDismiss: { [weak self] in self?.dismissPalette() }
+        )
+        if let existing = hosting {
+            existing.rootView = view
+            return existing
+        }
+        let host = NSHostingView(rootView: view)
+        contentView = host
+        hosting = host
+        return host
     }
 
     /// Order out and fire `onClose` once. Named `dismissPalette` (not `close`) to

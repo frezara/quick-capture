@@ -830,6 +830,127 @@ final class FileWriterTests: XCTestCase {
                        "an indented checked item flattens to top level but keeps its token")
     }
 
+    // MARK: - Per-item palette actions (epic #82, U8)
+
+    func testToggleDoneMarksOpenItemCheckedAndPreservesTokenAndOtherLines() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let content = """
+        # Inbox
+
+        ## Quick capture
+        - [ ] buy milk \(token)
+        - [ ] mow lawn
+        """
+        // Display text the palette would show for the buy-milk line (line 3, 0-based).
+        let expected = CaptureItemParser.displayText(for: "- [ ] buy milk \(token)")
+        guard let toggled = FileWriter.toggleDone(atLine: 3, expecting: expected, in: content) else {
+            return XCTFail("toggle should succeed on a matching line")
+        }
+
+        var lines = content.components(separatedBy: "\n")
+        lines[3] = "- [x] buy milk \(token)"
+        let expectedFile = lines.joined(separator: "\n")
+        XCTAssertEqual(toggled, expectedFile,
+                       "only the checkbox flips; token + every other line byte-identical")
+
+        // Toggling again restores the open state.
+        let restored = FileWriter.toggleDone(atLine: 3, expecting: expected, in: toggled)
+        XCTAssertEqual(restored, content, "a second toggle restores `[ ]` exactly")
+    }
+
+    func testToggleDoneNoOpsWhenLineDrifted() {
+        let content = """
+        # Inbox
+
+        ## Quick capture
+        - [ ] buy milk
+        - [ ] mow lawn
+        """
+        // The palette thought line 3 read "renew passport" — it doesn't. No write,
+        // and crucially the *other* lines aren't mutated by mistake.
+        let result = FileWriter.toggleDone(atLine: 3, expecting: "renew passport", in: content)
+        XCTAssertNil(result, "a drifted target line is a safe no-op, never a wrong-line flip")
+    }
+
+    func testToggleDoneNoOpsOnNonTaskLine() {
+        let content = "# Inbox\n\n## Quick capture\n- [ ] buy milk"
+        // Line 2 is the heading, not a task.
+        XCTAssertNil(FileWriter.toggleDone(atLine: 2, expecting: "Quick capture", in: content))
+        // Out of range.
+        XCTAssertNil(FileWriter.toggleDone(atLine: 99, expecting: "x", in: content))
+    }
+
+    func testDeleteSubtreeRemovesItemWithNestedAndAttachmentLinesOnly() {
+        let content = """
+        # Inbox
+
+        ## Quick capture
+        - [ ] keep this
+        - [ ] move me
+          ![screenshot](attachments/a.png)
+          - [ ] nested child
+        - [ ] keep this too
+        """
+        let expected = CaptureItemParser.displayText(for: "- [ ] move me")
+        let result = FileWriter.deleteSubtree(atLine: 4, expecting: expected, in: content)
+        let want = """
+        # Inbox
+
+        ## Quick capture
+        - [ ] keep this
+        - [ ] keep this too
+        """
+        XCTAssertEqual(result, want,
+                       "the item + its attachment + nested child go; surrounding items stay")
+    }
+
+    func testDeleteSubtreeNoOpsWhenLineDrifted() {
+        let content = """
+        # Inbox
+
+        ## Quick capture
+        - [ ] keep this
+        - [ ] move me
+        """
+        XCTAssertNil(FileWriter.deleteSubtree(atLine: 4, expecting: "something else", in: content),
+                     "drifted target line is a safe no-op — never deletes the wrong subtree")
+    }
+
+    /// Palette-refile smoke: the per-item refile reuses the editor's ⌥⌘R gesture,
+    /// which resolves the subtree from the cursor line via `subtreeRange` and
+    /// hands it to `RefileService` (covered by `RefileServiceTests`). This asserts
+    /// the line the palette targets resolves to the same subtree refile would
+    /// move — the seam between the palette's item line and the refile pipeline.
+    func testRefileSubtreeResolvesFromPaletteItemLine() {
+        let content = """
+        # Inbox
+
+        ## Quick capture
+        - [ ] keep this
+        - [ ] move me
+          ![screenshot](attachments/a.png)
+        - [ ] keep this too
+        """
+        // The palette's item line for "move me" is 4 (0-based).
+        let range = FileWriter.subtreeRange(in: content, atLine: 4)
+        XCTAssertEqual(range, 4..<6, "the item + its attachment line form the refiled subtree")
+        let lines = content.components(separatedBy: "\n")
+        let subtree = lines[range!].joined(separator: "\n")
+        XCTAssertEqual(subtree, "- [ ] move me\n  ![screenshot](attachments/a.png)")
+    }
+
+    func testCaptureItemDisplayTextStripsTokenMarkersForCopy() {
+        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        // What the palette's Copy action puts on the pasteboard is exactly the
+        // row's display text — token, `➕` suffix, list syntax, and priority
+        // markers all stripped.
+        // Real capture order: typed text + priority markers, then the `➕`
+        // timestamp, then the hidden token.
+        let line = "- [ ] buy milk !! ➕ 2024-01-02 09:30 \(token)"
+        XCTAssertEqual(CaptureItemParser.displayText(for: line), "buy milk",
+                       "copy text is the clean thought — no token, marker, syntax, or priority")
+    }
+
     // MARK: - Helpers
 
     private func makeTempFile() -> URL {

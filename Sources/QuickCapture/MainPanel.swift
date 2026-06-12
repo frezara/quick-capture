@@ -723,6 +723,9 @@ final class MainPanel: NSPanel {
                     self.dispatch(command: command)
                 }
             },
+            onItemAction: { [weak self] action in
+                self?.perform(itemAction: action)
+            },
             onClose: { [weak self] in
                 guard let self else { return }
                 // Re-take key (the palette had it) and re-arm click-away dismiss,
@@ -767,6 +770,69 @@ final class MainPanel: NSPanel {
                 (NSApp.delegate as? AppDelegate)?.showCapture()
             }
         }
+    }
+
+    /// Palette → per-item action (epic #82, U8 / R12). `⌘K` on a highlighted
+    /// capture row routes here. Toggle and delete are pure `FileWriter` line
+    /// edits with a verify-before-write drift guard (the file may have changed
+    /// since the palette parsed it); on success the file is rewritten atomically
+    /// — the file watcher reloads the warm editor, same as archive/refile — and
+    /// the palette re-reads + re-parses so its list reflects the change. Copy
+    /// puts the row's display text on the pasteboard. Refile reuses the editor's
+    /// target-dropdown gesture rather than duplicating the refile pipeline or a
+    /// target picker: reveal the item, then trigger ⌥⌘R so the user picks a
+    /// target in the editor's existing, tested flow.
+    func perform(itemAction action: PaletteItemAction) {
+        switch action.kind {
+        case .copy:
+            let pb = NSPasteboard.general
+            pb.clearContents()
+            pb.setString(action.displayText, forType: .string)
+
+        case .toggleDone:
+            mutateCaptureFile { content in
+                FileWriter.toggleDone(atLine: action.line, expecting: action.displayText, in: content)
+            }
+
+        case .delete:
+            mutateCaptureFile { content in
+                FileWriter.deleteSubtree(atLine: action.line, expecting: action.displayText, in: content)
+            }
+
+        case .refile:
+            // Reuse the editor's refile gesture so the target picker and the
+            // crash-safe RefileService pipeline aren't duplicated. Dismiss the
+            // palette, reveal the item's line in the editor (placing the cursor
+            // on it so ⌥⌘R resolves the right subtree), then invoke refile.
+            palettePanel.dismissPalette()
+            reveal(line: action.line)
+            DispatchQueue.main.async { [weak self] in
+                self?.enterEditorThenInvoke(.refile)
+            }
+        }
+    }
+
+    /// Apply a pure, drift-guarded `FileWriter` line edit to the **on-disk**
+    /// capture file (re-read so we edit the canonical bytes, not the palette's
+    /// snapshot), write atomically, and refresh the palette. A nil result means
+    /// the target line drifted — a safe no-op, no write, no wrong-line mutation.
+    /// The file watcher reloads the warm editor from the new bytes.
+    private func mutateCaptureFile(_ transform: (String) -> String?) {
+        let url = appState.captureFileURL
+        let content = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        guard let updated = transform(content) else { return }
+        do {
+            try updated.write(to: url, atomically: true, encoding: .utf8)
+        } catch {
+            NSLog("Palette item action failed to write \(url.path): \(error)")
+            return
+        }
+        // Re-read + re-parse so the still-open palette reflects the change (the
+        // file is canonical). We re-read rather than reuse `updated` to stay
+        // consistent with how the palette first loaded its items.
+        let fresh = (try? String(contentsOf: url, encoding: .utf8)) ?? updated
+        palettePanel.refresh(items: CaptureItemParser.parse(fresh),
+                             tagSummary: CaptureItemParser.tagSummary(fresh))
     }
 
     /// Palette → editor navigation (epic #82, U6). Enter editor mode (warming

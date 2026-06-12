@@ -540,6 +540,56 @@ enum FileWriter {
         return base + separator + subtree + "\n"
     }
 
+    // MARK: - Per-item palette actions (epic #82, U8)
+
+    /// Re-derive the palette's display text for the line at `lineIndex`, or nil
+    /// when the index is out of range. The per-item actions key drift detection
+    /// on this: the palette parsed the file once on open, so before mutating a
+    /// line we confirm it still reads as the item the user highlighted. Reusing
+    /// `CaptureItemParser.displayText` keeps "what the row shows" and "what we
+    /// verify against" a single source of truth.
+    private static func itemDisplayText(ofLine lineIndex: Int, in content: String) -> String? {
+        let lines = content.components(separatedBy: "\n")
+        guard lineIndex >= 0, lineIndex < lines.count else { return nil }
+        return CaptureItemParser.displayText(for: lines[lineIndex])
+    }
+
+    /// Toggle a task line between `[ ]` and `[x]`, leaving everything else on the
+    /// line — the hidden creation token, the `➕` marker, trailing priority
+    /// markers, indentation — byte-for-byte intact (only the single checkbox
+    /// character flips). Returns the new file content, or nil (a safe no-op) when
+    /// the target line drifted: it's out of range, isn't a task line, or no
+    /// longer reads as `expecting`. The drift guard mirrors refile's
+    /// verify-before-write so a stale palette can never flip the wrong line.
+    static func toggleDone(atLine lineIndex: Int, expecting displayText: String, in content: String) -> String? {
+        guard itemDisplayText(ofLine: lineIndex, in: content) == displayText else { return nil }
+        var lines = content.components(separatedBy: "\n")
+        let line = lines[lineIndex]
+        // Flip only the single checkbox character inside `[ ]`/`[x]`, preserving
+        // the bullet, indentation, and the exact spacing around it — everything
+        // after the checkbox (text, `➕` marker, priority, hidden token) is
+        // untouched. The capture-box check is the `[` plus one box char plus `]`.
+        guard let box = line.range(of: #"^\s*[-*+]\s+\[[ xX]\]"#, options: .regularExpression),
+              let bracket = line.range(of: #"\[[ xX]\]"#, options: .regularExpression, range: box) else { return nil }
+        let mark = line[bracket]   // "[ ]" or "[x]"/"[X]"
+        let flipped = mark.contains(" ") ? "[x]" : "[ ]"
+        lines[lineIndex] = line.replacingCharacters(in: bracket, with: flipped)
+        return lines.joined(separator: "\n")
+    }
+
+    /// Remove the subtree owning `lineIndex` — the item plus its nested children
+    /// and attachment lines, resolved by the SAME `subtreeRange` rule refile
+    /// uses — and nothing else. Returns the new file content, or nil (a safe
+    /// no-op) when the line drifted (out of range, not an item, or no longer
+    /// reads as `expecting`) or has no resolvable subtree.
+    static func deleteSubtree(atLine lineIndex: Int, expecting displayText: String, in content: String) -> String? {
+        guard itemDisplayText(ofLine: lineIndex, in: content) == displayText,
+              let range = subtreeRange(in: content, atLine: lineIndex) else { return nil }
+        var lines = content.components(separatedBy: "\n")
+        lines.removeSubrange(range)
+        return lines.joined(separator: "\n")
+    }
+
     /// Sibling URL with `_archive` inserted before the extension.
     /// e.g. `inbox.md` → `inbox_archive.md`, `notes` → `notes_archive`.
     static func archiveURL(for source: URL) -> URL {

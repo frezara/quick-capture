@@ -150,7 +150,13 @@ enum CaptureItemParser {
     /// suffix (via `FileWriter.strippingCreationToken`), then the leading
     /// `- [ ] ` / `- [x] ` syntax, then any trailing `!`/`!!`/`!!!` priority
     /// markers — leaving just the readable thought.
-    private static func displayText(for line: String) -> String {
+    ///
+    /// Exposed (not private) because the per-item palette actions (U8) re-derive
+    /// it from the on-disk line to verify the target line hasn't drifted since
+    /// the palette parsed the file — the same display string the row shows must
+    /// still describe the line about to be mutated. One source of truth for
+    /// "what an item line reads as" keeps the drift guard honest.
+    static func displayText(for line: String) -> String {
         var text = FileWriter.strippingCreationToken(line)
         text = text.replacingOccurrences(
             of: #"^\s*[-*+]\s+\[[ xX]\]\s+"#, with: "", options: .regularExpression
