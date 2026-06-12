@@ -40,7 +40,7 @@ enum PaletteCommand: String, CaseIterable, Equatable {
 
 /// Pure, AppKit-free logic that turns parsed capture items + tag counts + a
 /// query string into the `[PaletteSection]` the `PaletteView` renders. All I/O
-/// (reading the capture file) happens at the edge in `PalettePanel`/`MainPanel`;
+/// (reading the capture file) happens at the edge in `MainPanel`;
 /// this is the testable core (`PaletteViewModelTests`).
 ///
 /// Section model:
