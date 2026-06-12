@@ -62,6 +62,53 @@ final class ScreenshotLocatorTests: XCTestCase {
                        urls.reversed().prefix(5).map { $0.lastPathComponent })
     }
 
+    // MARK: - Access-denied vs empty distinction
+
+    func testScanReportsEmptyDirectoryAsNotDenied() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+
+        let result = ScreenshotLocator.scan(in: dir, limit: 5)
+
+        XCTAssertTrue(result.screenshots.isEmpty, "empty directory yields no screenshots")
+        XCTAssertFalse(result.accessDenied,
+                       "a readable but empty directory must not report access denied")
+    }
+
+    func testScanReportsMissingDirectoryAsNotDenied() throws {
+        let dir = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: dir) }
+        let missing = dir.appendingPathComponent("does-not-exist", isDirectory: true)
+
+        let result = ScreenshotLocator.scan(in: missing, limit: 5)
+
+        XCTAssertTrue(result.screenshots.isEmpty, "missing directory yields no screenshots")
+        XCTAssertFalse(result.accessDenied,
+                       "a missing directory is not an access denial — it just isn't there")
+    }
+
+    func testScanReportsUnreadableDirectoryAsDenied() throws {
+        let dir = try makeTempDir()
+        defer {
+            // Restore perms so cleanup can recurse into it.
+            try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: dir.path)
+            try? FileManager.default.removeItem(at: dir)
+        }
+
+        // A real screenshot lives inside, but the directory itself is unreadable —
+        // contentsOfDirectory will throw EPERM, which must read as access-denied,
+        // not as an empty folder.
+        _ = try makeFile(in: dir, named: "Screenshot 2026-06-01 at 10.00.00.png")
+        try FileManager.default.setAttributes([.posixPermissions: 0o000], ofItemAtPath: dir.path)
+
+        let result = ScreenshotLocator.scan(in: dir, limit: 5)
+
+        XCTAssertTrue(result.screenshots.isEmpty,
+                      "an unreadable directory yields no screenshots (the read threw)")
+        XCTAssertTrue(result.accessDenied,
+                      "an existing directory whose read throws must report access denied")
+    }
+
     func testNewestScreenshotsIgnoresNonScreenshotFiles() throws {
         let dir = try makeTempDir()
         defer { try? FileManager.default.removeItem(at: dir) }
