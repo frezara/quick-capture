@@ -34,10 +34,10 @@ struct CaptureView: View {
     @State private var tagHighlight = 0
     /// Esc closes the dropdown without leaving the tag field; typing reopens.
     @State private var tagDropdownDismissed = false
-    /// Highlighted row in the ⌘⇧S screenshot picker (0 = newest). Moves with
+    /// Highlighted row in the ⌥⌘S screenshot picker (0 = newest). Moves with
     /// ↑/↓ independently of what's toggled for selection.
     @State private var pickerIndex = 0
-    /// Screenshots toggled (Space/click) in the ⌘⇧S picker. Enter attaches all
+    /// Screenshots toggled (Space/click) in the ⌥⌘S picker. Enter attaches all
     /// of these; empty falls back to the highlighted row (the one-press flow).
     /// Keyed by URL so it survives a re-query that reshuffles indices.
     @State private var pickerSelection: Set<URL> = []
@@ -60,7 +60,7 @@ struct CaptureView: View {
     var body: some View {
         Group {
             if let items = appState.screenshotPickerItems {
-                // ⌘⇧S takeover: a large centered panel (same window, like the
+                // ⌥⌘S takeover: a large centered panel (same window, like the
                 // editor) that fills the surface while you pick.
                 screenshotPickerSurface(items)
             } else {
@@ -179,7 +179,7 @@ struct CaptureView: View {
         .onChange(of: appState.pendingAttachments) { _, newValue in
             loadChipThumbnails(for: newValue)
         }
-        // The picker's item set changing (open, or ⌘⇧S re-query) resets the
+        // The picker's item set changing (open, or ⌥⌘S re-query) resets the
         // highlight to the newest and (re)loads previews; opening also moves
         // keyboard focus onto the picker so arrows/Enter reach it, and closing
         // hands focus back to the todo field.
@@ -546,7 +546,7 @@ struct CaptureView: View {
                 // The tag chips moved into the dropdown under the tag field;
                 // keep a quiet hint here so the footer row (and with it the
                 // strip's fixed height) never collapses to empty.
-                Text("Tab to tag · ⌘⇧S to attach")
+                Text("Tab to tag · ⌥⌘S to attach")
                     .font(TypeScale.chip)
                     .foregroundStyle(theme.inkTertiary)
                     .fixedSize()
@@ -564,7 +564,7 @@ struct CaptureView: View {
     private var attachHintText: String? {
         guard appState.pendingAttachments.isEmpty else { return nil }
         if let feedback = appState.attachFeedback { return feedback }
-        if appState.recentScreenshotExists { return "⌘⇧S to attach screenshot" }
+        if appState.recentScreenshotExists { return "⌥⌘S to attach screenshot" }
         return nil
     }
 
@@ -679,7 +679,7 @@ struct CaptureView: View {
     }
 
     /// Detach one screenshot. Detach is sticky for the capture session —
-    /// nothing re-attaches until a fresh summon or an explicit ⌘⇧S.
+    /// nothing re-attaches until a fresh summon or an explicit ⌥⌘S.
     private func detach(_ url: URL) {
         appState.pendingAttachments.removeAll { $0 == url }
         chipThumbnails[url] = nil
@@ -707,18 +707,18 @@ struct CaptureView: View {
         }
     }
 
-    // MARK: - Screenshot picker (⌘⇧S)
+    // MARK: - Screenshot picker (⌥⌘S)
 
     private var pickerOpen: Bool { appState.screenshotPickerItems != nil }
 
     /// Stable identity for the current picker item set. Drives the focus /
     /// highlight / preview resets when the picker opens, closes, or is
-    /// re-queried by a second ⌘⇧S.
+    /// re-queried by a second ⌥⌘S.
     private var pickerItemsKey: String {
         (appState.screenshotPickerItems ?? []).map(\.url.path).joined(separator: "|")
     }
 
-    /// The ⌘⇧S takeover surface: a large centered panel (like the editor) with a
+    /// The ⌥⌘S takeover surface: a large centered panel (like the editor) with a
     /// scrollable vertical list of recent screenshots on the left and a big live
     /// preview of the highlighted one on the right. It's `.focusable()` and grabs
     /// focus while open, so arrows / Enter reach the root key handlers instead of

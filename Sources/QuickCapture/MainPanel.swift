@@ -76,7 +76,7 @@ final class MainPanel: NSPanel {
     /// True for the duration of the editor→capture collapse animation, so
     /// `captureContentDidChange` defers window geometry to the animation.
     private var isCollapsing = false
-    /// Incremented on every fresh summon or ⌘⇧S; completion blocks capture it
+    /// Incremented on every fresh summon or ⌥⌘S; completion blocks capture it
     /// so stale completions from a prior summon cannot resurrect a detached chip.
     private var attachLookupGeneration = 0
 
@@ -519,7 +519,7 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// ⌘⇧S — open the screenshot picker takeover surface with the 10 most
+    /// ⌥⌘S — open the screenshot picker takeover surface with the 10 most
     /// recent screenshots (newest pre-highlighted). Picking one attaches it as
     /// the chip; Esc closes without changing the attachment. No screenshots →
     /// the transient "No screenshots found" feedback instead of an empty panel.
@@ -572,7 +572,7 @@ final class MainPanel: NSPanel {
     /// moment items clear) can't fire a competing non-animated setFrame.
     private func closePickerSurface(attaching urls: [URL]?) {
         // nil = cancel (leave the current attachments untouched); a non-nil list
-        // replaces them with the picker's selection (R: ⌘⇧S sets the chips).
+        // replaces them with the picker's selection (R: ⌥⌘S sets the chips).
         if let urls { appState.pendingAttachments = urls }
         appState.screenshotPickerItems = nil
         guard pickerOpen, let screen = currentScreenVisibleFrame() else { pickerOpen = false; return }
@@ -630,7 +630,13 @@ final class MainPanel: NSPanel {
         case .dismissPanel:
             dismiss()
         case .attachScreenshot:
-            openScreenshotPicker()
+            // ⌥⌘S toggles: a second press while the picker is up closes it the
+            // same way Esc does (cancel, attachments untouched).
+            if pickerOpen {
+                closePickerSurface(attaching: nil)
+            } else {
+                openScreenshotPicker()
+            }
         case .swallowReload:
             // Deliberate no-op: ⌘R must never reach WebKit in editor mode or
             // it reloads the page, destroying the warm editor's state.

@@ -7,9 +7,9 @@ struct HotKeyConfig: Equatable, Codable {
     var displayName: String   // e.g. "T", "Space", "F1"
 
     static let `default` = HotKeyConfig(
-        keyCode: 17,          // kVK_ANSI_T
-        modifiers: NSEvent.ModifierFlags([.option]).rawValue,
-        displayName: "T"
+        keyCode: 35,          // kVK_ANSI_P
+        modifiers: NSEvent.ModifierFlags([.option, .command]).rawValue,
+        displayName: "P"
     )
 
     var modifierFlags: NSEvent.ModifierFlags {

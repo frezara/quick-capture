@@ -20,7 +20,7 @@ enum FileWriter {
 
         ## Quick capture
 
-        - [ ] Welcome to Quick Capture — press ⌥T to capture a thought, ⌥⌘E to open the editor.
+        - [ ] Welcome to Quick Capture — press ⌥⌘P to capture a thought, ⌥⌘E to open the editor.
         """
 
     /// Obsidian Tasks plugin's "created date" marker.

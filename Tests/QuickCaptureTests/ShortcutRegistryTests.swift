@@ -66,14 +66,21 @@ final class ShortcutRegistryTests: XCTestCase {
         )
     }
 
-    func testCommandShiftSAttachesOnlyInCaptureMode() {
+    func testOptionCommandSAttachesOnlyInCaptureMode() {
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .shift], editorOpen: false),
+            ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .option], editorOpen: false),
             .attachScreenshot
         )
         XCTAssertNil(
-            ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .shift], editorOpen: true)
+            ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .option], editorOpen: true)
         )
+    }
+
+    /// ⌘⇧S was retired in favor of ⌥⌘S (the ⌥⌘ toggle family) — it must bind
+    /// nothing now, not silently keep attaching screenshots.
+    func testRetiredCommandShiftSPassesThrough() {
+        XCTAssertNil(ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .shift], editorOpen: false))
+        XCTAssertNil(ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .shift], editorOpen: true))
     }
 
     func testUnboundChordsPassThrough() {
@@ -147,5 +154,13 @@ final class ShortcutRegistryTests: XCTestCase {
             XCTAssertNotNil(action.menuTitle)
             XCTAssertFalse(action.menuTitle!.isEmpty)
         }
+    }
+
+    // MARK: - Global summon default (U1)
+
+    /// The shipped global hotkey default is ⌥⌘P — code, docs, and a fresh
+    /// install must agree. Custom rebinds in UserDefaults are untouched.
+    func testGlobalHotkeyDefaultIsOptionCommandP() {
+        XCTAssertEqual(HotKeyConfig.default.displayString, "⌥⌘P")
     }
 }
