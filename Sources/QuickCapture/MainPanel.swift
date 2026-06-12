@@ -552,13 +552,19 @@ final class MainPanel: NSPanel {
     private func openScreenshotPicker() {
         attachLookupGeneration += 1
         let generation = attachLookupGeneration
-        ScreenshotLocator.recent(limit: 10) { [weak self] shots in
+        ScreenshotLocator.recent(limit: 10) { [weak self] result in
             guard let self, generation == self.attachLookupGeneration, !self.editorOpen else { return }
-            if shots.isEmpty {
+            if result.accessDenied {
+                // Spotlight may still have returned names, but every thumbnail
+                // would be a placeholder — the actionable hint wins over both the
+                // empty state and the broken-looking list.
+                self.appState.screenshotPickerItems = nil
+                self.appState.attachFeedback = "Quick Capture needs Desktop access — System Settings → Privacy & Security → Files & Folders"
+            } else if result.screenshots.isEmpty {
                 self.appState.screenshotPickerItems = nil
                 self.appState.attachFeedback = "No screenshots found"
             } else {
-                self.appState.screenshotPickerItems = shots
+                self.appState.screenshotPickerItems = result.screenshots
                 self.enterPickerSurface()
             }
         }
