@@ -66,20 +66,6 @@ final class ShortcutRegistryTests: XCTestCase {
         )
     }
 
-    /// ⌥⌘O opens the command palette in either mode (anyMode, app-active
-    /// summon, epic #82) — window-intercepted so it fires before WebKit can
-    /// claim the key in editor mode.
-    func testOptionCommandOOpensPaletteInBothModes() {
-        XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: false),
-            .openPalette
-        )
-        XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: true),
-            .openPalette
-        )
-    }
-
     func testOptionCommandSAttachesOnlyInCaptureMode() {
         XCTAssertEqual(
             ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .option], editorOpen: false),
@@ -116,53 +102,6 @@ final class ShortcutRegistryTests: XCTestCase {
                                   "\(action) is editor-local and must not be window-intercepted")
             }
         }
-    }
-
-    // MARK: - Palette-aware gating (#87)
-
-    /// The palette is a third in-window takeover; while it's up the editor is
-    /// closed, so `.captureMode`/`anyMode` chords would otherwise fire and open
-    /// a second takeover over the palette. ⌥⌘S must be a deliberate no-op there.
-    func testOptionCommandSIsSuppressedWhilePaletteOpen() {
-        XCTAssertNil(
-            ShortcutRegistry.interceptedAction(
-                key: "s", modifiers: [.command, .option], editorOpen: false, paletteOpen: true
-            )
-        )
-    }
-
-    /// ⌥⌘E would otherwise morph the editor in *over* the palette host — a
-    /// colliding takeover. It must not fire while the palette owns the window.
-    func testToggleEditorIsSuppressedWhilePaletteOpen() {
-        XCTAssertNil(
-            ShortcutRegistry.interceptedAction(
-                key: "e", modifiers: [.command, .option], editorOpen: false, paletteOpen: true
-            )
-        )
-    }
-
-    /// ⌥⌘O stays live so a second press morphs the palette back home (toggle),
-    /// and ⌘W still dismisses — the only two actions that survive the palette.
-    func testPaletteToggleAndDismissSurviveThePalette() {
-        XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(
-                key: "o", modifiers: [.command, .option], editorOpen: false, paletteOpen: true
-            ),
-            .openPalette
-        )
-        XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(
-                key: "w", modifiers: .command, editorOpen: false, paletteOpen: true
-            ),
-            .dismissPanel
-        )
-    }
-
-    /// Exactly two actions are palette-safe; every other window-intercepted
-    /// action is suppressed while the palette owns the window.
-    func testOnlyPaletteSafeActionsAreAllowedDuringPalette() {
-        let allowed = ShortcutAction.allCases.filter { $0.allowedDuringPalette }
-        XCTAssertEqual(Set(allowed), [.openPalette, .dismissPanel])
     }
 
     // MARK: - Editor keymap push

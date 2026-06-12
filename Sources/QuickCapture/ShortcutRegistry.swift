@@ -80,7 +80,6 @@ enum ShortcutAction: String, CaseIterable {
     case toggleEditor
     case dismissPanel
     case attachScreenshot
-    case openPalette
     case refile
     /// ⌘R must stay swallowed in editor mode even though refile moved to ⌥⌘R:
     /// WebKit reserves the key for "reload", which would blow away the warm
@@ -104,7 +103,6 @@ enum ShortcutAction: String, CaseIterable {
         case .toggleEditor:     return KeyChord(key: "e", modifiers: [.command, .option])
         case .dismissPanel:     return KeyChord(key: "w", modifiers: .command)
         case .attachScreenshot: return KeyChord(key: "s", modifiers: [.command, .option])
-        case .openPalette:      return KeyChord(key: "o", modifiers: [.command, .option])
         case .refile:           return KeyChord(key: "r", modifiers: [.command, .option])
         case .swallowReload:    return KeyChord(key: "r", modifiers: .command)
         case .readMode:         return KeyChord(key: "e", modifiers: .command)
@@ -118,7 +116,7 @@ enum ShortcutAction: String, CaseIterable {
 
     var scope: ShortcutScope {
         switch self {
-        case .toggleEditor, .dismissPanel, .openPalette:
+        case .toggleEditor, .dismissPanel:
             return .anyMode
         case .attachScreenshot:
             return .captureMode
@@ -130,26 +128,9 @@ enum ShortcutAction: String, CaseIterable {
 
     var isWindowIntercepted: Bool {
         switch self {
-        case .toggleEditor, .dismissPanel, .attachScreenshot, .openPalette, .refile, .swallowReload:
+        case .toggleEditor, .dismissPanel, .attachScreenshot, .refile, .swallowReload:
             return true
         case .readMode, .toggleTask, .save, .reorg, .nextSection, .prevSection:
-            return false
-        }
-    }
-
-    /// Whether this action stays live while the command palette takeover owns
-    /// the window (#85/#87). The palette is a third in-window takeover that the
-    /// `editorOpen`-keyed `scope` doesn't model: while it's up the editor is
-    /// closed, so capture/`anyMode` chords would otherwise fire and spawn a
-    /// *second* takeover over the palette (⌥⌘S → screenshot picker, ⌥⌘E →
-    /// editor). The palette is a transient "go to / do" surface, so only its own
-    /// toggle (⌥⌘O, to morph back) and the dismiss chord (⌘W) survive it; every
-    /// other action is a deliberate no-op until the palette is gone.
-    var allowedDuringPalette: Bool {
-        switch self {
-        case .openPalette, .dismissPanel:
-            return true
-        default:
             return false
         }
     }
@@ -163,7 +144,6 @@ enum ShortcutAction: String, CaseIterable {
         case .toggleEditor:     return "Toggle Editor"
         case .dismissPanel:     return nil
         case .attachScreenshot: return nil
-        case .openPalette:      return "Search…"
         case .refile:           return "Refile…"
         case .swallowReload:    return nil
         case .readMode:         return "Toggle Read Mode"
@@ -181,27 +161,20 @@ enum ShortcutRegistry {
     /// event through to WebKit / the menu bar.
     static func interceptedAction(key: String?,
                                   modifiers: NSEvent.ModifierFlags,
-                                  editorOpen: Bool,
-                                  paletteOpen: Bool = false) -> ShortcutAction? {
+                                  editorOpen: Bool) -> ShortcutAction? {
         ShortcutAction.allCases.first { action in
             action.isWindowIntercepted
-                // While the palette owns the window, suppress every action that
-                // isn't palette-safe so a second takeover can't open over it
-                // (#87). Otherwise fall back to the editor/capture scope.
-                && (paletteOpen ? action.allowedDuringPalette
-                                : action.scope.isActive(editorOpen: editorOpen))
+                && action.scope.isActive(editorOpen: editorOpen)
                 && action.chord.matches(key: key, modifiers: modifiers)
         }
     }
 
     static func interceptedAction(for event: NSEvent,
-                                  editorOpen: Bool,
-                                  paletteOpen: Bool = false) -> ShortcutAction? {
+                                  editorOpen: Bool) -> ShortcutAction? {
         interceptedAction(
             key: event.charactersIgnoringModifiers?.lowercased(),
             modifiers: event.modifierFlags.intersection(.deviceIndependentFlagsMask),
-            editorOpen: editorOpen,
-            paletteOpen: paletteOpen
+            editorOpen: editorOpen
         )
     }
 

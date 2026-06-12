@@ -2,8 +2,16 @@
 title: "Capture command palette"
 date: 2026-06-12
 issue: 82
-status: ready-for-planning
+status: removed
 ---
+
+> ⚠️ **Removed (2026-06-12).** The capture command palette (this entire feature —
+> ⌥⌘O overlay, search/jump, jump-to-tag, Commands, ⌘K per-item actions, and the
+> recency token that fed it) was removed from the app at the user's request. The
+> Swift surfaces (`PaletteView`, `PaletteViewModel`, `CaptureItemParser`), the
+> `.openPalette` shortcut, and the `FileWriter` recency/per-item helpers are all
+> gone; ⌥⌘O is unbound. This document is kept as a historical record of what was
+> built and why.
 
 # Capture command palette — requirements
 
@@ -89,6 +97,12 @@ acting on a growing capture file.
   `scrollIntoView`). Selecting a tag jumps to its `## section` (reuses `jumpToSection`).
 
 ### Recency
+> ⚠️ **Superseded (2026-06-12, #90).** The Recency feature (R9 + R10) was removed: the
+> "Recent captures" list and the hidden `<!--qc:…-->` creation token are gone. New captures
+> write clean prose; the palette surfaces captures by typing a query (no all-items browse
+> list). Legacy tokens on existing lines are still tolerated/hidden for back-compat. R9/R10
+> below are kept as historical record.
+
 - **R9.** Every new capture records a **creation time that is never displayed**, stored as
   an inline hidden token on the item line (an HTML comment), hidden by the editor's live
   preview and by Obsidian's reading view. The markdown file remains the single source of

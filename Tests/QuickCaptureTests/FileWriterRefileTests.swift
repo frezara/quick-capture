@@ -209,7 +209,7 @@ final class FileWriterRefileTests: XCTestCase {
     // MARK: - Hidden creation-time token (U1) — refile core carries it
 
     func testVerifyAndRemoveCarriesTokenedSubtree() throws {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
         let content = """
         # Inbox
 
@@ -231,7 +231,7 @@ final class FileWriterRefileTests: XCTestCase {
     }
 
     func testDedentPreservesTokenOnRootLine() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
         let subtree = "  - [ ] child \(token)\n    ![screenshot](attachments/a.png)"
         XCTAssertEqual(
             FileWriter.dedent(subtree),
@@ -241,7 +241,7 @@ final class FileWriterRefileTests: XCTestCase {
     }
 
     func testAppendUnderInboxPreservesTokenVerbatim() {
-        let token = FileWriter.creationToken(for: Date(timeIntervalSince1970: 1_700_000_000))
+        let token = "<!--qc:2023-11-14T22:13:20Z-->"
         let subtree = "- [ ] refiled \(token)"
         let result = FileWriter.appendUnderInbox(subtree: subtree, to: "# Inbox\n")
         XCTAssertTrue(result.contains(subtree),
