@@ -1185,6 +1185,10 @@ let suppressNextSave = false;
 // can't read settings, so it relies on this being kept current (R35).
 let refileTargets: string[] = [];
 let refileOpen = false;
+// 0-based line where the just-refiled subtree started. After Swift removes it
+// and the file watcher reloads us, `mount()` lands the cursor on the item now
+// at this line (the next item) so a run of ⌥⌘U refiles keeps flowing (#98).
+let pendingRefileCursorLine: number | null = null;
 
 // Compartment for the read-mode extensions so Cmd+E can toggle them at runtime.
 // Reconfiguring a Compartment is the supported way to swap a group of
@@ -1824,6 +1828,22 @@ function resolveSubtreeSpan(state: EditorState, pos: number): SubtreeSpan | null
     return { from: root, to: end, text: doc.sliceString(fromPos, toPos) };
 }
 
+/// Land the cursor on the item now at `targetLine0` (0-based) — the next item,
+/// after the refiled subtree was removed and the doc reloaded. Skips blank lines
+/// and headings so a follow-up ⌥⌘U resolves a real subtree; clamps to the last
+/// line when the refiled subtree was the tail of its section/file.
+function placeCursorAfterRefile(v: EditorView, targetLine0: number) {
+    const doc = v.state.doc;
+    let i = Math.min(Math.max(targetLine0, 0), doc.lines - 1);
+    while (i < doc.lines - 1) {
+        const trimmed = doc.line(i + 1).text.trim();
+        if (trimmed !== "" && !trimmed.startsWith("#")) break;
+        i++;
+    }
+    const pos = doc.line(i + 1).from;
+    v.dispatch({ selection: { anchor: pos, head: pos }, scrollIntoView: true });
+}
+
 function startRefile(v: EditorView): boolean {
     if (refileOpen) return true;
     const span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
@@ -1892,6 +1912,9 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
         // Flush the current content to disk (no "Saved" badge — the refile toast
         // is the feedback) so the file matches the snapshot whose range we send.
         if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
+        // After the subtree is removed and the watcher reloads us, land on the
+        // item now occupying the subtree's start line (the next item) — see mount().
+        pendingRefileCursorLine = span.from;
         sendToSwift({ type: "save", content: v.state.doc.toString() });
         sendToSwift({ type: "refile", target, fromLine: span.from, toLine: span.to, subtree: span.text });
     };
@@ -1985,6 +2008,10 @@ function mount(content: string) {
 
     if (view) {
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } });
+        if (pendingRefileCursorLine !== null) {
+            placeCursorAfterRefile(view, pendingRefileCursorLine);
+            pendingRefileCursorLine = null;
+        }
         return;
     }
 
