@@ -43,7 +43,7 @@ enum ScreenshotLocator {
     /// Spotlight and folder-scan results are merged, deduped by path, and the
     /// newest `limit` win. The `Result` also carries an `accessDenied` flag so
     /// the picker can show a permission hint instead of placeholder thumbnails.
-    /// Drives the ⌥⌘S screenshot picker.
+    /// Drives the ⌥⌘O screenshot picker.
     static func recent(limit: Int = 5, timeout: TimeInterval = 0.6, completion: @escaping (Result) -> Void) {
         let folder = screenshotFolder()
         let folderPath = folder.standardizedFileURL.path

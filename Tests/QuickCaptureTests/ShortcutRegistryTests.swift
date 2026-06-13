@@ -6,13 +6,15 @@ final class ShortcutRegistryTests: XCTestCase {
 
     // MARK: - Window interception
 
-    func testOptionCommandETogglesEditorInBothModes() {
+    // The ⌥⌘ panel actions live on the right-hand U-I-O-P cluster (#92):
+    // ⌥⌘I editor, ⌥⌘O screenshot, ⌥⌘U refile (⌥⌘P summon is the Carbon hotkey).
+    func testOptionCommandITogglesEditorInBothModes() {
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .option], editorOpen: false),
+            ShortcutRegistry.interceptedAction(key: "i", modifiers: [.command, .option], editorOpen: false),
             .toggleEditor
         )
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .option], editorOpen: true),
+            ShortcutRegistry.interceptedAction(key: "i", modifiers: [.command, .option], editorOpen: true),
             .toggleEditor
         )
     }
@@ -44,13 +46,13 @@ final class ShortcutRegistryTests: XCTestCase {
         )
     }
 
-    func testOptionCommandRRefilesOnlyInEditorMode() {
+    func testOptionCommandURefilesOnlyInEditorMode() {
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .option], editorOpen: true),
+            ShortcutRegistry.interceptedAction(key: "u", modifiers: [.command, .option], editorOpen: true),
             .refile
         )
         XCTAssertNil(
-            ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .option], editorOpen: false)
+            ShortcutRegistry.interceptedAction(key: "u", modifiers: [.command, .option], editorOpen: false)
         )
     }
 
@@ -66,21 +68,31 @@ final class ShortcutRegistryTests: XCTestCase {
         )
     }
 
-    func testOptionCommandSAttachesOnlyInCaptureMode() {
+    func testOptionCommandOAttachesOnlyInCaptureMode() {
         XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .option], editorOpen: false),
+            ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: false),
             .attachScreenshot
         )
         XCTAssertNil(
-            ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .option], editorOpen: true)
+            ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: true)
         )
     }
 
-    /// ⌘⇧S was retired in favor of ⌥⌘S (the ⌥⌘ toggle family) — it must bind
-    /// nothing now, not silently keep attaching screenshots.
+    /// ⌘⇧S was retired in favor of the ⌥⌘ family — it must bind nothing now,
+    /// not silently keep attaching screenshots.
     func testRetiredCommandShiftSPassesThrough() {
         XCTAssertNil(ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .shift], editorOpen: false))
         XCTAssertNil(ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .shift], editorOpen: true))
+    }
+
+    /// The pre-#92 ⌥⌘ keys (⌥⌘E editor, ⌥⌘S screenshot, ⌥⌘R refile) were
+    /// reassigned to the U-I-O-P cluster and left fully unbound — no aliases.
+    func testRetiredOptionCommandESRPassThrough() {
+        for editorOpen in [false, true] {
+            XCTAssertNil(ShortcutRegistry.interceptedAction(key: "e", modifiers: [.command, .option], editorOpen: editorOpen))
+            XCTAssertNil(ShortcutRegistry.interceptedAction(key: "s", modifiers: [.command, .option], editorOpen: editorOpen))
+            XCTAssertNil(ShortcutRegistry.interceptedAction(key: "r", modifiers: [.command, .option], editorOpen: editorOpen))
+        }
     }
 
     func testUnboundChordsPassThrough() {
