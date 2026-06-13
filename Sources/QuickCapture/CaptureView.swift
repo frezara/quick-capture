@@ -335,21 +335,12 @@ struct CaptureView: View {
                     acceptTag(pick)
                     return .handled
                 }
-                .onKeyPress(.tab) {
-                    // Tab accepts the highlighted suggestion. With the
-                    // dropdown closed, fall back to first-prefix-match
-                    // autocomplete (no Tab cycle anywhere).
-                    if tagDropdownVisible {
-                        acceptTag(filteredTags[tagHighlightClamped])
-                        return .handled
-                    }
-                    let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard !query.isEmpty else { return .handled }
-                    if let match = matchedTag,
-                       match.lowercased() != query.lowercased() {
-                        tagText = match
-                    }
-                    return .handled
+                // Tab cycles through every prefix match (Shift-Tab reverses) by
+                // walking the dropdown highlight, wrapping at the ends — it does
+                // NOT fill `tagText`, so the filtered set stays put while you
+                // cycle. Return (handler above) commits the highlighted tag.
+                .onKeyPress(keys: [.tab]) { press in
+                    handleTab(shift: press.modifiers.contains(.shift))
                 }
                 .onKeyPress(.upArrow) {
                     guard tagDropdownVisible else { return .ignored }
@@ -449,6 +440,39 @@ struct CaptureView: View {
         tagText = tag
         tagHighlight = 0
         focused = .tag
+    }
+
+    /// Tab / Shift-Tab in the tag field. With the suggest dropdown open on two
+    /// or more prefix matches, Tab walks the highlight to the next match (Shift-
+    /// Tab to the previous), wrapping — a completion *cycle*, not a commit, so
+    /// repeated Tab visits every `h…` tag without re-filtering. A lone match is
+    /// completed outright, and with the dropdown dismissed (Esc) Tab still does
+    /// the old first-prefix-match fill. Return commits whatever's highlighted.
+    private func handleTab(shift: Bool) -> KeyPress.Result {
+        if tagDropdownVisible {
+            if filteredTags.count > 1 {
+                tagHighlight = Self.cycledTagIndex(
+                    from: tagHighlightClamped, count: filteredTags.count, forward: !shift)
+            } else {
+                acceptTag(filteredTags[tagHighlightClamped])
+            }
+            return .handled
+        }
+        let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty else { return .handled }
+        if let match = matchedTag, match.lowercased() != query.lowercased() {
+            tagText = match
+        }
+        return .handled
+    }
+
+    /// Next index when cycling a list of `count` items from `current`, wrapping
+    /// at both ends. `forward` advances; otherwise retreats. Empty list → 0.
+    /// Pure, so the wrap arithmetic is unit-testable without the SwiftUI view.
+    static func cycledTagIndex(from current: Int, count: Int, forward: Bool) -> Int {
+        guard count > 0 else { return 0 }
+        let delta = forward ? 1 : -1
+        return ((current + delta) % count + count) % count
     }
 
     // MARK: - Calendar preview
