@@ -189,7 +189,10 @@ struct CaptureView: View {
                 return
             }
             pickerIndex = 0
-            pickerSelection = []   // a fresh picker starts with nothing toggled
+            // Preselect what's already attached so reopening the picker is
+            // additive rather than a blank slate (#99).
+            pickerSelection = Self.seededPickerSelection(
+                items: items.map(\.url), attached: appState.pendingAttachments)
             loadPickerPreviews(items)
             // Defer focus a runloop — the focusable picker view is installed in
             // this same render pass, and focusing it synchronously can miss.
@@ -468,6 +471,15 @@ struct CaptureView: View {
         guard count > 0 else { return 0 }
         let delta = forward ? 1 : -1
         return ((current + delta) % count + count) % count
+    }
+
+    /// Selection to seed the ⌥⌘O picker with when it (re)opens: the already-
+    /// attached screenshots that are still present in the picker's item set, so
+    /// reopening is additive (#99). Intersecting with `items` keeps an attachment
+    /// outside the recent list from showing as a phantom selection. Pure, for
+    /// unit testing without the SwiftUI view.
+    static func seededPickerSelection(items: [URL], attached: [URL]) -> Set<URL> {
+        Set(items).intersection(attached)
     }
 
     // MARK: - Calendar preview

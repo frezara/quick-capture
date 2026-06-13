@@ -36,4 +36,28 @@ final class CaptureViewTests: XCTestCase {
         let next = CaptureView.cycledTagIndex(from: 9, count: 3, forward: true)
         XCTAssertTrue((0..<3).contains(next), "got \(next)")
     }
+
+    // MARK: - Picker preselection (#99)
+
+    private func url(_ name: String) -> URL { URL(fileURLWithPath: "/tmp/\(name).png") }
+
+    /// Reopening the ⌥⌘O picker preselects the screenshots already attached,
+    /// intersected with the picker's current items so a stale attachment can't
+    /// create a phantom selection.
+    func testSeededSelectionIsAttachedIntersectItems() {
+        let a = url("a"), b = url("b"), c = url("c")
+        XCTAssertEqual(CaptureView.seededPickerSelection(items: [c, b, a], attached: [a, b]),
+                       Set([a, b]))
+    }
+
+    func testSeededSelectionEmptyWhenNothingAttached() {
+        XCTAssertEqual(CaptureView.seededPickerSelection(items: [url("a"), url("b")], attached: []),
+                       Set())
+    }
+
+    func testSeededSelectionDropsAttachmentsNotInItems() {
+        let a = url("a"), ghost = url("ghost")
+        XCTAssertEqual(CaptureView.seededPickerSelection(items: [a], attached: [a, ghost]),
+                       Set([a]))
+    }
 }
