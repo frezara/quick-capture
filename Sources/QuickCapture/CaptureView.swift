@@ -268,7 +268,7 @@ struct CaptureView: View {
                 text: $todoText,
                 font: appState.captureFontDesign.nsFont(size: 16),
                 textColor: NSColor(theme.ink),
-                maxLines: 4,
+                maxLines: 6,
                 isFocused: Binding(
                     get: { focused == .todo },
                     set: { if $0 { focused = .todo } }

@@ -102,7 +102,7 @@ final class MainPanel: NSPanel {
     private var attachLookupGeneration = 0
 
     private let splitWidth: CGFloat = 1000
-    private let captureWidth: CGFloat = 600
+    private let captureWidth: CGFloat = 680
 
     deinit {
         stopWatching()
@@ -1023,7 +1023,7 @@ private final class PanelContainerView: NSView {
         }
     }
 
-    private let captureWidth: CGFloat = 600
+    private let captureWidth: CGFloat = 680
 
     func configure(capture: NSView, editor: NSView) {
         self.captureHost = capture
