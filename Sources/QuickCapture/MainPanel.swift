@@ -215,7 +215,7 @@ final class MainPanel: NSPanel {
     func show() {
         recordPreviousApp()   // before NSApp.activate steals frontmost from it
         collapseStateReset()
-        detectRecentScreenshot()
+        resetCaptureAttachments()
         if let screen = currentScreenVisibleFrame() {
             anchorCenterY = screen.midY
             var f = frame
@@ -552,24 +552,16 @@ final class MainPanel: NSPanel {
 
     // MARK: - Screenshot attach
 
-    /// Detection runs only on a fresh summon (R20) — never on the ⌥⌘I return —
-    /// so a detached chip stays detached for the rest of the capture session.
-    private func detectRecentScreenshot() {
+    /// A fresh summon (R20) starts with a clean capture box — no attachment,
+    /// picker, or feedback state carried over from a prior session, and never on
+    /// the ⌥⌘I editor return. Screenshots attach explicitly via the ⌥⌘O picker;
+    /// there is no auto-attach. Bumping the lookup generation invalidates any
+    /// in-flight ⌥⌘O lookup whose completion might otherwise land here.
+    private func resetCaptureAttachments() {
         attachLookupGeneration += 1
-        let generation = attachLookupGeneration
         appState.pendingAttachments = []
         appState.attachFeedback = nil
         appState.screenshotPickerItems = nil
-        let window = appState.screenshotAttachWindow
-        ScreenshotLocator.mostRecent { [weak self] shot in
-            guard let self, generation == self.attachLookupGeneration, let shot else { return }
-            let age = Date().timeIntervalSince(shot.createdAt)
-            // Auto-attach only a shot fresh enough to be this capture's subject;
-            // an older one is reachable via the ⌥⌘O picker (shown in the hint bar).
-            if window < 0 || age <= window {
-                self.appState.pendingAttachments = [shot.url]
-            }
-        }
     }
 
     /// ⌥⌘O — open the screenshot picker takeover surface with the 10 most
