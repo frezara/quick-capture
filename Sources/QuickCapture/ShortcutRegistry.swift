@@ -70,20 +70,25 @@ enum ShortcutAction: String, CaseIterable {
     // Window-intercepted: matched in `MainPanel.performKeyEquivalent` before
     // WebKit/CodeMirror can claim the key.
     //
-    // Binding scheme (epic #53, namespace revised by #69): plain ⌘ keys keep
-    // their native/Obsidian editor meaning (⌘F find, ⌘S save, ⌘E read mode…);
-    // ⌥⌘ is the app's reserved namespace for panel-level actions — ⌥ is the
-    // Mac's Meta, and the adjacent keys roll under one thumb (⌃⌘, the first
-    // pick, proved a pinky claw in practice). Avoid the system-claimed
-    // combos: ⌥⌘Esc (force quit), ⌥⌘H (Hide Others — it's in our own app
-    // menu), ⌥⌘D (Dock), ⌥⌘Space (Finder search).
+    // Binding scheme (epic #53, namespace revised by #69, keys by #92): plain ⌘
+    // keys keep their native/Obsidian editor meaning (⌘F find, ⌘S save, ⌘E read
+    // mode…); ⌥⌘ is the app's reserved namespace for panel-level actions.
+    //
+    // The ⌥⌘ actions live on a **right-hand `U I O P` cluster** (#92): the left
+    // hand holds ⌥⌘, the right hand taps an adjacent key, so there's no
+    // same-side claw (⌃⌘, the original pick, proved a pinky claw; ⌥⌘E/S/R put
+    // the letter back on the left hand). Capture is the hub — ⌥⌘P summons it,
+    // ⌥⌘I toggles the editor, ⌥⌘O the screenshot picker, ⌥⌘U refiles. The
+    // mnemonic is spatial (one cluster), not per-letter; don't "fix" it back to
+    // E/S/R. Avoid the system-claimed combos: ⌥⌘Esc (force quit), ⌥⌘H (Hide
+    // Others), ⌥⌘D (Dock), ⌥⌘Space (Finder search).
     case toggleEditor
     case dismissPanel
     case attachScreenshot
     case refile
-    /// ⌘R must stay swallowed in editor mode even though refile moved to ⌥⌘R:
-    /// WebKit reserves the key for "reload", which would blow away the warm
-    /// editor (and its undo history / cursor) the moment it got through.
+    /// ⌘R must stay swallowed in editor mode even though refile is ⌥⌘U: WebKit
+    /// reserves ⌘R for "reload", which would blow away the warm editor (and its
+    /// undo history / cursor) the moment it got through.
     case swallowReload
 
     // Editor-local: bound inside CodeMirror via the keymap Swift pushes on
@@ -100,10 +105,10 @@ enum ShortcutAction: String, CaseIterable {
 
     var chord: KeyChord {
         switch self {
-        case .toggleEditor:     return KeyChord(key: "e", modifiers: [.command, .option])
+        case .toggleEditor:     return KeyChord(key: "i", modifiers: [.command, .option])
         case .dismissPanel:     return KeyChord(key: "w", modifiers: .command)
-        case .attachScreenshot: return KeyChord(key: "s", modifiers: [.command, .option])
-        case .refile:           return KeyChord(key: "r", modifiers: [.command, .option])
+        case .attachScreenshot: return KeyChord(key: "o", modifiers: [.command, .option])
+        case .refile:           return KeyChord(key: "u", modifiers: [.command, .option])
         case .swallowReload:    return KeyChord(key: "r", modifiers: .command)
         case .readMode:         return KeyChord(key: "e", modifiers: .command)
         case .toggleTask:       return KeyChord(key: "l", modifiers: .command)

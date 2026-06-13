@@ -18,8 +18,8 @@ final class FileWriterTests: XCTestCase {
 
     func testScaffoldContentContainsMentionOfHotkey() {
         XCTAssertTrue(
-            FileWriter.scaffoldContent.contains("⌥T") || FileWriter.scaffoldContent.contains("⌥⌘E"),
-            "scaffold welcome entry should mention the core gestures"
+            FileWriter.scaffoldContent.contains("⌥⌘P") && FileWriter.scaffoldContent.contains("⌥⌘I"),
+            "scaffold welcome entry should mention the core gestures (⌥⌘P capture, ⌥⌘I editor)"
         )
     }
 

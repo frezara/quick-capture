@@ -22,14 +22,14 @@ enum CaptureEditingChord {
 
 /// The single floating panel that hosts both app surfaces — the capture box and
 /// the CodeMirror markdown editor — as **mutually-exclusive modes** (ADR-0004).
-/// Both stay mounted (the editor's web view is kept warm); ⌥⌘E crossfades
+/// Both stay mounted (the editor's web view is kept warm); ⌥⌘I crossfades
 /// between them while animating the window frame, so exactly one is visible.
 ///
 /// Behaviors keyed to whether the editor is open (`editorOpen`):
 /// - **Click-away dismiss** only fires in capture mode (`resignKey`); the
 ///   editor survives losing focus so you can copy from other apps.
 ///   `canDismissOnBlur` guards against false fires during transitions.
-/// - **⌥⌘E** is intercepted in `performKeyEquivalent`, toggling the mode.
+/// - **⌥⌘I** is intercepted in `performKeyEquivalent`, toggling the mode.
 ///   ⌘F passes through to CodeMirror's search panel (native find), and ⌘R is
 ///   swallowed in editor mode so WebKit can't reload the warm editor. All
 ///   window-level bindings live in `ShortcutRegistry`.
@@ -93,7 +93,7 @@ final class MainPanel: NSPanel {
     /// True for the duration of the editor→capture collapse animation, so
     /// `captureContentDidChange` defers window geometry to the animation.
     private var isCollapsing = false
-    /// Incremented on every fresh summon or ⌥⌘S; completion blocks capture it
+    /// Incremented on every fresh summon or ⌥⌘O; completion blocks capture it
     /// so stale completions from a prior summon cannot resurrect a detached chip.
     private var attachLookupGeneration = 0
 
@@ -150,7 +150,7 @@ final class MainPanel: NSPanel {
             forName: .vimModeDidChange, object: nil, queue: .main
         ) { [weak self] _ in self?.pushVimSetting() }
 
-        // Refile targets edited in Settings take effect in the editor's ⌥⌘R
+        // Refile targets edited in Settings take effect in the editor's ⌥⌘U
         // dropdown without a restart (R35) — the editor can't read settings, so
         // we re-push the effective list whenever it changes.
         refileTargetsObserver = NotificationCenter.default.addObserver(
@@ -247,7 +247,7 @@ final class MainPanel: NSPanel {
     /// `animated` morphs the frame instead of snapping — for handing off from a
     /// visible takeover (e.g. the screenshot picker), so the editor's frame
     /// visibly takes over rather than the old surface's frame lingering for a
-    /// beat. (Currently unused — the editor is entered via ⌥⌘E `toggleEditor` —
+    /// beat. (Currently unused — the editor is entered via ⌥⌘I `toggleEditor` —
     /// kept as the direct summon-into-editor entry point.)
     func showInEditor(animated: Bool = false) {
         recordPreviousApp()   // before promote/activate steals frontmost from it
@@ -304,7 +304,7 @@ final class MainPanel: NSPanel {
     func openEditor() {
         guard !editorOpen else { return }
         editorOpen = true
-        // The picker is a capture-surface affordance; ⌥⌘E into the editor closes
+        // The picker is a capture-surface affordance; ⌥⌘I into the editor closes
         // it. editorOpen is set first so the capture re-measure this triggers is
         // already guarded; openEditor's own animateFrame places the geometry.
         pickerOpen = false
@@ -538,7 +538,7 @@ final class MainPanel: NSPanel {
 
     // MARK: - Screenshot attach
 
-    /// Detection runs only on a fresh summon (R20) — never on the ⌥⌘E return —
+    /// Detection runs only on a fresh summon (R20) — never on the ⌥⌘I return —
     /// so a detached chip stays detached for the rest of the capture session.
     private func detectRecentScreenshot() {
         attachLookupGeneration += 1
@@ -559,7 +559,7 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// ⌥⌘S — open the screenshot picker takeover surface with the 10 most
+    /// ⌥⌘O — open the screenshot picker takeover surface with the 10 most
     /// recent screenshots (newest pre-highlighted). Picking one attaches it as
     /// the chip; Esc closes without changing the attachment. No screenshots →
     /// the transient "No screenshots found" feedback instead of an empty panel.
@@ -619,7 +619,7 @@ final class MainPanel: NSPanel {
     /// moment items clear) can't fire a competing non-animated setFrame.
     private func closePickerSurface(attaching urls: [URL]?) {
         // nil = cancel (leave the current attachments untouched); a non-nil list
-        // replaces them with the picker's selection (R: ⌥⌘S sets the chips).
+        // replaces them with the picker's selection (R: ⌥⌘O sets the chips).
         if let urls { appState.pendingAttachments = urls }
         appState.screenshotPickerItems = nil
         guard pickerOpen, let screen = currentScreenVisibleFrame() else { pickerOpen = false; return }
@@ -688,7 +688,7 @@ final class MainPanel: NSPanel {
         case .dismissPanel:
             dismiss()
         case .attachScreenshot:
-            // ⌥⌘S toggles: a second press while the picker is up closes it the
+            // ⌥⌘O toggles: a second press while the picker is up closes it the
             // same way Esc does (cancel, attachments untouched).
             if pickerOpen {
                 closePickerSurface(attaching: nil)
@@ -704,7 +704,7 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// Run an action inside the editor over the bridge. Refile (⌥⌘R) takes
+    /// Run an action inside the editor over the bridge. Refile (⌥⌘U) takes
     /// this path on every press — window-intercepted chords never reach the
     /// web view's keymap, so Swift drives them explicitly.
     private func invokeEditorAction(_ action: ShortcutAction) {
@@ -789,7 +789,7 @@ final class MainPanel: NSPanel {
     }
 
     /// Push the effective refile targets (display names) into the editor so the
-    /// ⌥⌘R dropdown can render them. The editor refers to a target by its index
+    /// ⌥⌘U dropdown can render them. The editor refers to a target by its index
     /// in this list when it posts a `refile` message. Pushed on editor entry and
     /// whenever Settings change the list.
     private func pushRefileTargets() {

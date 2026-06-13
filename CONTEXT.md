@@ -11,7 +11,7 @@ decisions behind the non-obvious bits, see `docs/adr/`.
 
 Quick Capture is a personal macOS menu bar app (`LSUIElement`, no permanent
 dock icon). A single floating `NSPanel` shows one of two mutually-exclusive
-surfaces — a small **capture box** or a full markdown **editor** — and ⌥⌘E
+surfaces — a small **capture box** or a full markdown **editor** — and ⌥⌘I
 crossfades between them.
 
 ## Glossary
@@ -42,14 +42,14 @@ crossfades between them.
   "todo" are interchangeable; prefer **item**.
 
 - **Capture box** — the small, content-sized, centered quick-capture surface
-  summoned by the global hotkey (default `⌥T`). Self-dismisses on click-away.
+  summoned by the global hotkey (default `⌥⌘P`). Self-dismisses on click-away.
 
 - **Capture mode** — the state showing the capture box and nothing else. One of
   two mutually-exclusive modes (see **editor mode**).
 
 - **Editor mode** — the state showing the full-screen editor and nothing else.
-  Reached via `⌥⌘E` (or the menu-bar "Open Editor…"); `⌥⌘E` returns to capture
-  mode (`⌘F` is native find inside the editor — see epic #53). Survives loss of
+  Reached via `⌥⌘I`; `⌥⌘I` returns to capture mode (`⌘F` is native find inside
+  the editor — see epic #53). Survives loss of
   focus. Capturing and editing are mutually exclusive — only one surface is
   ever on screen (see ADR-0004).
 

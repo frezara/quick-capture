@@ -66,7 +66,7 @@ struct SettingsView: View {
                 t.border.frame(height: 0.5).padding(.leading, 50)
                 settingsRow(
                     label: "Vim keybindings",
-                    note: "When off, standard editing. ⌥⌘E still toggles the editor.",
+                    note: "When off, standard editing. ⌥⌘I still toggles the editor.",
                     symbol: "terminal",
                     iconColor: Color(0x34C759)
                 ) {
@@ -75,7 +75,7 @@ struct SettingsView: View {
                 t.border.frame(height: 0.5).padding(.leading, 50)
                 settingsRow(
                     label: "Auto-attach screenshot window",
-                    note: "Screenshots newer than this pre-attach to the capture box. ⌥⌘S pulls in the latest anytime.",
+                    note: "Screenshots newer than this pre-attach to the capture box. ⌥⌘O pulls in the latest anytime.",
                     symbol: "camera",
                     iconColor: Color(0x30B0C7)
                 ) {
@@ -105,7 +105,7 @@ struct SettingsView: View {
                 if appState.refileTargets.isEmpty {
                     settingsRow(
                         label: "No targets yet",
-                        note: "⌥⌘R in the editor files the item under your cursor into a target's inbox.md.",
+                        note: "⌥⌘U in the editor files the item under your cursor into a target's inbox.md.",
                         symbol: "folder",
                         iconColor: Color(0xFF9F0A)
                     ) {
