@@ -134,9 +134,6 @@ final class AppState: ObservableObject {
     /// offering these recent screenshots (newest first). Cleared on attach,
     /// Esc, mode switch, and full dismiss.
     @Published var screenshotPickerItems: [ScreenshotLocator.Screenshot]?
-    /// A screenshot exists on disk but is outside the auto-attach window —
-    /// drives the "⌥⌘O to attach screenshot" hint.
-    @Published var recentScreenshotExists = false
     /// Transient feedback for the pull-in keystroke (e.g. "No screenshots
     /// found"). CaptureView clears it after a beat.
     @Published var attachFeedback: String?

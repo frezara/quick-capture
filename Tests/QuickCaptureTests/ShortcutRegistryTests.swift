@@ -175,6 +175,43 @@ final class ShortcutRegistryTests: XCTestCase {
     func testGlobalHotkeyDefaultIsOptionCommandP() {
         XCTAssertEqual(HotKeyConfig.default.displayString, "⌥⌘P")
     }
+
+    // MARK: - Display glyphs + capture hint bar (#93)
+
+    func testDisplayGlyphsRendersModifiersThenUppercasedKey() {
+        XCTAssertEqual(KeyChord(key: "i", modifiers: [.command, .option]).displayGlyphs, "⌥⌘I")
+        XCTAssertEqual(KeyChord(key: "o", modifiers: [.command, .option]).displayGlyphs, "⌥⌘O")
+        XCTAssertEqual(KeyChord(key: "s", modifiers: .command).displayGlyphs, "⌘S")
+    }
+
+    /// Always the macOS-standard ⌃⌥⇧⌘ order, regardless of set construction.
+    func testDisplayGlyphsUsesMacModifierOrder() {
+        let chord = KeyChord(key: "x", modifiers: [.command, .shift, .option, .control])
+        XCTAssertEqual(chord.displayGlyphs, "⌃⌥⇧⌘X")
+    }
+
+    func testDisplayGlyphsRendersArrowKeys() {
+        XCTAssertEqual(KeyChord(key: "ArrowDown", modifiers: [.command, .option]).displayGlyphs, "⌥⌘↓")
+        XCTAssertEqual(KeyChord(key: "ArrowUp", modifiers: [.command, .option]).displayGlyphs, "⌥⌘↑")
+    }
+
+    func testCaptureHintsAreEditorThenScreenshots() {
+        XCTAssertEqual(ShortcutRegistry.captureHints.map(\.action),
+                       [.toggleEditor, .attachScreenshot])
+        XCTAssertEqual(ShortcutRegistry.captureHints.map(\.label),
+                       ["Editor", "Screenshots"])
+    }
+
+    /// Why the bar sources chords from the registry: rename/remove an action or
+    /// change its chord and the hint glyphs follow rather than going stale.
+    func testCaptureHintGlyphsTrackTheRegistryChords() {
+        for hint in ShortcutRegistry.captureHints {
+            XCTAssertEqual(hint.glyphs, hint.action.chord.displayGlyphs)
+            XCTAssertFalse(hint.glyphs.isEmpty)
+        }
+        // Pins today's bindings (U-I-O-P cluster, #92) so a regression is loud.
+        XCTAssertEqual(ShortcutRegistry.captureHints.map(\.glyphs), ["⌥⌘I", "⌥⌘O"])
+    }
 }
 
 /// Capture mode runs as `.accessory` with no menu bar, so the standard editing

@@ -48,6 +48,23 @@ struct KeyChord: Equatable {
         default:          return key
         }
     }
+
+    /// Human-readable glyphs for on-screen hints, e.g. "⌥⌘I". Modifiers render
+    /// in the macOS-standard order (⌃⌥⇧⌘); letter keys uppercase, the named
+    /// arrow keys become ↑/↓. Used by the capture hint bar (#93).
+    var displayGlyphs: String {
+        var s = ""
+        if modifiers.contains(.control) { s += "⌃" }
+        if modifiers.contains(.option)  { s += "⌥" }
+        if modifiers.contains(.shift)   { s += "⇧" }
+        if modifiers.contains(.command) { s += "⌘" }
+        switch key {
+        case "ArrowUp":   s += "↑"
+        case "ArrowDown": s += "↓"
+        default:          s += key.uppercased()
+        }
+        return s
+    }
 }
 
 /// When a shortcut is live, keyed off the panel's surface (the takeovers are
@@ -161,7 +178,24 @@ enum ShortcutAction: String, CaseIterable {
     }
 }
 
+/// A shortcut hint shown in the capture-mode hint bar (#93): an action — whose
+/// `chord.displayGlyphs` supply the rendered keys so rebinds track for free —
+/// plus a short label. Kept as data so the bar's contents are unit-testable
+/// without standing up the SwiftUI view.
+struct CaptureHint: Equatable {
+    let action: ShortcutAction
+    let label: String
+    var glyphs: String { action.chord.displayGlyphs }
+}
+
 enum ShortcutRegistry {
+    /// Hints shown in the capture-mode hint bar, in display order. The two
+    /// capture-reachable panel actions today; ordered so more can be appended.
+    static let captureHints: [CaptureHint] = [
+        CaptureHint(action: .toggleEditor,     label: "Editor"),
+        CaptureHint(action: .attachScreenshot, label: "Screenshots"),
+    ]
+
     /// The action a window-level key event should trigger, or nil to pass the
     /// event through to WebKit / the menu bar.
     static func interceptedAction(key: String?,

@@ -93,6 +93,10 @@ final class MainPanel: NSPanel {
     /// True for the duration of the editor→capture collapse animation, so
     /// `captureContentDidChange` defers window geometry to the animation.
     private var isCollapsing = false
+    /// Set when the screenshot picker closes: the next capture re-measure (the
+    /// box may now be taller — the preview band appears when a shot is attached)
+    /// drives a centered animated shrink instead of the usual top-anchored snap.
+    private var recenterCaptureAfterPicker = false
     /// Incremented on every fresh summon or ⌥⌘O; completion blocks capture it
     /// so stale completions from a prior summon cannot resurrect a detached chip.
     private var attachLookupGeneration = 0
@@ -411,20 +415,30 @@ final class MainPanel: NSPanel {
     /// recorded size so it dissolves in place on the next switch.
     private func captureContentDidChange(_ size: CGSize) {
         guard size.width > 0, size.height > 0 else { return }
-        // The picker takeover fills the window with a fixed centered frame.
-        // Ignore the size entirely — recording it would clobber the saved capture
-        // height that closePickerSurface restores.
-        guard !pickerOpen else { return }
+        // The picker takeover fills the window; ignore those measurements. Keying
+        // off the live surface (not `pickerOpen`) means that once the items clear
+        // the swapped-back capture box reports its real height even while the
+        // close animation still has `pickerOpen` set — so we size to the box's
+        // post-attach height (with the preview band) rather than the stale one.
+        guard appState.screenshotPickerItems == nil else { return }
         captureContentSize = size
         container.captureHeight = size.height
         guard !editorOpen else { return }
-        // While collapsing editor→capture, the frame animation owns the window
+        // The picker just closed: re-center and shrink to the box's fresh height
+        // (taller when a shot was attached). Owns the frame for this transition.
+        if recenterCaptureAfterPicker {
+            recenterCaptureAfterPicker = false
+            animateCaptureRecenter(toHeight: size.height)
+            return
+        }
+        // While collapsing editor→capture, or while the picker-close animation is
+        // still running (pickerOpen set), the frame animation owns the window
         // geometry. Without this, the re-measure that closeEditor triggers (it
         // sets editorOpen=false, so we'd reach here) fires a non-animated
         // setFrame to a box at the editor's edge — which then animates to centre,
         // reading as "shrink to the side, then re-centre". Record the size for
         // the animation target; let the animation place the frame.
-        guard !isCollapsing else { return }
+        guard !isCollapsing, !pickerOpen else { return }
         // Keep the top edge fixed and grow/shrink *downward*, tracking the
         // content's SwiftUI-animated height each frame so the window moves in
         // lockstep with the footer — smooth and symmetric. Recentering (the old
@@ -544,17 +558,16 @@ final class MainPanel: NSPanel {
         attachLookupGeneration += 1
         let generation = attachLookupGeneration
         appState.pendingAttachments = []
-        appState.recentScreenshotExists = false
         appState.attachFeedback = nil
         appState.screenshotPickerItems = nil
         let window = appState.screenshotAttachWindow
         ScreenshotLocator.mostRecent { [weak self] shot in
             guard let self, generation == self.attachLookupGeneration, let shot else { return }
             let age = Date().timeIntervalSince(shot.createdAt)
+            // Auto-attach only a shot fresh enough to be this capture's subject;
+            // an older one is reachable via the ⌥⌘O picker (shown in the hint bar).
             if window < 0 || age <= window {
                 self.appState.pendingAttachments = [shot.url]
-            } else {
-                self.appState.recentScreenshotExists = true
             }
         }
     }
@@ -613,21 +626,32 @@ final class MainPanel: NSPanel {
         })
     }
 
-    /// Close the picker surface, optionally attaching `url` as the chip, and
-    /// shrink back to the centered capture box. `pickerOpen` stays true until the
-    /// shrink finishes so the capture re-measure (CaptureView swaps back the
-    /// moment items clear) can't fire a competing non-animated setFrame.
+    /// Close the picker surface, optionally attaching `urls` as the chips, and
+    /// shrink back to the centered capture box. Clearing the items swaps the box
+    /// back; its fresh measurement drives the centered animated shrink via
+    /// `recenterCaptureAfterPicker` — so the window ends at the box's *post-attach*
+    /// height (taller when the preview band appears), not the stale pre-picker one.
+    /// `pickerOpen` stays true until that animation finishes, so a second ⌥⌘O
+    /// during the shrink doesn't re-open the picker.
     private func closePickerSurface(attaching urls: [URL]?) {
         // nil = cancel (leave the current attachments untouched); a non-nil list
         // replaces them with the picker's selection (R: ⌥⌘O sets the chips).
         if let urls { appState.pendingAttachments = urls }
-        appState.screenshotPickerItems = nil
-        guard pickerOpen, let screen = currentScreenVisibleFrame() else { pickerOpen = false; return }
+        guard pickerOpen else { appState.screenshotPickerItems = nil; return }
         canDismissOnBlur = false
+        recenterCaptureAfterPicker = true
+        appState.screenshotPickerItems = nil
+    }
+
+    /// Animated centered shrink from the picker frame to a capture box of
+    /// `height`. Runs from `captureContentDidChange` once the swapped-back box
+    /// has measured; clears `pickerOpen` on completion.
+    private func animateCaptureRecenter(toHeight height: CGFloat) {
+        guard let screen = currentScreenVisibleFrame() else { pickerOpen = false; return }
         anchorCenterY = screen.midY
         let target = NSRect(x: screen.midX - captureWidth / 2,
-                            y: screen.midY - captureContentSize.height / 2,
-                            width: captureWidth, height: captureContentSize.height)
+                            y: screen.midY - height / 2,
+                            width: captureWidth, height: height)
         NSAnimationContext.runAnimationGroup({ ctx in
             ctx.duration = 0.24
             ctx.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
