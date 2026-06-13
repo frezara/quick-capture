@@ -43,6 +43,19 @@ crossfades between them.
 
 - **Capture box** — the small, content-sized, centered quick-capture surface
   summoned by the global hotkey (default `⌥⌘P`). Self-dismisses on click-away.
+  Laid out in three bands: the inputs row, the **preview band**, and the
+  **hint bar**.
+
+- **Hint bar** — the persistent bottom bar in capture mode. Always visible (it
+  does not collapse on focus changes), it shows shortcut-hint **chips** whose
+  labels are sourced from `ShortcutRegistry` so they track rebinds — currently
+  Editor (`⌥⌘I`) and Screenshots (`⌥⌘O`). The capture-mode counterpart to the
+  editor's bottom status bar. Do not call it the "footer".
+
+- **Preview band** — the middle band between the inputs row and the hint bar.
+  Shows attached screenshots as a larger, scannable, horizontally-scrolling
+  strip, or — in `#cal` mode — the calendar preview. Absent when there is
+  nothing to show (no screenshots, not in `#cal` mode).
 
 - **Capture mode** — the state showing the capture box and nothing else. One of
   two mutually-exclusive modes (see **editor mode**).
@@ -112,3 +125,5 @@ crossfades between them.
 - Don't say "input strip" / "input-only" / "split" — that was the superseded
   ADR-0003 model (persistent input with the editor beneath). The current model
   is mutually-exclusive modes (ADR-0004).
+- Don't say "footer" for the capture-mode bottom bar — it's the **hint bar**
+  (always-on, not the old collapse-on-blur footer).

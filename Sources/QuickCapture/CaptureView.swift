@@ -22,11 +22,10 @@ struct CaptureView: View {
     /// thread (a 6K Retina PNG decoded inline would jank the summon); each chip
     /// frame shows immediately and its image fills in.
     @State private var chipThumbnails: [URL: NSImage] = [:]
-    /// Sticky tag-suggestions visibility. Driven off `focused` transitions
-    /// rather than read live, so a *transient* `focused == nil` (which AppKit
-    /// briefly produces while the panel resizes) doesn't collapse the footer
-    /// and start a resize⇄focus oscillation. Only an explicit move to the todo
-    /// field hides it.
+    /// Sticky tag-dropdown visibility. Driven off `focused` transitions rather
+    /// than read live, so a *transient* `focused == nil` (which AppKit briefly
+    /// produces while the panel resizes) doesn't close the dropdown and start a
+    /// resize⇄focus oscillation. Only an explicit move to the todo field hides it.
     @State private var tagFieldActive = false
 
     /// Highlighted row in the tag dropdown (clamped to the filtered list at
@@ -68,10 +67,12 @@ struct CaptureView: View {
             }
         }
         .padding(Metrics.s3)
-        // Animate the footer in/out. MainPanel tracks this animated height
-        // per frame (top-anchored) so the window grows/shrinks in lockstep —
-        // smooth and symmetric both ways.
-        .animation(.easeInOut(duration: 0.18), value: shouldShowExtras)
+        // The preview band appears/disappears instantly (no height animation):
+        // the window resize is driven by MainPanel from a single content
+        // measurement, so an animated growth would desync the box from the
+        // panel chrome (and fight the picker-close re-center). The `#cal`
+        // content swap below is still animated — it's an in-place crossfade,
+        // not a height change.
         .animation(.easeInOut(duration: 0.18), value: isCalendarMode)
         .animation(.easeInOut(duration: 0.18), value: pickerOpen)
         // Pin the root to its intrinsic height — otherwise NSHostingView's fixed
@@ -103,10 +104,10 @@ struct CaptureView: View {
         .onAppear {
             DispatchQueue.main.async { focused = .todo }
         }
-        // Keep the sticky footer flag in step with real focus moves. A move to
-        // .tag opens it; a move to .todo closes it. A transient nil (produced
-        // by AppKit while the panel resizes) is ignored so the footer doesn't
-        // flicker and drive a resize loop.
+        // Keep the sticky tag-dropdown flag in step with real focus moves. A
+        // move to .tag opens it; a move to .todo closes it. A transient nil
+        // (produced by AppKit while the panel resizes) is ignored so the
+        // dropdown doesn't flicker and drive a resize loop.
         .onChange(of: focused) { _, newValue in
             if newValue == .tag {
                 tagFieldActive = true
@@ -115,11 +116,11 @@ struct CaptureView: View {
                 tagDropdownDismissed = false
                 tagHighlight = 0
             } else {
-                // Collapse the footer when the tag field is no longer focused —
+                // Close the dropdown when the tag field is no longer focused —
                 // but defer the check so the *transient* focus drop AppKit emits
-                // while the panel resizes (the footer appearing changes the
-                // height) doesn't collapse it and start a resize⇄focus
-                // oscillation. If focus has genuinely moved on by then, hide it.
+                // while the panel resizes (the band appearing changes the height)
+                // doesn't close it and start a resize⇄focus oscillation. If focus
+                // has genuinely moved on by then, hide it.
                 DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) {
                     if focused != .tag { tagFieldActive = false }
                 }
@@ -169,7 +170,6 @@ struct CaptureView: View {
             tagHighlight = 0
             focused = .todo
             appState.pendingAttachments = []
-            appState.recentScreenshotExists = false
             appState.attachFeedback = nil
             appState.screenshotPickerItems = nil
             chipThumbnails = [:]
@@ -203,29 +203,24 @@ struct CaptureView: View {
         }
     }
 
-    /// The capture box layout (inputs + tag chips / calendar preview). Shown
-    /// whenever the picker surface isn't taking over the window.
+    /// The capture box layout: three bands — inputs row, an optional preview
+    /// band (screenshots, the `#cal` preview, or a transient picker notice),
+    /// and the always-on hint bar. Shown whenever the picker surface isn't
+    /// taking over the window. (See CONTEXT.md: hint bar / preview band.)
     private var captureColumn: some View {
         VStack(spacing: 0) {
             inputsRow
-            if shouldShowExtras {
-                // Symmetric: gap above the rule (from the inputs) and below it
-                // (to the chips), so the separator doesn't get squashed against
-                // the input row.
-                VStack(spacing: 0) {
-                    Rectangle().fill(theme.border).frame(height: 0.5)
-                        .padding(.top, Metrics.s3)
-                    Group {
-                        if isCalendarMode {
-                            calendarPreview
-                        } else {
-                            footer
-                        }
-                    }
+            if showPreviewBand {
+                previewBand
                     .padding(.top, Metrics.s3)
-                }
-                .transition(.opacity)
+                    .transition(.opacity)
             }
+            // The hint bar is persistent; a rule sets it off from whatever sits
+            // above (inputs row or preview band) with symmetric s3 gaps.
+            Rectangle().fill(theme.border).frame(height: 0.5)
+                .padding(.top, Metrics.s3)
+            hintBar
+                .padding(.top, Metrics.s3)
         }
     }
 
@@ -483,12 +478,122 @@ struct CaptureView: View {
         tagText.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() == "cal"
     }
 
-    /// The accessory section below the inputs is always present (tag chips, or
-    /// the calendar preview in `#cal` mode). Keeping it shown in both modes
-    /// means the capture strip is a fixed height — no jarring grow/shrink on the
-    /// floating HUD, and no squash when collapsing back from the editor (the
-    /// strip's measured height matches in both modes).
-    private var shouldShowExtras: Bool { true }
+    // MARK: - Preview band (screenshots / calendar preview / picker notice)
+
+    /// The middle band shows when there's something to put in it: attached
+    /// screenshots, the `#cal` preview, or a transient picker notice (e.g. the
+    /// Desktop-access error from #84). Otherwise the box stays compact and only
+    /// the inputs row + hint bar show.
+    private var showPreviewBand: Bool {
+        isCalendarMode
+            || !appState.pendingAttachments.isEmpty
+            || appState.attachFeedback != nil
+    }
+
+    /// In `#cal` mode the band carries the calendar preview (calendar captures
+    /// discard attachments, so the two never coexist); otherwise the screenshot
+    /// strip, falling back to a transient picker notice when a ⌥⌘O lookup had
+    /// nothing to attach or was denied.
+    @ViewBuilder
+    private var previewBand: some View {
+        if isCalendarMode {
+            calendarPreview
+        } else if !appState.pendingAttachments.isEmpty {
+            screenshotStrip
+        } else if let feedback = appState.attachFeedback {
+            noticeRow(feedback)
+        }
+    }
+
+    /// Attached screenshots as a horizontally-scrolling strip of larger,
+    /// scannable thumbnails (vs. the old 28×19 chips). Fixed band height so the
+    /// window measurement stays well-defined however many shots are attached.
+    private var screenshotStrip: some View {
+        ScrollView(.horizontal, showsIndicators: false) {
+            HStack(spacing: Metrics.s2) {
+                ForEach(appState.pendingAttachments, id: \.self) { url in
+                    screenshotTile(for: url)
+                }
+            }
+        }
+        .frame(height: Self.previewTileHeight)
+    }
+
+    private static let previewTileWidth: CGFloat = 120
+    private static let previewTileHeight: CGFloat = 75
+
+    /// One screenshot tile: the thumbnail with a remove button. ⌫ on the empty
+    /// input still removes the most recent (see `detachMostRecent`).
+    private func screenshotTile(for url: URL) -> some View {
+        ZStack(alignment: .topTrailing) {
+            Group {
+                if let image = chipThumbnails[url] {
+                    Image(nsImage: image)
+                        .resizable()
+                        .aspectRatio(contentMode: .fill)
+                } else {
+                    Image(systemName: "photo")
+                        .font(.system(size: 18, weight: .semibold))
+                        .foregroundStyle(theme.inkTertiary)
+                        .frame(maxWidth: .infinity, maxHeight: .infinity)
+                }
+            }
+            .frame(width: Self.previewTileWidth, height: Self.previewTileHeight)
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                    .strokeBorder(theme.border, lineWidth: 0.5)
+            )
+
+            Button {
+                detach(url)
+            } label: {
+                // Palette fill (white glyph on a dark disc) so the control reads
+                // over any screenshot, light or dark.
+                Image(systemName: "xmark.circle.fill")
+                    .symbolRenderingMode(.palette)
+                    .foregroundStyle(.white, .black.opacity(0.5))
+                    .font(.system(size: 16))
+            }
+            .buttonStyle(.plain)
+            .padding(4)
+            .help("Remove screenshot (⌫ on empty input removes the most recent)")
+        }
+    }
+
+    /// Transient one-line notice in the band — used for ⌥⌘O picker outcomes
+    /// that produced nothing to attach (no screenshots / Desktop access denied,
+    /// #84). Auto-clears via the `attachFeedback` timer.
+    private func noticeRow(_ text: String) -> some View {
+        HStack(spacing: Metrics.s2) {
+            Image(systemName: "exclamationmark.circle")
+                .font(.system(size: 12, weight: .semibold))
+                .foregroundStyle(theme.inkTertiary)
+            Text(text)
+                .font(TypeScale.chip)
+                .foregroundStyle(theme.inkTertiary)
+                .fixedSize(horizontal: false, vertical: true)
+            Spacer(minLength: 0)
+        }
+        .animation(.easeInOut(duration: 0.15), value: appState.attachFeedback)
+    }
+
+    // MARK: - Hint bar
+
+    /// The persistent capture-mode bottom bar: shortcut-hint chips sourced from
+    /// `ShortcutRegistry` (so they track rebinds). Always shown; the capture
+    /// counterpart to the editor's bottom status bar.
+    private var hintBar: some View {
+        HStack(spacing: Metrics.s3) {
+            ForEach(ShortcutRegistry.captureHints, id: \.action) { hint in
+                HStack(spacing: Metrics.s1) {
+                    keycap(hint.glyphs)
+                    hintLabel(hint.label)
+                }
+            }
+            Spacer(minLength: 0)
+        }
+    }
 
     /// Parses the current todo text into a CalendarEvent. Returns nil when the
     /// text is blank or the parser couldn't find a date.
@@ -553,154 +658,7 @@ struct CaptureView: View {
         return "\(hours) hr \(remainder) min"
     }
 
-    // MARK: - Footer (attachment chip, tag pills, screenshot hint)
-
-    private var footer: some View {
-        HStack(spacing: Metrics.s2) {
-            if !appState.pendingAttachments.isEmpty {
-                attachmentChips
-            }
-            if let hint = attachHintText {
-                Text(hint)
-                    .font(TypeScale.chip)
-                    .foregroundStyle(theme.inkTertiary)
-                    .fixedSize()
-                    .transition(.opacity)
-            } else if appState.pendingAttachments.isEmpty {
-                // The tag chips moved into the dropdown under the tag field;
-                // keep a quiet hint here so the footer row (and with it the
-                // strip's fixed height) never collapses to empty.
-                Text("Tab to tag · ⌥⌘O to attach")
-                    .font(TypeScale.chip)
-                    .foregroundStyle(theme.inkTertiary)
-                    .fixedSize()
-            }
-            Spacer(minLength: 0)
-        }
-        .animation(.easeInOut(duration: 0.15), value: appState.attachFeedback)
-    }
-
-    // MARK: - Attachment chip
-
-    /// Pull-in feedback wins over the standing hint; the hint only shows when
-    /// a screenshot actually exists to pull in and no chip is attached, so the
-    /// footer stays quiet on summons with nothing to offer.
-    private var attachHintText: String? {
-        guard appState.pendingAttachments.isEmpty else { return nil }
-        if let feedback = appState.attachFeedback { return feedback }
-        if appState.recentScreenshotExists { return "⌥⌘O to attach screenshot" }
-        return nil
-    }
-
-    /// Newest-first count cap before chips collapse to a single summary chip, so
-    /// a many-screenshot capture doesn't push the tag chips off the strip.
-    private static let maxInlineChips = 3
-
-    /// One thumbnail chip per attachment, or a single "N screenshots" summary
-    /// once there are more than `maxInlineChips`. In `#cal` mode every chip is
-    /// disabled — a calendar capture never writes markdown, so the attachments
-    /// aren't kept, and the strip says so rather than silently dropping them.
-    @ViewBuilder
-    private var attachmentChips: some View {
-        let urls = appState.pendingAttachments
-        if isCalendarMode {
-            disabledAttachmentChip(count: urls.count)
-        } else if urls.count > Self.maxInlineChips {
-            summaryAttachmentChip(count: urls.count, newest: urls.last)
-        } else {
-            HStack(spacing: Metrics.s1) {
-                ForEach(urls, id: \.self) { url in
-                    attachmentChip(for: url)
-                }
-            }
-        }
-    }
-
-    /// A single attachment chip: its thumbnail + an xmark that detaches just
-    /// that screenshot.
-    private func attachmentChip(for url: URL) -> some View {
-        chipShell {
-            thumbOrPlaceholder(chipThumbnails[url])
-            Button {
-                detach(url)
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(theme.inkTertiary)
-            }
-            .buttonStyle(.plain)
-            .help("Remove screenshot (⌫ on empty input removes the most recent)")
-        }
-    }
-
-    /// Collapsed chip for >3 attachments: newest thumbnail + an "N screenshots"
-    /// count, with an xmark that detaches the most recent.
-    private func summaryAttachmentChip(count: Int, newest: URL?) -> some View {
-        chipShell {
-            thumbOrPlaceholder(newest.flatMap { chipThumbnails[$0] })
-            Text("\(count) screenshots")
-                .font(TypeScale.chip)
-                .foregroundStyle(theme.inkSecondary)
-                .lineLimit(1)
-            Button {
-                detachMostRecent()
-            } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 9, weight: .bold))
-                    .foregroundStyle(theme.inkTertiary)
-            }
-            .buttonStyle(.plain)
-            .help("Remove the most recent screenshot (⌫ on empty input)")
-        }
-    }
-
-    /// Disabled summary shown in `#cal` mode where attachments are dropped.
-    private func disabledAttachmentChip(count: Int) -> some View {
-        chipShell {
-            Image(systemName: "photo")
-                .font(.system(size: 10, weight: .semibold))
-                .foregroundStyle(theme.inkTertiary)
-                .frame(width: 28, height: 19)
-            Text(count == 1 ? "Not used for calendar captures"
-                            : "\(count) screenshots — not used for calendar captures")
-                .font(TypeScale.chip)
-                .foregroundStyle(theme.inkTertiary)
-                .lineLimit(1)
-        }
-        .opacity(0.55)
-    }
-
-    /// The 28×19 thumbnail frame shared by every attachment chip.
-    private func thumbOrPlaceholder(_ image: NSImage?) -> some View {
-        Group {
-            if let image {
-                Image(nsImage: image)
-                    .resizable()
-                    .aspectRatio(contentMode: .fill)
-            } else {
-                Image(systemName: "photo")
-                    .font(.system(size: 10, weight: .semibold))
-                    .foregroundStyle(theme.inkTertiary)
-            }
-        }
-        .frame(width: 28, height: 19)
-        .clipShape(RoundedRectangle(cornerRadius: 3, style: .continuous))
-    }
-
-    /// Shared chip chrome (rounded, bordered) wrapping arbitrary contents.
-    private func chipShell<Content: View>(@ViewBuilder _ content: () -> Content) -> some View {
-        HStack(spacing: Metrics.s1) { content() }
-            .padding(.horizontal, 9)
-            .padding(.vertical, 5)
-            .background(
-                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                    .fill(theme.chip)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                    .strokeBorder(theme.border, lineWidth: 0.5)
-            )
-    }
+    // MARK: - Attachment thumbnails
 
     /// Detach one screenshot. Detach is sticky for the capture session —
     /// nothing re-attaches until a fresh summon or an explicit ⌥⌘O.
@@ -722,7 +680,8 @@ struct CaptureView: View {
         chipThumbnails = chipThumbnails.filter { urls.contains($0.key) }
         for url in urls where chipThumbnails[url] == nil {
             DispatchQueue.global(qos: .userInitiated).async {
-                guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 120) else { return }
+                // ~2× the 120pt tile so the larger preview stays crisp on Retina.
+                guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 256) else { return }
                 let image = NSImage(cgImage: cg, size: .zero)
                 DispatchQueue.main.async {
                     if appState.pendingAttachments.contains(url) { chipThumbnails[url] = image }
@@ -977,9 +936,6 @@ struct CaptureView: View {
         return posixFormatted(shot.createdAt, "EEE, MMM d")
     }
 
-    /// Finder-tag-style chips: each tag carries its 7px hue dot; the
-    /// prefix-matched tag tints with its OWN hue (not the accent). The `cal`
-    /// chip is a command, not a tag — calendar glyph, no dot, neutral always.
     // MARK: - Actions
 
     private func submit() {
