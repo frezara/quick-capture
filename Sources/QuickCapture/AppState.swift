@@ -42,13 +42,8 @@ final class AppState: ObservableObject {
         static let includeTimestamp       = "includeTimestamp"
         static let captureFontDesign      = "captureFontDesign"
         static let vimEnabled             = "vimEnabled"
-        static let screenshotAttachWindow = "screenshotAttachWindow"
         static let refileTargets          = "refileTargets"
     }
-
-    /// Sentinel for "Any" in the auto-attach window picker — the most recent
-    /// screenshot attaches regardless of age.
-    static let attachWindowAny: Double = -1
 
     @Published var captureFilePath: String {
         didSet {
@@ -86,14 +81,6 @@ final class AppState: ObservableObject {
             guard vimEnabled != oldValue else { return }
             UserDefaults.standard.set(vimEnabled, forKey: Keys.vimEnabled)
             NotificationCenter.default.post(name: .vimModeDidChange, object: nil)
-        }
-    }
-
-    /// How recent (seconds) a screenshot must be to pre-attach when the capture
-    /// panel is summoned. `attachWindowAny` (-1) disables the age check.
-    @Published var screenshotAttachWindow: Double {
-        didSet {
-            UserDefaults.standard.set(screenshotAttachWindow, forKey: Keys.screenshotAttachWindow)
         }
     }
 
@@ -214,13 +201,6 @@ final class AppState: ObservableObject {
             self.vimEnabled = true
         } else {
             self.vimEnabled = UserDefaults.standard.bool(forKey: Keys.vimEnabled)
-        }
-
-        // 2 minutes by default — "I just took this" territory.
-        if UserDefaults.standard.object(forKey: Keys.screenshotAttachWindow) == nil {
-            self.screenshotAttachWindow = 120
-        } else {
-            self.screenshotAttachWindow = UserDefaults.standard.double(forKey: Keys.screenshotAttachWindow)
         }
 
         if let data = UserDefaults.standard.data(forKey: Keys.refileTargets),
