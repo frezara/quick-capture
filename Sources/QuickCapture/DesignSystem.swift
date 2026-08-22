@@ -2,9 +2,23 @@ import SwiftUI
 
 // "Pure System + Color" (native v2) design system — see design/native-v2/HANDOFF.md.
 // First-party-Apple feel: system typography, frosted materials, 0.5px hairlines,
-// system blue as THE accent. Functional color only: tag hues (TagColor.swift),
-// priority orbs, and the settings row icons. Everything visual is read from the
-// tokens below — no hard-coded values in the views.
+// system blue as THE accent. Everything visual is read from the tokens below —
+// no hard-coded values in the views.
+//
+// Color has three jobs and no others (the "Sectioned" direction, #101):
+//   - tag hue (TagColor.swift) = SECTION IDENTITY. A section's hue carries its
+//     dot, caption, rule, indent guides and the checkboxes inside it, plus the
+//     capture tag field — the same tag. Nothing else borrows a tag hue.
+//   - system blue = INTERACTION. Focus, selection, links, checked state outside
+//     a section, the vim mode pill.
+//   - neutral = the ground. Surfaces stay near-monochrome; warmer surfaces were
+//     explored and rejected.
+// Priority orbs and the settings row icons are the standing exceptions — they
+// are functional color that predates the direction.
+//
+// NOTE: the tokens below are still the pre-#101 set. The direction is decided
+// and documented (CONTEXT.md, design/color-directions/); implementation is
+// tracked in #102 (hue assignment — prerequisite), #103 (editor), #104 (capture).
 
 extension Color {
     /// Color(0xRRGGBB). Positional/`alpha:` form from the handoff — distinct from

@@ -1,0 +1,297 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #0066D6; } a:hover { color: #00509E; }
+  </style>
+</helmet>
+<div style="width:1760px;height:1420px;box-sizing:border-box;padding:56px;background:#F2F3F5;display:flex;flex-direction:column;gap:30px;">
+  <div style="max-width:1180px;">
+    <div style="font-size:10px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#1E7A46;">Settled — Sectioned depends on this</div>
+    <div style="margin-top:8px;font-size:32px;font-weight:600;letter-spacing:-0.6px;color:#15181C;">Tag hues</div>
+    <div style="margin-top:10px;font-size:13.5px;line-height:1.55;color:#3C424A;text-wrap:pretty;">Sectioned only pays off if two sections that sit near each other get hues you can tell apart. Today a section's hue is a DJB2 hash of its name over eight entries — two of which are a grey and a blue a shade off the system accent. <strong style="font-weight:600;color:#15181C;">Decided: a section takes the next unused hue the first time it is seen, and that assignment is remembered.</strong></div>
+  </div>
+
+  <div style="padding:20px 22px;border-radius:12px;background:#FFFFFF;box-shadow:0 0 0 0.5px rgba(0,0,0,0.10);">
+    <div style="display:flex;align-items:baseline;gap:12px;">
+      <span style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;">Today — hashed</span>
+      <span style="font-size:12.5px;color:#B0343A;">9 of 17 plausible section names land on indigo, blue or slate</span>
+    </div>
+    <div style="display:flex;flex-wrap:wrap;gap:8px;margin-top:14px;"><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#5856D6;flex:none;"></span>Quick capture
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#64748B;flex:none;"></span>design
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#3B82F6;flex:none;"></span>shortcuts
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#E8643F;flex:none;"></span>work
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#5856D6;flex:none;"></span>home
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#4F9E4F;flex:none;"></span>ideas
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#64748B;flex:none;"></span>reading
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#3B82F6;flex:none;"></span>errands
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#E8643F;flex:none;"></span>frezara
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#5856D6;flex:none;"></span>admin
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#4F9E4F;flex:none;"></span>health
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#3B82F6;flex:none;"></span>editor
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#2A9D8F;flex:none;"></span>capture
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFF4F2;box-shadow:inset 0 0 0 0.5px rgba(200,60,40,0.28);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#5856D6;flex:none;"></span>bugs
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#C77800;flex:none;"></span>later
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#C77800;flex:none;"></span>inbox
+    </span><span style="display:inline-flex;align-items:center;gap:7px;padding:5px 11px 5px 9px;border-radius:999px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);font-size:12px;color:#3C424A;">
+      <span style="width:8px;height:8px;border-radius:50%;background:#2A9D8F;flex:none;"></span>personal
+    </span></div>
+  </div>
+
+  <div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;margin-bottom:12px;">Palette — seven hues, slate retired · caption shown at the Sectioned mix (70% light / 76% dark toward primary ink)</div>
+    <div style="display:flex;gap:16px;"><div style="width:230px;flex:none;border-radius:10px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.13);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#FAFAFB;border-bottom:0.5px solid rgba(0,0,0,0.10);">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#4B5159;">Coral</span>
+        
+      </div>
+      <div style="padding:13px 12px;background:#F6F6F8;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#A75038;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#E8643F;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #E8643F 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8A8F98;">
+        <span>#E8643F</span><span>5.06:1</span>
+      </div>
+    </div>
+      <div style="padding:13px 12px;background:#212125;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#F6977F;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#F4795A;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #F4795A 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8B9099;">
+        <span>#F4795A</span><span>7.37:1</span>
+      </div>
+    </div>
+    </div><div style="width:230px;flex:none;border-radius:10px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.13);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#FAFAFB;border-bottom:0.5px solid rgba(0,0,0,0.10);">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#4B5159;">Teal</span>
+        
+      </div>
+      <div style="padding:13px 12px;background:#F6F6F8;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#2F746A;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#2A9D8F;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #2A9D8F 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8A8F98;">
+        <span>#2A9D8F</span><span>5.08:1</span>
+      </div>
+    </div>
+      <div style="padding:13px 12px;background:#212125;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#74C9BC;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#3DBDAD;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #3DBDAD 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8B9099;">
+        <span>#3DBDAD</span><span>8.27:1</span>
+      </div>
+    </div>
+    </div><div style="width:230px;flex:none;border-radius:10px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.13);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#FAFAFB;border-bottom:0.5px solid rgba(0,0,0,0.10);">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#4B5159;">Magenta</span>
+        
+      </div>
+      <div style="padding:13px 12px;background:#F6F6F8;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#8D3D73;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#C2479B;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #C2479B 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8A8F98;">
+        <span>#C2479B</span><span>6.38:1</span>
+      </div>
+    </div>
+      <div style="padding:13px 12px;background:#212125;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#E286C2;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#DA62B4;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #DA62B4 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8B9099;">
+        <span>#DA62B4</span><span>6.43:1</span>
+      </div>
+    </div>
+    </div><div style="width:230px;flex:none;border-radius:10px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.13);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#FAFAFB;border-bottom:0.5px solid rgba(0,0,0,0.10);">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#4B5159;">Green</span>
+        
+      </div>
+      <div style="padding:13px 12px;background:#F6F6F8;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#427541;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#4F9E4F;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #4F9E4F 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8A8F98;">
+        <span>#4F9E4F</span><span>5.05:1</span>
+      </div>
+    </div>
+      <div style="padding:13px 12px;background:#212125;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#85CB84;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#5FBF60;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #5FBF60 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8B9099;">
+        <span>#5FBF60</span><span>8.31:1</span>
+      </div>
+    </div>
+    </div><div style="width:230px;flex:none;border-radius:10px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.13);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#FAFAFB;border-bottom:0.5px solid rgba(0,0,0,0.10);">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#4B5159;">Blue</span>
+        
+      </div>
+      <div style="padding:13px 12px;background:#F6F6F8;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#3563AF;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#3B82F6;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #3B82F6 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8A8F98;">
+        <span>#3B82F6</span><span>5.47:1</span>
+      </div>
+    </div>
+      <div style="padding:13px 12px;background:#212125;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#80B2FD;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#5C9DFF;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #5C9DFF 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8B9099;">
+        <span>#5C9DFF</span><span>7.41:1</span>
+      </div>
+    </div>
+    </div><div style="width:230px;flex:none;border-radius:10px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.13);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#FAFAFB;border-bottom:0.5px solid rgba(0,0,0,0.10);">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#4B5159;">Amber</span>
+        
+      </div>
+      <div style="padding:13px 12px;background:#F6F6F8;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#905C1F;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#C77800;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #C77800 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8A8F98;">
+        <span>#C77800</span><span>5.21:1</span>
+      </div>
+    </div>
+      <div style="padding:13px 12px;background:#212125;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#E4B571;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#E0A33E;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #E0A33E 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8B9099;">
+        <span>#E0A33E</span><span>8.52:1</span>
+      </div>
+    </div>
+    </div><div style="width:230px;flex:none;border-radius:10px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.13);">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#FAFAFB;border-bottom:0.5px solid rgba(0,0,0,0.10);">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#4B5159;">Indigo</span>
+        
+      </div>
+      <div style="padding:13px 12px;background:#F6F6F8;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#44479A;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#5856D6;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #5856D6 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8A8F98;">
+        <span>#5856D6</span><span>7.44:1</span>
+      </div>
+    </div>
+      <div style="padding:13px 12px;background:#212125;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#9598FE;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#7D7AFF;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #7D7AFF 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8B9099;">
+        <span>#7D7AFF</span><span>6.26:1</span>
+      </div>
+    </div>
+    </div><div style="width:230px;flex:none;border-radius:10px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.13);opacity:0.45;">
+      <div style="display:flex;align-items:center;justify-content:space-between;padding:9px 12px;background:#FAFAFB;border-bottom:0.5px solid rgba(0,0,0,0.10);">
+        <span style="font-size:11px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#4B5159;">Slate</span>
+        <span style="font-size:9px;font-weight:700;letter-spacing:0.6px;text-transform:uppercase;color:#B0343A;">retire</span>
+      </div>
+      <div style="padding:13px 12px;background:#F6F6F8;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#4E5868;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#64748B;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #64748B 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8A8F98;">
+        <span>#64748B</span><span>6.66:1</span>
+      </div>
+    </div>
+      <div style="padding:13px 12px;background:#212125;">
+      <div style="display:flex;align-items:center;font-size:11px;font-weight:600;line-height:2;letter-spacing:0.8px;text-transform:uppercase;color:#A2ACBB;">
+        <span style="width:7px;height:7px;border-radius:50%;margin-right:8px;background:#8B98AB;flex:none;"></span>Quick capture
+      </div>
+      <div style="height:0.5px;background:color-mix(in oklab, #8B98AB 32%, transparent);"></div>
+      <div style="margin-top:9px;display:flex;justify-content:space-between;font-family:var(--mono);font-size:10px;color:#8B9099;">
+        <span>#8B98AB</span><span>6.99:1</span>
+      </div>
+    </div>
+    </div></div>
+  </div>
+
+  <div>
+    <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;margin-bottom:12px;">How a section gets its hue</div>
+    <div style="display:flex;gap:16px;">
+      
+    <div style="flex:1;min-width:0;padding:16px 18px;border-radius:10px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:14px;font-weight:600;color:#15181C;">Hash the name</span>
+        
+      </div>
+      <div style="margin-top:9px;font-size:12.5px;line-height:1.55;color:#3C424A;text-wrap:pretty;">Considered. Stable — a section keeps its hue forever, across launches and machines, with nothing to store.</div>
+      <div style="margin-top:6px;font-size:12.5px;line-height:1.55;color:#8A8F98;text-wrap:pretty;">Clusters: neighbouring sections routinely collide, and a section can land on grey. This is today's behaviour.</div>
+    </div>
+      
+    <div style="flex:1;min-width:0;padding:16px 18px;border-radius:10px;background:#FFFFFF;box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.12);">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:14px;font-weight:600;color:#15181C;">Assign by order of appearance</span>
+        
+      </div>
+      <div style="margin-top:9px;font-size:12.5px;line-height:1.55;color:#3C424A;text-wrap:pretty;">Considered. Separates reliably — the first seven sections in a file are always seven distinct hues.</div>
+      <div style="margin-top:6px;font-size:12.5px;line-height:1.55;color:#8A8F98;text-wrap:pretty;">A section's hue moves when you reorder or delete a section above it. Colour that shifts under you is worse than colour that clusters.</div>
+    </div>
+      
+    <div style="flex:1;min-width:0;padding:16px 18px;border-radius:10px;background:#F1F8F3;box-shadow:inset 0 0 0 0.5px rgba(30,122,70,0.35);">
+      <div style="display:flex;align-items:center;gap:8px;">
+        <span style="font-size:14px;font-weight:600;color:#15181C;">Assign on first sight, then remember</span>
+        <span style="font-size:9px;font-weight:700;letter-spacing:0.7px;text-transform:uppercase;color:#1E7A46;">recommended</span>
+      </div>
+      <div style="margin-top:9px;font-size:12.5px;line-height:1.55;color:#3C424A;text-wrap:pretty;"><strong style="font-weight:600;">Chosen.</strong> A section takes the next unused hue the first time it is seen; the map is persisted, so the hue survives reordering, renaming above it, and relaunches. Past seven sections, reuse the least-recently-assigned hue.</div>
+      <div style="margin-top:6px;font-size:12.5px;line-height:1.55;color:#8A8F98;text-wrap:pretty;">Turns the hue from a pure function into stored state — which means the editor can no longer derive it. Swift owns the map and pushes it into the web layer the way it already pushes refile targets.</div>
+    </div>
+    </div>
+  </div>
+
+  <div style="padding:18px 22px;border-radius:12px;background:#FFFFFF;box-shadow:0 0 0 0.5px rgba(0,0,0,0.10);">
+    <div style="font-size:11px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;">What the chosen rule changes</div>
+    <div style="display:flex;gap:32px;margin-top:12px;font-size:12.5px;line-height:1.55;color:#3C424A;">
+      <div style="flex:1;"><span style="font-family:var(--mono);font-size:11.5px;color:#15181C;">TagColor.swift</span> — <span style="font-family:var(--mono);font-size:11.5px;">TagPalette.entry(for:)</span> stops hashing and reads a stored assignment, allocating on first sight. Slate leaves the palette; seven entries remain.</div>
+      <div style="flex:1;"><span style="font-family:var(--mono);font-size:11.5px;color:#15181C;">AppState.swift</span> — the map is persisted alongside the recent-tag scan, which already walks the capture file for section names.</div>
+      <div style="flex:1;"><span style="font-family:var(--mono);font-size:11.5px;color:#15181C;">editor.ts</span> — <span style="font-family:var(--mono);font-size:11.5px;">tagHue()</span> becomes a lookup instead of a hash. The two implementations no longer need to stay in sync by hand; instead Swift pushes the map in on editor boot and on change, like <span style="font-family:var(--mono);font-size:11.5px;">setRefileTargets</span>.</div>
+    </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
