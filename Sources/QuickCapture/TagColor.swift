@@ -121,6 +121,24 @@ struct TagHueAssignment: Codable, Equatable {
         } ?? 0
     }
 
+    /// The hue the capture box's tag field should wear for the tag the typed
+    /// text prefix-matches (#104), or nil for the accent treatment.
+    ///
+    /// Two things get nil deliberately: a tag that isn't a section yet — it has
+    /// no identity to show, and the accent doubles as a signal that you're
+    /// about to create a section rather than route into one — and `cal`, which
+    /// is a command, not a tag.
+    func captureFieldEntry(forMatched tag: String?) -> TagPalette.Entry? {
+        guard let tag, !Self.isCommand(tag) else { return nil }
+        return entry(for: tag)
+    }
+
+    /// Capture prefixes that route somewhere other than a section, and so
+    /// never take a hue.
+    static func isCommand(_ tag: String) -> Bool {
+        key(tag) == "cal"
+    }
+
     private static func key(_ tag: String) -> String {
         tag.trimmingCharacters(in: .whitespaces).lowercased()
     }
