@@ -606,10 +606,10 @@ struct CaptureView: View {
         HStack(spacing: Metrics.s2) {
             Image(systemName: "exclamationmark.circle")
                 .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(theme.inkHint)
+                .foregroundStyle(theme.inkSecondary)
             Text(text)
                 .font(TypeScale.chip)
-                .foregroundStyle(theme.inkHint)
+                .foregroundStyle(theme.inkSecondary)
                 .fixedSize(horizontal: false, vertical: true)
             Spacer(minLength: 0)
         }
@@ -657,7 +657,7 @@ struct CaptureView: View {
                      ? "Type the event, e.g. \"call Seb tomorrow at 2pm\""
                      : "No date found — add a time like \"tomorrow at 2pm\"")
                     .font(.system(size: 12))
-                    .foregroundStyle(theme.inkHint)
+                    .foregroundStyle(theme.inkSecondary)
             }
             Spacer(minLength: 0)
         }
@@ -828,7 +828,7 @@ struct CaptureView: View {
     private func hintLabel(_ text: String) -> some View {
         Text(text)
             .font(TypeScale.chip)
-            .foregroundStyle(theme.inkHint)
+            .foregroundStyle(theme.inkSecondary)
             .padding(.trailing, 2)
     }
 
@@ -870,7 +870,7 @@ struct CaptureView: View {
                     .lineLimit(1)
                 Text(screenshotDay(shot))
                     .font(TypeScale.caption)
-                    .foregroundStyle(theme.inkHint)
+                    .foregroundStyle(theme.inkSecondary)
                     .lineLimit(1)
             }
             Spacer(minLength: 0)
