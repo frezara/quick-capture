@@ -60,25 +60,43 @@ final class ThemeContrastTests: XCTestCase {
         composite(theme.surfaceRail, over: srgb(theme.surface))
     }
 
+    /// A keycap on the frosted panel. The binding case, and easy to miss: the
+    /// chip's own fill darkens what sits behind the glyph, so a value that
+    /// clears the bare panel can still fail here (0.74 → 4.83:1 on the panel,
+    /// 4.48:1 on the chip).
+    private func keycapChip(_ theme: Theme) -> NSColor {
+        composite(theme.chip, over: frostedPanel(theme))
+    }
+
     // MARK: - The floor
 
-    func testHintInkMeetsAAOnTheFrostedPanel() {
+    /// One readable level (ADR-0006), so one assertion covering every surface
+    /// it lands on.
+    func testSecondaryInkMeetsAAOnEverySurfaceItLandsOn() {
         for (name, theme) in [("light", Theme.light), ("dark", Theme.dark)] {
-            let ratio = contrast(theme.inkHint, on: frostedPanel(theme))
-            XCTAssertGreaterThanOrEqual(
-                ratio, 4.5,
-                "\(name): hint-bar labels are \(String(format: "%.2f", ratio)):1 on the frosted panel"
-            )
+            for (surface, bg) in [("frosted panel", frostedPanel(theme)),
+                                  ("keycap chip", keycapChip(theme)),
+                                  ("status rail", statusRail(theme))] {
+                let ratio = contrast(theme.inkSecondary, on: bg)
+                XCTAssertGreaterThanOrEqual(
+                    ratio, 4.5,
+                    "\(name) \(surface): secondary text is \(String(format: "%.2f", ratio)):1"
+                )
+            }
         }
     }
 
-    func testHintInkMeetsAAOnTheEditorStatusBar() {
+    /// The ramp has exactly three levels and reads in order. Pinned because the
+    /// bug ADR-0006 fixes was a fourth level that ended up *above* the one it
+    /// was meant to sit below.
+    func testRampIsMonotonic() {
         for (name, theme) in [("light", Theme.light), ("dark", Theme.dark)] {
-            let ratio = contrast(theme.inkHint, on: statusRail(theme))
-            XCTAssertGreaterThanOrEqual(
-                ratio, 4.5,
-                "\(name): status bar is \(String(format: "%.2f", ratio)):1"
-            )
+            let panel = frostedPanel(theme)
+            let primary = contrast(theme.ink, on: panel)
+            let secondary = contrast(theme.inkSecondary, on: panel)
+            let placeholder = contrast(theme.inkTertiary, on: panel)
+            XCTAssertGreaterThan(primary, secondary, "\(name): primary must outrank secondary")
+            XCTAssertGreaterThan(secondary, placeholder, "\(name): secondary must outrank the placeholder")
         }
     }
 
@@ -92,11 +110,10 @@ final class ThemeContrastTests: XCTestCase {
     func testPlaceholderInkStaysFaintOnPurpose() {
         // `inkTertiary` is placeholder-only and deliberately below AA — a
         // prompt you are about to type over, not text to read. Pinned so a
-        // future contrast pass raises `inkHint` (or adds a token) rather than
-        // "fixing" this one and flattening the hierarchy.
+        // future contrast pass raises the readable level rather than "fixing"
+        // this one and flattening the ramp into two.
         for theme in [Theme.light, Theme.dark] {
-            XCTAssertLessThan(contrast(theme.inkTertiary, on: frostedPanel(theme)),
-                              contrast(theme.inkHint, on: frostedPanel(theme)))
+            XCTAssertLessThan(contrast(theme.inkTertiary, on: frostedPanel(theme)), 3.0)
         }
     }
 }
