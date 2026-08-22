@@ -30,6 +30,16 @@ crossfades between them.
 - **Section** — an `## H2` heading under which items live. Tag values become
   section names verbatim.
 
+- **Tag hue** — the colour a section (and the tag that routes to it) owns,
+  from a curated palette in `TagPalette`. Under the **Sectioned** direction
+  (#101) the hue is the section's *identity* across the whole app: its dot,
+  caption, rule, indent guides and the checkboxes inside it, plus the capture
+  box's tag field, which is the same tag. Nothing else borrows a tag hue —
+  system blue is **interaction**, neutral is the ground. A section takes the
+  next unused hue the first time it is seen and keeps it, so the hue survives
+  reordering and relaunches. Decided in #101; the code still hashes the name —
+  implementation is #102 (assignment), #103 (editor), #104 (capture).
+
 - **Quick capture** — the `## Quick capture` section: the catch-all where
   untagged items land. Use this exact phrase for the catch-all; don't call it
   "default section" or "uncategorized".
@@ -127,3 +137,7 @@ crossfades between them.
   is mutually-exclusive modes (ADR-0004).
 - Don't say "footer" for the capture-mode bottom bar — it's the **hint bar**
   (always-on, not the old collapse-on-blur footer).
+- Don't call a **tag hue** an "accent". The **accent** is the single system
+  blue and it means interaction; a tag hue means identity. They are different
+  jobs, and the whole point of the Sectioned direction is that they stay
+  different.

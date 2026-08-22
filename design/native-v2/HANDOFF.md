@@ -21,7 +21,7 @@ in the editor they're mirrored in `editor-web/src/editor.ts` palettes
 
 | token        | light                     | dark                      | use |
 |--------------|---------------------------|---------------------------|-----|
-| accent       | #007AFF                   | #0A84FF                   | THE accent: focus, selection, checked boxes, links, NORMAL pill, toggles |
+| accent       | #007AFF                   | #0A84FF                   | THE accent: focus, selection, checked boxes, links, NORMAL pill, toggles — but see #101 below: a checkbox inside a section takes that section's tag hue |
 | accentTint   | accent @ 12%              | accent @ 16%              | soft fills (pill bg, matched chip, selection bg) |
 | accentTint2  | accent @ 20%              | accent @ 28%              | stronger fill (hover on tinted things) |
 | accentRing   | accent @ 35%              | accent @ 40%              | 3px focus ring outside a focused field |
@@ -67,6 +67,34 @@ Where tag hues appear (ONLY here):
 1. 7px dot on capture suggestion chips.
 2. Matched chip while typing: tint bg with hue @ ~10-12%, label in the hue.
 3. 7px dot before each `##` section heading in the editor.
+
+#### Revised by #101 — the "Sectioned" direction
+
+The list above (and the 8-hue set) is superseded. The resolved stance is that
+a tag hue is **section identity**, system blue is **interaction**, and neutral
+is the ground — so the hue reaches further than a dot, and nothing outside a
+section borrows one. Mockups and the generator that produced them live in
+`design/color-directions/`; the decision is recorded on #101.
+
+- **Palette**: 7 hues. **Slate is retired** — a grey gives a section no
+  identity. Blue stays: at the heading mix below it renders as a dark navy,
+  clearly not the system accent.
+- **Assignment**: not a hash. A section takes the next unused hue the first
+  time it is seen and that map is persisted, so the hue survives reordering,
+  renames above it, and relaunches; past 7 sections, reuse the
+  least-recently-assigned. Swift owns the map and pushes it into the editor on
+  boot and on change (mirroring `setRefileTargets`) — `tagHue()` in editor.ts
+  becomes a lookup and its DJB2 reimplementation goes away.
+- **Where the hue now appears**: the section dot; the `##` caption, mixed
+  toward the PRIMARY ink (70% light / 76% dark) rather than `text2`; the
+  heading's tinted band (hue @ 8% light / 12% dark) and rule (hue @ 32%); the
+  indent guides under that section (hue @ 45% over the hairline); the
+  checkboxes inside it; and the capture tag field when the typed tag matches a
+  known one (fill hue @ 11% / 16%, border hue @ 38%, text and `#` in the hue).
+- **Unmatched tags and `cal`** keep the accent treatment — a tag that does not
+  exist yet has no hue, and `cal` is a command, not a tag.
+- **Contrast**: the caption mix is an improvement, not a cost — every hue
+  lands between 5.05:1 and 8.52:1, against today's 3.49:1 light / 5.74:1 dark.
 
 ### Metrics
 

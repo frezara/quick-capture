@@ -1,0 +1,98 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Sectioned",
+      "page": "page-1",
+      "x": 0,
+      "y": 0,
+      "w": 2280,
+      "h": 1540
+    },
+    {
+      "file": "Baseline.dc.html",
+      "title": "Current (baseline)",
+      "page": "page-2",
+      "x": 0,
+      "y": 0,
+      "w": 2280,
+      "h": 1540
+    },
+    {
+      "file": "WarmPaper.dc.html",
+      "title": "Warm Paper",
+      "page": "page-2",
+      "x": 2420,
+      "y": 0,
+      "w": 2280,
+      "h": 1540
+    },
+    {
+      "file": "AccentMoments.dc.html",
+      "title": "Accent Moments",
+      "page": "page-2",
+      "x": 4840,
+      "y": 0,
+      "w": 2280,
+      "h": 1540
+    },
+    {
+      "file": "Composite.dc.html",
+      "title": "Composite",
+      "page": "page-2",
+      "x": 7260,
+      "y": 0,
+      "w": 2280,
+      "h": 1540
+    },
+    {
+      "file": "Hues.dc.html",
+      "title": "Tag hues",
+      "page": "page-1",
+      "x": 2420,
+      "y": 0,
+      "w": 1760,
+      "h": 1420
+    }
+  ],
+  "pages": [
+    {
+      "id": "page-1",
+      "name": "Sectioned"
+    },
+    {
+      "id": "page-2",
+      "name": "Explored"
+    }
+  ],
+  "annotations": [
+    {
+      "id": "decision",
+      "page": "page-1",
+      "x": 0,
+      "y": -196,
+      "w": 900,
+      "text": "Issue #101 — Sectioned is the chosen direction.\nEach section owns a hue: dot, caption, rule, indent guides and the checkboxes inside it, plus the capture box's tag field. Surfaces, accent and priority orbs stay exactly as they are.\nEvery difference from today is a token value — no surface is restructured. The Explored page holds the four directions that were not picked."
+    },
+    {
+      "id": "next",
+      "page": "page-1",
+      "x": 4840,
+      "y": -196,
+      "w": 620,
+      "text": "Settled: a section takes the next unused hue on first sight and keeps it. That makes the hue stored state rather than a hash, so Swift owns the map and pushes it into the editor — the one structural change Sectioned asks for."
+    },
+    {
+      "id": "explored",
+      "page": "page-2",
+      "x": 0,
+      "y": -168,
+      "w": 900,
+      "text": "Not chosen — kept for the record. Current is the control; Warm Paper, Accent Moments and Composite were the other axes considered."
+    }
+  ],
+  "launch": {
+    "view": "canvas",
+    "page": "page-1"
+  }
+}
