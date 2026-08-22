@@ -69,3 +69,19 @@ Two rules follow from the first job:
 generator that produced them: `design/color-directions/`. Vocabulary:
 `CONTEXT.md` under **Tag hue**. Token-level spec: `design/native-v2/HANDOFF.md`
 under "Revised by #101".
+
+## Update (2026-08, #118)
+
+The 7px dot before each `##` heading is removed. Point 1 above lists it as one
+of the surfaces a section's hue carries, and that was right when the caption
+was still grey — the dot was the only hue on the line. Once the caption, band
+and rule all took the hue, the dot was the third statement of the same fact,
+and a filled circle in front of a heading reads as a list bullet. Removing it
+also lets the caption sit flush with the item text below it, which the dot's
+8px margin had pushed it out of.
+
+The rule is unchanged: hue is still section identity. It just reaches one
+fewer element.
+
+The dot on capture suggestion chips is untouched — there it is the only hue
+present, and it is what makes a tag recognisable before you commit to it.

@@ -1163,9 +1163,12 @@ function makeTheme() {
     // cursor navigation (Down arrow lands in the margin gap and skips lines),
     // so we use padding — which CodeMirror's cursor logic handles correctly —
     // and keep the values small.
-    // H2 = tracked-uppercase section caption with its tag-hue dot (the hue
-    // arrives as --qc-section-hue on the line, set by buildLivePreview) and a
-    // hairline rule. The uppercasing is visual only — raw text keeps its case.
+    // H2 = tracked-uppercase section caption in its tag hue, over a tinted
+    // band and above a hue rule (the values arrive as --qc-section-* on the
+    // line, set by buildLivePreview). The uppercasing is visual only — raw
+    // text keeps its case. No dot: the caption, band and rule already carry
+    // the hue three times over, and a bullet in front of a heading reads as a
+    // list item.
     ".cm-heading-2": {
         paddingTop: "10px",
         paddingBottom: "3px",
@@ -1178,16 +1181,6 @@ function makeTheme() {
         borderRadius: "5px 5px 0 0",
         borderBottom: `0.5px solid var(--qc-section-rule, ${palette.borderSoft})`,
         textTransform: "uppercase",
-    },
-    ".cm-heading-2::before": {
-        content: '""',
-        display: "inline-block",
-        width: "7px",
-        height: "7px",
-        borderRadius: "50%",
-        marginRight: "8px",
-        verticalAlign: "1px",
-        backgroundColor: "var(--qc-section-hue, transparent)",
     },
     // The H1 app-mark: accent-gradient rounded square with a white hash,
     // standing in for the hidden `# ` mark.

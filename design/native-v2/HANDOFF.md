@@ -85,12 +85,15 @@ section borrows one. Mockups and the generator that produced them live in
   least-recently-assigned. Swift owns the map and pushes it into the editor on
   boot and on change (mirroring `setRefileTargets`) — `tagHue()` in editor.ts
   becomes a lookup and its DJB2 reimplementation goes away.
-- **Where the hue now appears**: the section dot; the `##` caption, mixed
+- **Where the hue now appears**: the `##` caption, mixed
   toward the PRIMARY ink (70% light / 76% dark) rather than `text2`; the
   heading's tinted band (hue @ 8% light / 12% dark) and rule (hue @ 32%); the
   indent guides under that section (hue @ 45% over the hairline); the
   checkboxes inside it; and the capture tag field when the typed tag matches a
   known one (fill hue @ 11% / 16%, border hue @ 38%, text and `#` in the hue).
+  **No dot before the heading** — removed once the caption carried the hue
+  itself; a bullet in front of a heading also read as a list item. The 7px dot
+  on capture suggestion chips stays: there, it is the only hue present.
 - **Unmatched tags and `cal`** keep the accent treatment — a tag that does not
   exist yet has no hue, and `cal` is a command, not a tag.
 - **Contrast**: the caption mix is an improvement, not a cost — every hue

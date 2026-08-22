@@ -187,8 +187,10 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   tab; single-space indent is NOT treated as a child), and render priority
   dots from trailing `!`/`!!`/`!!!`.
 - **Section hues (#101 "Sectioned").** A section's tag hue is its identity:
-  its dot, caption, band, rule, indent guides and the checkboxes inside it,
-  plus the capture tag field when the typed tag matches. System blue stays
+  its caption, band, rule, indent guides and the checkboxes inside it, plus
+  the capture tag field when the typed tag matches. (No dot before the
+  heading — the caption itself is hued, so it was the third statement of the
+  same fact.) System blue stays
   interaction; neutrals stay the ground. Two consequences worth knowing before
   touching either side:
   - **The hue is allocated, not derived.** A section takes the next unused hue

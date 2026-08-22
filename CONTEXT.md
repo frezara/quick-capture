@@ -32,8 +32,8 @@ crossfades between them.
 
 - **Tag hue** — the colour a section (and the tag that routes to it) owns,
   from a curated palette in `TagPalette`. Under the **Sectioned** direction
-  (#101) the hue is the section's *identity* across the whole app: its dot,
-  caption, rule, indent guides and the checkboxes inside it, plus the capture
+  (#101) the hue is the section's *identity* across the whole app: its caption,
+  band, rule, indent guides and the checkboxes inside it, plus the capture
   box's tag field, which is the same tag. Nothing else borrows a tag hue —
   system blue is **interaction**, neutral is the ground. A section takes the
   next unused hue the first time it is seen and keeps it, so the hue survives
