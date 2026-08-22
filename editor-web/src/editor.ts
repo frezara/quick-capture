@@ -63,6 +63,10 @@ const lightPalette = {
     surfaceRail: "rgba(0, 0, 0, 0.025)",       // bar
     highlight: "rgba(255, 255, 255, 0.55)",
     text: "rgba(0, 0, 0, 0.88)",               // text-1
+    // `text` resolved over `surface`. The section caption mixes toward this
+    // rather than toward `soft`, which is what makes it both more colourful
+    // and more legible than the grey it replaced (#103).
+    textOpaque: "#1E1E1E",
     soft: "rgba(60, 60, 67, 0.62)",            // text-2
     muted: "rgba(60, 60, 67, 0.36)",           // text-3
     accent: "#007AFF",
@@ -84,6 +88,7 @@ const darkPalette: Palette = {
     surfaceRail: "rgba(255, 255, 255, 0.03)",
     highlight: "rgba(255, 255, 255, 0.10)",
     text: "rgba(255, 255, 255, 0.92)",
+    textOpaque: "#EDEDEE",
     soft: "rgba(235, 235, 245, 0.60)",
     muted: "rgba(235, 235, 245, 0.32)",
     accent: "#0A84FF",
@@ -116,6 +121,44 @@ function tagHue(name: string): string | null {
     return palette === darkPalette ? pair.dark : pair.light;
 }
 
+// Everything a section's hue drives (#103), as CSS custom properties set on
+// every line the section owns — not just its heading, because the indent
+// guides and checkboxes that take the hue live on the item lines below it.
+// Emitted as color-mix() expressions so the derived tints stay one source of
+// truth with the hue itself.
+//
+// The caption mixes toward the PRIMARY ink, which is what lifts it from the
+// 3.49:1 the grey caption managed to ~5-8:1 across the palette.
+function sectionVars(hue: string): string {
+    const band = palette === darkPalette ? "12%" : "8%";
+    const ink = palette === darkPalette ? "76%" : "70%";
+    return [
+        `--qc-section-hue: ${hue}`,
+        `--qc-section-ink: color-mix(in oklab, ${hue} ${ink}, ${palette.textOpaque})`,
+        `--qc-section-band: color-mix(in oklab, ${hue} ${band}, transparent)`,
+        `--qc-section-rule: color-mix(in oklab, ${hue} 32%, transparent)`,
+        `--qc-section-guide: color-mix(in oklab, ${hue} 45%, ${palette.borderSoft})`,
+    ].join("; ");
+}
+
+function sectionNameOnLine(text: string): string | null {
+    const match = /^##\s+(.*)$/.exec(text);
+    if (!match) return null;
+    const name = match[1].trim();
+    return name || null;
+}
+
+/// The section a line sits in, found by walking back to the nearest `##`.
+/// Needed because the viewport can start mid-section, with the heading that
+/// owns these lines scrolled out of view.
+function enclosingSection(state: EditorState, lineNumber: number): string | null {
+    for (let n = lineNumber; n >= 1; n--) {
+        const name = sectionNameOnLine(state.doc.line(n).text);
+        if (name) return name;
+    }
+    return null;
+}
+
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 // Mutable so makeHighlight()/makeTheme() (below) read the active palette; the
 // appearance listener reassigns it and reconfigures the theme compartment.
@@ -130,7 +173,9 @@ function makeHighlight() {
     // (uppercasing itself is done by the .cm-heading-2 line class so the raw
     // text keeps its case when revealed for editing).
     { tag: tags.heading1, fontFamily: sansFamily, fontSize: "22px", fontWeight: "600", letterSpacing: "-0.3px", color: palette.text, lineHeight: "1.4" },
-    { tag: tags.heading2, fontFamily: sansFamily, fontSize: "11px", fontWeight: "600", letterSpacing: "0.8px", color: palette.soft, lineHeight: "2" },
+    // Colour is the section's, mixed toward the primary ink (#103) — falls back
+    // to the neutral caption grey for a section with no hue.
+    { tag: tags.heading2, fontFamily: sansFamily, fontSize: "11px", fontWeight: "600", letterSpacing: "0.8px", color: `var(--qc-section-ink, ${palette.soft})`, lineHeight: "2" },
     { tag: tags.heading3, fontFamily: sansFamily, fontSize: "1.1em", fontWeight: "600", color: palette.text },
     { tag: tags.heading4, fontFamily: sansFamily, fontSize: "1em", fontWeight: "600", color: palette.text },
     { tag: tags.heading5, fontWeight: "700", color: palette.text },
@@ -338,6 +383,31 @@ function buildLivePreview(view: EditorView): DecorationSet {
     // any tree-iteration order. Decoration.set(_, true) sorts before applying.
     const ranges: { from: number; to: number; deco: Decoration }[] = [];
 
+    // Section hues, line by line (#103). A section's colour reaches its items,
+    // so every line it owns carries the variables — seeded by walking back from
+    // the top of each visible range to the heading that owns it, then tracked
+    // forward as the walk crosses later headings.
+    for (const { from, to } of view.visibleRanges) {
+        const firstLine = view.state.doc.lineAt(from).number;
+        const lastLine = view.state.doc.lineAt(to).number;
+        let section = enclosingSection(view.state, firstLine);
+        for (let n = firstLine; n <= lastLine; n++) {
+            const line = view.state.doc.line(n);
+            const heading = sectionNameOnLine(line.text);
+            if (heading) section = heading;
+            const hue = section ? tagHue(section) : null;
+            // No hue means Swift hasn't assigned this section one — the
+            // untagged catch-all, or a heading typed a moment ago. Every rule
+            // that reads these falls back to its neutral, so nothing is drawn
+            // in a guessed colour.
+            if (!hue) continue;
+            ranges.push({
+                from: line.from, to: line.from,
+                deco: Decoration.line({ attributes: { style: sectionVars(hue) } }),
+            });
+        }
+    }
+
     for (const { from, to } of view.visibleRanges) {
         syntaxTree(view.state).iterate({
             from, to,
@@ -351,21 +421,12 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 // box chip (drawn by the .cm-heading-2::before rule).
                 const headingLevel = atxHeadingLevel(node.name);
                 if (headingLevel) {
-                    const attrs: Record<string, string> = {};
-                    if (headingLevel === 2) {
-                        const name = line.text.replace(/^#{1,6}\s*/, "").trim();
-                        const hue = name ? tagHue(name) : null;
-                        // No hue = a section Swift hasn't assigned one to (the
-                        // untagged catch-all, or a heading typed a moment ago).
-                        // The ::before dot falls back to transparent.
-                        if (hue) attrs.style = `--qc-section-hue: ${hue}`;
-                    }
+                    // The section variables (including the hue this heading's
+                    // dot draws with) are set by the line pass above, which
+                    // covers the items below it too.
                     ranges.push({
                         from: line.from, to: line.from,
-                        deco: Decoration.line({
-                            class: `cm-heading cm-heading-${headingLevel}`,
-                            ...(attrs.style ? { attributes: attrs } : {}),
-                        }),
+                        deco: Decoration.line({ class: `cm-heading cm-heading-${headingLevel}` }),
                     });
                     return;
                 }
@@ -1052,17 +1113,18 @@ function makeTheme() {
         // line wraps, the guide doesn't bleed down across the wrapped text.
         height: "1.6em",
         width: "1px",
-        backgroundColor: palette.borderSoft,
+        // Nested items sit inside a section, so their guides carry its hue.
+        backgroundColor: `var(--qc-section-guide, ${palette.borderSoft})`,
         pointerEvents: "none",
     },
     ".cm-line.cm-indent-2::before": {
-        boxShadow: `4ch 0 0 0 ${palette.borderSoft}`,
+        boxShadow: `4ch 0 0 0 var(--qc-section-guide, ${palette.borderSoft})`,
     },
     ".cm-line.cm-indent-3::before": {
-        boxShadow: `4ch 0 0 0 ${palette.borderSoft}, 8ch 0 0 0 ${palette.borderSoft}`,
+        boxShadow: `4ch 0 0 0 var(--qc-section-guide, ${palette.borderSoft}), 8ch 0 0 0 var(--qc-section-guide, ${palette.borderSoft})`,
     },
     ".cm-line.cm-indent-4::before": {
-        boxShadow: `4ch 0 0 0 ${palette.borderSoft}, 8ch 0 0 0 ${palette.borderSoft}, 12ch 0 0 0 ${palette.borderSoft}`,
+        boxShadow: `4ch 0 0 0 var(--qc-section-guide, ${palette.borderSoft}), 8ch 0 0 0 var(--qc-section-guide, ${palette.borderSoft}), 12ch 0 0 0 var(--qc-section-guide, ${palette.borderSoft})`,
     },
     ".cm-task-checkbox": {
         // Custom-styled square checkbox to match the target design: light
@@ -1084,8 +1146,11 @@ function makeTheme() {
         borderColor: palette.accent,
     },
     ".cm-task-checkbox:checked": {
-        backgroundColor: palette.accent,
-        borderColor: palette.accent,
+        // Inside a section the checked fill is the section's hue (#103);
+        // anywhere else — the untagged catch-all, a loose item above the first
+        // heading — it stays the accent.
+        backgroundColor: `var(--qc-section-hue, ${palette.accent})`,
+        borderColor: `var(--qc-section-hue, ${palette.accent})`,
         backgroundImage: "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\"><path d=\"M4 8.5l2.5 2.5L12 5.5\" stroke=\"white\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>')",
         backgroundSize: "14px",
         backgroundPosition: "center",
@@ -1101,7 +1166,14 @@ function makeTheme() {
     ".cm-heading-2": {
         paddingTop: "10px",
         paddingBottom: "3px",
-        borderBottom: `0.5px solid ${palette.borderSoft}`,
+        // Band and rule are the section's hue (#103), falling back to no tint
+        // and the plain hairline when it hasn't got one. The band spans the
+        // line box — i.e. the content width inside .cm-content's padding — so
+        // no horizontal margin is needed. (Vertical margins on a line
+        // decoration break cursor navigation; see the note above.)
+        background: "var(--qc-section-band, transparent)",
+        borderRadius: "5px 5px 0 0",
+        borderBottom: `0.5px solid var(--qc-section-rule, ${palette.borderSoft})`,
         textTransform: "uppercase",
     },
     ".cm-heading-2::before": {
