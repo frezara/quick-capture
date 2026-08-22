@@ -1,0 +1,262 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+  <style>
+    body { margin: 0; font-family: -apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif; }
+    a { color: #0066D6; } a:hover { color: #00509E; }
+    table { border-collapse: collapse; }
+  </style>
+</helmet>
+<div style="width:2000px;height:1180px;box-sizing:border-box;padding:64px;background:#F2F3F5;display:flex;flex-direction:column;gap:28px;">
+  <div style="display:flex;align-items:flex-start;gap:44px;">
+    <div style="flex:none;width:360px;">
+      <div style="font-size:10px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#9AA0A8;">Alternative</div>
+      <div style="margin-top:8px;font-size:30px;font-weight:600;letter-spacing:-0.5px;color:#15181C;">Four levels</div>
+    </div>
+    <div style="flex:1;display:flex;gap:40px;">
+      <div style="flex:1;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#9AA0A8;">What it does</div>
+        <div style="margin-top:7px;font-size:13px;line-height:1.5;color:#3C424A;text-wrap:pretty;">Keeps a separate hint level but puts it back below secondary: `inkSecondary` rises to 0.75, `inkHint` drops under it.</div>
+      </div>
+      <div style="flex:1;">
+        <div style="font-size:10px;font-weight:700;letter-spacing:1.1px;text-transform:uppercase;color:#9AA0A8;">Cost</div>
+        <div style="margin-top:7px;font-size:13px;line-height:1.5;color:#3C424A;text-wrap:pretty;">Reopens #106 — hints fall back below AA at 3.5:1. Buys a visible hierarchy between a label and a hint, and pays for it in the legibility that was just fixed.</div>
+      </div>
+    </div>
+  </div>
+  <div style="display:flex;gap:60px;">
+    <div style="width:900px;flex:none;display:flex;flex-direction:column;gap:16px;">
+    <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#8A8F98;">Light</div>
+    <div style="padding:20px;border-radius:12px;background:linear-gradient(160deg, #E7E8EC, #D9DBE1);display:flex;flex-direction:column;gap:16px;">
+      <table style="width:100%;border-collapse:collapse;">
+    <thead><tr><th style="padding:0 10px 8px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(60,60,67,0.45);">level</th><th style="padding:0 10px 8px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(60,60,67,0.45);">carries</th><th style="padding:0 10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(60,60,67,0.45);">panel</th><th style="padding:0 10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(60,60,67,0.45);">keycap chip</th><th style="padding:0 10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(60,60,67,0.45);">status rail</th></tr></thead>
+    <tbody><tr>
+      <td style="padding:9px 10px;">
+        <span style="display:inline-flex;align-items:center;gap:9px;">
+          <span style="width:22px;height:22px;border-radius:5px;background:rgba(0,0,0,0.88);box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.14);"></span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:12px;color:rgba(0,0,0,0.88);">ink</span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:11px;color:rgba(60,60,67,0.5);">0.88</span>
+        </span>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:rgba(60,60,67,0.62);">primary text</td>
+      <td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>15.64:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>13.95:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>14.84:1</span></td>
+    </tr><tr>
+      <td style="padding:9px 10px;">
+        <span style="display:inline-flex;align-items:center;gap:9px;">
+          <span style="width:22px;height:22px;border-radius:5px;background:rgba(60,60,67,0.75);box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.14);"></span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:12px;color:rgba(0,0,0,0.88);">inkSecondary</span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:11px;color:rgba(60,60,67,0.5);">0.75</span>
+        </span>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:rgba(60,60,67,0.62);">keycaps, picker times, dropdown rows, status filename</td>
+      <td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>4.97:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>4.59:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>4.79:1</span></td>
+    </tr><tr>
+      <td style="padding:9px 10px;">
+        <span style="display:inline-flex;align-items:center;gap:9px;">
+          <span style="width:22px;height:22px;border-radius:5px;background:rgba(60,60,67,0.62);box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.14);"></span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:12px;color:rgba(0,0,0,0.88);">inkHint</span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:11px;color:rgba(60,60,67,0.5);">0.62</span>
+        </span>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:rgba(60,60,67,0.62);">hint-bar labels, picker day lines, status counts</td>
+      <td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#B0343A;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>3.52:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#B0343A;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>3.33:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#B0343A;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>3.43:1</span></td>
+    </tr><tr>
+      <td style="padding:9px 10px;">
+        <span style="display:inline-flex;align-items:center;gap:9px;">
+          <span style="width:22px;height:22px;border-radius:5px;background:rgba(60,60,67,0.36);box-shadow:inset 0 0 0 0.5px rgba(0,0,0,0.14);"></span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:12px;color:rgba(0,0,0,0.88);">inkTertiary</span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:11px;color:rgba(60,60,67,0.5);">0.36</span>
+        </span>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:rgba(60,60,67,0.62);">placeholders only — exempt by design</td>
+      <td style="padding:9px 10px;text-align:right;"><span style="font-size:11px;color:rgba(60,60,67,0.5);">1.94:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="font-size:11px;color:rgba(60,60,67,0.5);">1.89:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="font-size:11px;color:rgba(60,60,67,0.5);">1.92:1</span></td>
+    </tr></tbody>
+  </table>
+    </div>
+    <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;">Capture hint bar</div>
+    <div style="width:680px;box-sizing:border-box;padding:16px;border-radius:16px;background:#F7F7F9;box-shadow:0 0 0 0.5px rgba(0,0,0,0.18), 0 18px 50px rgba(0,0,0,0.22);">
+    <div style="height:0.5px;background:rgba(0,0,0,0.14);margin-bottom:16px;"></div>
+    <div style="display:flex;gap:16px;"><div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#E8E8EA;color:rgba(60,60,67,0.75);">⌥⌘I</span>
+      <span style="font-size:12px;color:rgba(60,60,67,0.62);">Editor</span>
+    </div><div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#E8E8EA;color:rgba(60,60,67,0.75);">⌥⌘O</span>
+      <span style="font-size:12px;color:rgba(60,60,67,0.62);">Screenshots</span>
+    </div></div>
+  </div>
+    <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;">Screenshot picker</div>
+    <div style="width:860px;box-sizing:border-box;padding:16px;border-radius:16px;background:#F7F7F9;box-shadow:0 0 0 0.5px rgba(0,0,0,0.18), 0 18px 50px rgba(0,0,0,0.22);">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:15px;font-weight:600;color:rgba(0,0,0,0.88);">Recent screenshots</span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:6px;"><span style="display:inline-flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#E8E8EA;color:rgba(60,60,67,0.75);">↑↓</span>
+      <span style="font-size:12px;color:rgba(60,60,67,0.62);padding-right:2px;">navigate</span></span><span style="display:inline-flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#E8E8EA;color:rgba(60,60,67,0.75);">space</span>
+      <span style="font-size:12px;color:rgba(60,60,67,0.62);padding-right:2px;">select</span></span><span style="display:inline-flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#E8E8EA;color:rgba(60,60,67,0.75);">⏎</span>
+      <span style="font-size:12px;color:rgba(60,60,67,0.62);padding-right:2px;">attach</span></span></span>
+    </div>
+    <div style="width:300px;display:flex;flex-direction:column;gap:4px;">
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;background:rgba(0,122,255,0.12);box-shadow:inset 0 0 0 1px #007AFF6b;">
+      <span style="width:52px;height:34px;border-radius:4px;background:rgba(120,120,128,0.10);flex:none;"></span>
+      <span style="display:flex;flex-direction:column;gap:1px;">
+        <span style="font-size:12px;color:#0066D6;">1:19 PM</span>
+        <span style="font-size:11px;font-weight:600;color:rgba(60,60,67,0.62);">Today</span>
+      </span>
+    </div><div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;">
+      <span style="width:52px;height:34px;border-radius:4px;background:rgba(120,120,128,0.10);flex:none;"></span>
+      <span style="display:flex;flex-direction:column;gap:1px;">
+        <span style="font-size:12px;color:rgba(60,60,67,0.75);">1:04 PM</span>
+        <span style="font-size:11px;font-weight:600;color:rgba(60,60,67,0.62);">Today</span>
+      </span>
+    </div><div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;">
+      <span style="width:52px;height:34px;border-radius:4px;background:rgba(120,120,128,0.10);flex:none;"></span>
+      <span style="display:flex;flex-direction:column;gap:1px;">
+        <span style="font-size:12px;color:rgba(60,60,67,0.75);">6:32 PM</span>
+        <span style="font-size:11px;font-weight:600;color:rgba(60,60,67,0.62);">Yesterday</span>
+      </span>
+    </div>
+    </div>
+  </div>
+    <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;">Editor status bar</div>
+    <div style="width:900px;box-sizing:border-box;border-radius:8px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(0,0,0,0.18);">
+    <div style="height:34px;background:#F6F6F8;"></div>
+    <div style="height:33px;display:flex;align-items:center;gap:16px;padding:0 16px;background:#F0F0F2;border-top:0.5px solid rgba(0,0,0,0.14);font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;font-size:11px;font-weight:500;letter-spacing:0.2px;color:rgba(60,60,67,0.62);">
+      <span style="padding:3px 9px;border-radius:5px;font-size:10.5px;font-weight:600;letter-spacing:0.5px;background:rgba(0,122,255,0.12);color:#0066D6;">NORMAL</span>
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;color:rgba(60,60,67,0.75);">~/Notes/INBOX.md</span>
+      <span style="margin-left:auto;display:flex;gap:16px;"><span>27 items · 8 done</span><span>UTF-8</span></span>
+    </div>
+  </div>
+  </div>
+    <div style="width:900px;flex:none;display:flex;flex-direction:column;gap:16px;">
+    <div style="font-size:11px;font-weight:600;letter-spacing:1px;text-transform:uppercase;color:#8A8F98;">Dark</div>
+    <div style="padding:20px;border-radius:12px;background:linear-gradient(160deg, #17171B, #0F0F12);display:flex;flex-direction:column;gap:16px;">
+      <table style="width:100%;border-collapse:collapse;">
+    <thead><tr><th style="padding:0 10px 8px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(235,235,245,0.45);">level</th><th style="padding:0 10px 8px;text-align:left;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(235,235,245,0.45);">carries</th><th style="padding:0 10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(235,235,245,0.45);">panel</th><th style="padding:0 10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(235,235,245,0.45);">keycap chip</th><th style="padding:0 10px 8px;text-align:right;font-size:10px;font-weight:700;letter-spacing:0.8px;text-transform:uppercase;color:rgba(235,235,245,0.45);">status rail</th></tr></thead>
+    <tbody><tr>
+      <td style="padding:9px 10px;">
+        <span style="display:inline-flex;align-items:center;gap:9px;">
+          <span style="width:22px;height:22px;border-radius:5px;background:rgba(255,255,255,0.92);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.13);"></span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:12px;color:rgba(255,255,255,0.92);">ink</span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:11px;color:rgba(235,235,245,0.5);">0.92</span>
+        </span>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:rgba(235,235,245,0.62);">primary text</td>
+      <td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>13.43:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>10.30:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>12.64:1</span></td>
+    </tr><tr>
+      <td style="padding:9px 10px;">
+        <span style="display:inline-flex;align-items:center;gap:9px;">
+          <span style="width:22px;height:22px;border-radius:5px;background:rgba(235,235,245,0.6);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.13);"></span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:12px;color:rgba(255,255,255,0.92);">inkSecondary</span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:11px;color:rgba(235,235,245,0.5);">0.6</span>
+        </span>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:rgba(235,235,245,0.62);">keycaps, picker times, dropdown rows, status filename</td>
+      <td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>5.67:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>4.73:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#1E7A46;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>5.45:1</span></td>
+    </tr><tr>
+      <td style="padding:9px 10px;">
+        <span style="display:inline-flex;align-items:center;gap:9px;">
+          <span style="width:22px;height:22px;border-radius:5px;background:rgba(235,235,245,0.5);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.13);"></span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:12px;color:rgba(255,255,255,0.92);">inkHint</span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:11px;color:rgba(235,235,245,0.5);">0.5</span>
+        </span>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:rgba(235,235,245,0.62);">hint-bar labels, picker day lines, status counts</td>
+      <td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#B0343A;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>4.39:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#B0343A;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>3.78:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="display:inline-flex;align-items:center;gap:5px;font-size:11px;font-weight:600;color:#B0343A;">
+    <span style="width:6px;height:6px;border-radius:50%;background:currentColor;"></span>4.25:1</span></td>
+    </tr><tr>
+      <td style="padding:9px 10px;">
+        <span style="display:inline-flex;align-items:center;gap:9px;">
+          <span style="width:22px;height:22px;border-radius:5px;background:rgba(235,235,245,0.32);box-shadow:inset 0 0 0 0.5px rgba(255,255,255,0.13);"></span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:12px;color:rgba(255,255,255,0.92);">inkTertiary</span>
+          <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:11px;color:rgba(235,235,245,0.5);">0.32</span>
+        </span>
+      </td>
+      <td style="padding:9px 10px;font-size:12px;color:rgba(235,235,245,0.62);">placeholders only — exempt by design</td>
+      <td style="padding:9px 10px;text-align:right;"><span style="font-size:11px;color:rgba(235,235,245,0.5);">2.62:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="font-size:11px;color:rgba(235,235,245,0.5);">2.43:1</span></td><td style="padding:9px 10px;text-align:right;"><span style="font-size:11px;color:rgba(235,235,245,0.5);">2.59:1</span></td>
+    </tr></tbody>
+  </table>
+    </div>
+    <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;">Capture hint bar</div>
+    <div style="width:680px;box-sizing:border-box;padding:16px;border-radius:16px;background:#232327;box-shadow:0 0 0 0.5px rgba(255,255,255,0.14), 0 18px 50px rgba(0,0,0,0.22);">
+    <div style="height:0.5px;background:rgba(255,255,255,0.13);margin-bottom:16px;"></div>
+    <div style="display:flex;gap:16px;"><div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#37373C;color:rgba(235,235,245,0.6);">⌥⌘I</span>
+      <span style="font-size:12px;color:rgba(235,235,245,0.5);">Editor</span>
+    </div><div style="display:flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#37373C;color:rgba(235,235,245,0.6);">⌥⌘O</span>
+      <span style="font-size:12px;color:rgba(235,235,245,0.5);">Screenshots</span>
+    </div></div>
+  </div>
+    <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;">Screenshot picker</div>
+    <div style="width:860px;box-sizing:border-box;padding:16px;border-radius:16px;background:#232327;box-shadow:0 0 0 0.5px rgba(255,255,255,0.14), 0 18px 50px rgba(0,0,0,0.22);">
+    <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px;">
+      <span style="font-size:15px;font-weight:600;color:rgba(255,255,255,0.92);">Recent screenshots</span>
+      <span style="margin-left:auto;display:flex;align-items:center;gap:6px;"><span style="display:inline-flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#37373C;color:rgba(235,235,245,0.6);">↑↓</span>
+      <span style="font-size:12px;color:rgba(235,235,245,0.5);padding-right:2px;">navigate</span></span><span style="display:inline-flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#37373C;color:rgba(235,235,245,0.6);">space</span>
+      <span style="font-size:12px;color:rgba(235,235,245,0.5);padding-right:2px;">select</span></span><span style="display:inline-flex;align-items:center;gap:6px;">
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;font-size:10px;font-weight:500;padding:2px 5px;border-radius:4px;background:#37373C;color:rgba(235,235,245,0.6);">⏎</span>
+      <span style="font-size:12px;color:rgba(235,235,245,0.5);padding-right:2px;">attach</span></span></span>
+    </div>
+    <div style="width:300px;display:flex;flex-direction:column;gap:4px;">
+      <div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;background:rgba(10,132,255,0.16);box-shadow:inset 0 0 0 1px #0A84FF6b;">
+      <span style="width:52px;height:34px;border-radius:4px;background:rgba(120,120,128,0.20);flex:none;"></span>
+      <span style="display:flex;flex-direction:column;gap:1px;">
+        <span style="font-size:12px;color:#409CFF;">1:19 PM</span>
+        <span style="font-size:11px;font-weight:600;color:rgba(235,235,245,0.5);">Today</span>
+      </span>
+    </div><div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;">
+      <span style="width:52px;height:34px;border-radius:4px;background:rgba(120,120,128,0.20);flex:none;"></span>
+      <span style="display:flex;flex-direction:column;gap:1px;">
+        <span style="font-size:12px;color:rgba(235,235,245,0.6);">1:04 PM</span>
+        <span style="font-size:11px;font-weight:600;color:rgba(235,235,245,0.5);">Today</span>
+      </span>
+    </div><div style="display:flex;align-items:center;gap:10px;padding:7px 8px;border-radius:6px;">
+      <span style="width:52px;height:34px;border-radius:4px;background:rgba(120,120,128,0.20);flex:none;"></span>
+      <span style="display:flex;flex-direction:column;gap:1px;">
+        <span style="font-size:12px;color:rgba(235,235,245,0.6);">6:32 PM</span>
+        <span style="font-size:11px;font-weight:600;color:rgba(235,235,245,0.5);">Yesterday</span>
+      </span>
+    </div>
+    </div>
+  </div>
+    <div style="font-size:10px;font-weight:700;letter-spacing:1px;text-transform:uppercase;color:#9AA0A8;">Editor status bar</div>
+    <div style="width:900px;box-sizing:border-box;border-radius:8px;overflow:hidden;box-shadow:0 0 0 0.5px rgba(255,255,255,0.14);">
+    <div style="height:34px;background:#212125;"></div>
+    <div style="height:33px;display:flex;align-items:center;gap:16px;padding:0 16px;background:#28282C;border-top:0.5px solid rgba(255,255,255,0.13);font-family:-apple-system, BlinkMacSystemFont, "SF Pro Text", system-ui, sans-serif;font-size:11px;font-weight:500;letter-spacing:0.2px;color:rgba(235,235,245,0.5);">
+      <span style="padding:3px 9px;border-radius:5px;font-size:10.5px;font-weight:600;letter-spacing:0.5px;background:rgba(10,132,255,0.16);color:#409CFF;">NORMAL</span>
+      <span style="font-family:ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace;color:rgba(235,235,245,0.6);">~/Notes/INBOX.md</span>
+      <span style="margin-left:auto;display:flex;gap:16px;"><span>27 items · 8 done</span><span>UTF-8</span></span>
+    </div>
+  </div>
+  </div>
+  </div>
+</div>
+</x-dc>
+</body>
+</html>
