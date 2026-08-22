@@ -1,0 +1,47 @@
+{
+  "artboards": [
+    {
+      "file": "Main.dc.html",
+      "title": "Three levels",
+      "x": 0,
+      "y": 0,
+      "w": 2000,
+      "h": 1180
+    },
+    {
+      "file": "Current.dc.html",
+      "title": "Current (after #106)",
+      "x": 2140,
+      "y": 0,
+      "w": 2000,
+      "h": 1180
+    },
+    {
+      "file": "FourLevels.dc.html",
+      "title": "Four levels, re-ordered",
+      "x": 4280,
+      "y": 0,
+      "w": 2000,
+      "h": 1180
+    }
+  ],
+  "annotations": [
+    {
+      "id": "brief",
+      "x": 0,
+      "y": -210,
+      "w": 940,
+      "text": "Issue #111 — what shape should the light-mode ink ramp be?\nSecondary text fails AA in light mode (3.33–3.52:1), and #106 left the ramp non-monotonic: inkHint at 0.73 sits above inkSecondary at 0.62.\nDark mode already passes everywhere and is shown only to confirm nothing gets heavier there."
+    },
+    {
+      "id": "worst",
+      "x": 1020,
+      "y": -210,
+      "w": 700,
+      "text": "The keycap chip is the worst background, not the panel: its own fill darkens what sits behind the glyph. 0.74 clears the panel but not the chip — 0.75 is the lowest value that clears all three."
+    }
+  ],
+  "launch": {
+    "view": "canvas"
+  }
+}
