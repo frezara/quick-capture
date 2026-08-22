@@ -56,7 +56,7 @@ Sources/QuickCapture/
   RefileTarget.swift               Settings model for a refile destination folder + effective-list filtering
   EventParser.swift                "#cal" NL → calendar event parser
   ICSWriter.swift                  Calendar event → temp .ics file
-  TagColor.swift                   Hue palette for tag chips
+  TagColor.swift                   Tag-hue palette + TagHueAssignment (first-sight allocation)
   Assets.xcassets/                 Menu bar icon, app icon
 editor-web/
   package.json                     CodeMirror + esbuild deps
@@ -68,6 +68,8 @@ Tests/QuickCaptureTests/
   RefileServiceTests.swift         Refile pipeline over temp dirs (happy path, scaffold, drift, failure intact)
   AttachmentStoreRefileTests.swift Copy-preserving-name, shared-path-safe delete
   RefileTargetTests.swift          Target persistence + effective-list filtering
+  TagHueAssignmentTests.swift      First-sight hue allocation, stability, reuse past the palette
+  ThemeContrastTests.swift         WCAG floor for hint text on the frosted panel + status bar
   EventParserTests.swift
   ICSWriterTests.swift
 ```
@@ -184,6 +186,26 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   draw indent guides for nested items (`/^( {2,}|\t)\S/` — 2+ spaces or a
   tab; single-space indent is NOT treated as a child), and render priority
   dots from trailing `!`/`!!`/`!!!`.
+- **Section hues (#101 "Sectioned").** A section's tag hue is its identity:
+  its dot, caption, band, rule, indent guides and the checkboxes inside it,
+  plus the capture tag field when the typed tag matches. System blue stays
+  interaction; neutrals stay the ground. Two consequences worth knowing before
+  touching either side:
+  - **The hue is allocated, not derived.** A section takes the next unused hue
+    the first time it is seen and keeps it (`TagHueAssignment`, persisted by
+    `AppState`); past 7 sections the least-recently-assigned hue is reused. The
+    old DJB2 hash is gone — it clustered, and `editor.ts` no longer carries a
+    copy of the palette. Swift resolves the light/dark pair and pushes the map
+    over the bridge (`qcEditor.setTagHues`), same pattern as
+    `setRefileTargets`. Allocation runs wherever sections can appear: the
+    capture-file scan, and the editor buffer on load and on save.
+  - **The hue is a per-LINE CSS variable.** `buildLivePreview` stamps
+    `--qc-section-*` on every line a section owns, not just its heading —
+    the guides and checkboxes that read it live on the item lines, and CSS
+    variables don't inherit between sibling lines. The pass is seeded by
+    walking back from the top of each visible range, since the viewport can
+    start mid-section. Every rule reads its variable with a neutral fallback,
+    so an unhued section (the untagged catch-all) renders as it always did.
 - **Re-org (`⌘'`).** Moves checked items to the bottom of their section
   (FLIP-animated, focus preserved), sorts unchecked items by priority bucket
   (`!!!` → `!!` → `!` → plain), and strips priority markers from checked
