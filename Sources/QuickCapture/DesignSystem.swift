@@ -49,7 +49,7 @@ enum Metrics {
 struct Theme {
     let bg, bgHaze, surface, surfaceField, surfaceRail: Color
     let border, borderStrong, highlight: Color
-    let ink, inkSecondary, inkTertiary: Color
+    let ink, inkSecondary, inkTertiary, inkHint: Color
     let accent, accentInk, accentSoft, accentRing, onAccent: Color
     let panel, control, chip, chipHover, rowHover, group: Color
     let priHigh, priMed, priLow: Color    // priority orbs
@@ -67,7 +67,16 @@ extension Theme {
         highlight:    Color(0xFFFFFF, alpha: 0.55),  // inset top-edge light
         ink:          Color(0x000000, alpha: 0.88),
         inkSecondary: Color(0x3C3C43, alpha: 0.62),
-        inkTertiary:  Color(0x3C3C43, alpha: 0.36),
+        inkTertiary:  Color(0x3C3C43, alpha: 0.36),  // placeholders ONLY — deliberately faint
+        // Persistent informational text on a frosted panel: hint-bar labels,
+        // picker keyboard hints and day lines (#106). `inkTertiary` reads at
+        // 1.93:1 there, which is placeholder territory — fine for a prompt you
+        // are about to type over, not for text meant to be read. 0.72 clears
+        // 4.5:1 over a light desktop; a dark wallpaper darkens the frost and
+        // still falls short, which would take a near-black hint to fix and
+        // isn't worth what that costs visually. 0.73 rather than 0.72 so the
+        // same value also clears the bar on the editor's opaque status rail.
+        inkHint:      Color(0x3C3C43, alpha: 0.73),
         accent:       Color(0x007AFF),               // THE accent (system blue)
         accentInk:    Color(0x0066D6),               // accent text on soft fill
         accentSoft:   Color(0x007AFF, alpha: 0.12),  // soft accent fill
@@ -96,6 +105,10 @@ extension Theme {
         ink:          Color(0xFFFFFF, alpha: 0.92),
         inkSecondary: Color(0xEBEBF5, alpha: 0.60),
         inkTertiary:  Color(0xEBEBF5, alpha: 0.32),
+        // Not light mode's 0.72: dark ink starts far brighter relative to the
+        // panel, so 0.72 would land at 7.72:1 and read as loud as body text.
+        // 0.55 meets the same 4.5:1 bar without promoting a hint to a headline.
+        inkHint:      Color(0xEBEBF5, alpha: 0.55),
         accent:       Color(0x0A84FF),
         accentInk:    Color(0x409CFF),
         accentSoft:   Color(0x0A84FF, alpha: 0.16),

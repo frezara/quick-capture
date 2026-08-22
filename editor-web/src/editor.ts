@@ -68,7 +68,11 @@ const lightPalette = {
     // and more legible than the grey it replaced (#103).
     textOpaque: "#1E1E1E",
     soft: "rgba(60, 60, 67, 0.62)",            // text-2
-    muted: "rgba(60, 60, 67, 0.36)",           // text-3
+    muted: "rgba(60, 60, 67, 0.36)",           // text-3 — syntax marks, placeholders
+    // Persistent informational text (the status bar): `muted` reads at 1.92:1
+    // there, which is right for syntax marks that should recede and wrong for
+    // a line meant to be read (#106). Mirrors Theme.inkHint.
+    hint: "rgba(60, 60, 67, 0.73)",
     accent: "#007AFF",
     accentInk: "#0066D6",
     accentSoft: "rgba(0, 122, 255, 0.12)",
@@ -91,6 +95,7 @@ const darkPalette: Palette = {
     textOpaque: "#EDEDEE",
     soft: "rgba(235, 235, 245, 0.60)",
     muted: "rgba(235, 235, 245, 0.32)",
+    hint: "rgba(235, 235, 245, 0.55)",
     accent: "#0A84FF",
     accentInk: "#409CFF",
     accentSoft: "rgba(10, 132, 255, 0.16)",
@@ -709,7 +714,7 @@ function makeTheme() {
         fontSize: "11px",
         fontWeight: "500",
         letterSpacing: "0.2px",
-        color: palette.muted,
+        color: palette.hint,
         userSelect: "none",
         zIndex: "8",
     },
