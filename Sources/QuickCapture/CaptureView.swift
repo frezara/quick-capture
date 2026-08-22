@@ -315,11 +315,11 @@ struct CaptureView: View {
         HStack(spacing: Metrics.s1) {
             Text("#")
                 .font(TypeScale.tag)
-                .foregroundStyle(tagActive ? theme.accent : theme.inkTertiary)
+                .foregroundStyle(tagActive ? tagFieldSolid : theme.inkTertiary)
             TextField("", text: $tagText, prompt: Text("tag").foregroundStyle(theme.inkTertiary))
                 .textFieldStyle(.plain)
                 .font(TypeScale.tag)
-                .foregroundStyle(tagActive ? theme.accentInk : theme.ink)
+                .foregroundStyle(tagActive ? tagFieldInk : theme.ink)
                 .focused($focused, equals: .tag)
                 .onSubmit { submit() }
                 .onKeyPress(.return) {
@@ -355,11 +355,11 @@ struct CaptureView: View {
         .padding(.vertical, 13)
         .background(
             RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .fill(tagActive ? theme.accentSoft : theme.surfaceField)
+                .fill(tagActive ? tagFieldFill : theme.surfaceField)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .strokeBorder(tagActive ? theme.accent.opacity(0.38) : .clear, lineWidth: 1)
+                .strokeBorder(tagActive ? tagFieldSolid.opacity(0.38) : .clear, lineWidth: 1)
         )
         // Fixed width — wide enough for common tags like "quick-capture" so the
         // field never resizes as you type (longer tags scroll within it). The
@@ -394,6 +394,31 @@ struct CaptureView: View {
             !Self.pinnedTags.contains { $0.caseInsensitiveCompare(tag) == .orderedSame }
         }
         return Self.pinnedTags + recent
+    }
+
+    /// The hue of the section the typed text routes into (#104) — the field
+    /// wears the same colour as that section's dot in the editor, so the tag
+    /// you are about to file under is identified before you commit to it.
+    /// nil for a tag that isn't a section yet, or for `cal`, both of which keep
+    /// the accent: an accent field is also the signal that Enter will *create*
+    /// a section rather than route into an existing one.
+    private var tagHue: TagPalette.Entry? {
+        appState.tagHues.captureFieldEntry(forMatched: matchedTag)
+    }
+
+    /// Text colour: the hue, else the accent's text variant (as before).
+    private var tagFieldInk: Color {
+        tagHue?.label(dark: colorScheme == .dark) ?? theme.accentInk
+    }
+
+    /// The `#` glyph and the border, which used the solid accent rather than
+    /// its text variant — unchanged when there's no hue.
+    private var tagFieldSolid: Color {
+        tagHue?.label(dark: colorScheme == .dark) ?? theme.accent
+    }
+
+    private var tagFieldFill: Color {
+        tagHue?.tint(dark: colorScheme == .dark) ?? theme.accentSoft
     }
 
     /// First known tag whose name starts with the current input. Drives the

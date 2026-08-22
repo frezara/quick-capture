@@ -174,3 +174,46 @@ final class TagHueAssignmentTests: XCTestCase {
         XCTAssertEqual(AppState.sectionNames(in: content), ["design", "work"])
     }
 }
+
+/// The capture tag field's hue rule (#104): the field wears the hue of the
+/// section the typed text routes into, and the accent when there isn't one.
+final class CaptureTagHueTests: XCTestCase {
+
+    private func assigned(_ tags: [String]) -> TagHueAssignment {
+        var hues = TagHueAssignment()
+        hues.assign(tags)
+        return hues
+    }
+
+    func testMatchedSectionGivesItsHue() {
+        let hues = assigned(["work", "design"])
+        XCTAssertEqual(hues.captureFieldEntry(forMatched: "design")?.lightHex,
+                       TagPalette.entry(at: 1).lightHex)
+    }
+
+    func testFieldHueMatchesTheSectionDot() {
+        // AC5 of #102 restated from the capture side: one name, one hue.
+        let hues = assigned(["work", "design"])
+        XCTAssertEqual(hues.captureFieldEntry(forMatched: "design")?.lightHex,
+                       hues.entry(for: "design")?.lightHex)
+    }
+
+    func testUnknownTagHasNoHueSoTheFieldStaysAccent() {
+        let hues = assigned(["work"])
+        XCTAssertNil(hues.captureFieldEntry(forMatched: "brand-new"))
+    }
+
+    func testNoMatchHasNoHue() {
+        let hues = assigned(["work"])
+        XCTAssertNil(hues.captureFieldEntry(forMatched: nil))
+    }
+
+    func testCalIsACommandAndNeverTakesAHue() {
+        // Even if a `## cal` section somehow exists, the prefix is a command.
+        let hues = assigned(["cal"])
+        XCTAssertNil(hues.captureFieldEntry(forMatched: "cal"))
+        XCTAssertNil(hues.captureFieldEntry(forMatched: "  CAL "))
+        XCTAssertTrue(TagHueAssignment.isCommand("cal"))
+        XCTAssertFalse(TagHueAssignment.isCommand("calendar"))
+    }
+}

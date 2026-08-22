@@ -16,9 +16,10 @@ import SwiftUI
 // Priority orbs and the settings row icons are the standing exceptions — they
 // are functional color that predates the direction.
 //
-// NOTE: the tokens below are still the pre-#101 set. The direction is decided
-// and documented (CONTEXT.md, design/color-directions/); implementation is
-// tracked in #102 (hue assignment — prerequisite), #103 (editor), #104 (capture).
+// The `Theme` tokens below are deliberately unchanged by that direction: the
+// hue is per-section state (TagColor.swift), not a theme colour, and warmer
+// surfaces were explored and rejected. Landed as #102 (hue assignment),
+// #103 (editor), #104 (capture tag field); see design/color-directions/.
 
 extension Color {
     /// Color(0xRRGGBB). Positional/`alpha:` form from the handoff — distinct from
