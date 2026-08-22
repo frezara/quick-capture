@@ -8,107 +8,145 @@ struct SettingsView: View {
     private var t: Theme { scheme == .dark ? .dark : .light }
 
     var body: some View {
-        VStack(alignment: .leading, spacing: 14) {
-            settingsCard("FILE & SHORTCUT") {
-                settingsRow(
-                    label: "Path",
-                    note: "Items are appended as `- [ ] …` lines.",
-                    symbol: "doc.text",
-                    iconColor: Color(0x007AFF)
-                ) {
-                    HStack(spacing: Metrics.s2) {
-                        TextField("", text: $appState.captureFilePath)
-                            .textFieldStyle(.plain)
-                            .font(Typeface.mono(12))
-                            .foregroundStyle(t.ink)
-                            .multilineTextAlignment(.trailing)
-                            .truncationMode(.head)
-                        Button("Choose…", action: chooseFile)
-                            .buttonStyle(SettingsGhostButton(t: t))
-                    }
-                }
-                t.border.frame(height: 0.5).padding(.leading, 50)
-                settingsRow(
-                    label: "Hotkey",
-                    note: "Click, press your combo, Esc cancels. Needs ⌃⌥⇧⌘.",
-                    symbol: "command",
-                    iconColor: Color(0x5856D6)
-                ) {
-                    KeyRecorderView(hotKey: $appState.hotKey)
-                }
+        // Scrolls because the content is taller than any sensible default
+        // window height, and grows further with every refile target. Before
+        // this the window was pinned to 360pt and everything past Advanced was
+        // unreachable (#116).
+        ScrollView {
+            VStack(alignment: .leading, spacing: 14) {
+                generalCard
+                captureFileCard
+                captureBoxCard
+                editorCard
+                refileTargetsSection
             }
+            .padding(Metrics.s3)
+            .frame(width: 520)
+        }
+        .background(t.bg)
+    }
 
-            settingsCard("APPEARANCE") {
-                settingsRow(label: "Input font", note: nil, symbol: "textformat", iconColor: Color(0x8E8E93)) {
-                    Picker("", selection: $appState.captureFontDesign) {
-                        ForEach(CaptureFontDesign.allCases) { d in Text(d.label).tag(d) }
-                    }
-                    .labelsHidden()
-                    .frame(width: 180)
-                }
-                t.border.frame(height: 0.5).padding(.leading, 50)
-                settingsRow(label: "Font sample", note: nil, labelColor: t.inkSecondary, symbol: "text.quote", iconColor: Color(0x8E8E93)) {
-                    Text("What needs doing?")
-                        .font(.system(size: 17, design: appState.captureFontDesign.design))
+    // MARK: - Cards
+    //
+    // Grouped by what the setting AFFECTS, not by how advanced it is. The old
+    // "Advanced" card held a capture-format option, an editor option and a
+    // system option — it was where the leftovers went (#116).
+
+    private var generalCard: some View {
+        settingsCard("GENERAL") {
+            settingsRow(
+                label: "Global hotkey",
+                note: "Click, press your combo, Esc cancels. Needs ⌃⌥⇧⌘.",
+                symbol: "command",
+                iconColor: Color(0x5856D6)
+            ) {
+                KeyRecorderView(hotKey: $appState.hotKey)
+            }
+            rowDivider
+            settingsRow(
+                label: "Launch at Login",
+                note: "App must be in /Applications for this to take effect.",
+                symbol: "power",
+                iconColor: Color(0xFF9500)
+            ) {
+                settingsToggle(launchAtLoginBinding)
+            }
+        }
+    }
+
+    private var captureFileCard: some View {
+        settingsCard("CAPTURE FILE") {
+            settingsRow(label: "Path", note: nil, symbol: "doc.text", iconColor: Color(0x007AFF)) {
+                HStack(spacing: Metrics.s2) {
+                    TextField("", text: $appState.captureFilePath)
+                        .textFieldStyle(.plain)
+                        .font(Typeface.mono(12))
                         .foregroundStyle(t.ink)
+                        .multilineTextAlignment(.trailing)
+                        .truncationMode(.head)
+                    Button("Choose…", action: chooseFile)
+                        .buttonStyle(SettingsGhostButton(t: t))
                 }
             }
-
-            settingsCard("ADVANCED") {
-                settingsRow(
-                    label: "Append timestamp to each capture",
-                    note: "Uses Obsidian Tasks `\(FileWriter.createdMarker)` marker — `YYYY-MM-DD HH:MM`.",
-                    symbol: "clock",
-                    iconColor: Color(0x8E8E93)
-                ) {
-                    Toggle("", isOn: $appState.includeTimestamp).labelsHidden().toggleStyle(.switch).controlSize(.small)
-                }
-                t.border.frame(height: 0.5).padding(.leading, 50)
-                settingsRow(
-                    label: "Vim keybindings",
-                    note: "When off, standard editing. ⌥⌘I still toggles the editor.",
-                    symbol: "terminal",
-                    iconColor: Color(0x34C759)
-                ) {
-                    Toggle("", isOn: $appState.vimEnabled).labelsHidden().toggleStyle(.switch).controlSize(.small)
-                }
-                t.border.frame(height: 0.5).padding(.leading, 50)
-                settingsRow(
-                    label: "Launch at Login",
-                    note: "App must be in /Applications for this to take effect.",
-                    symbol: "power",
-                    iconColor: Color(0xFF9500)
-                ) {
-                    Toggle("", isOn: launchAtLoginBinding).labelsHidden().toggleStyle(.switch).controlSize(.small)
-                }
+            rowDivider
+            settingsRow(
+                label: "Append timestamp to each capture",
+                note: "Obsidian Tasks `\(FileWriter.createdMarker) YYYY-MM-DD HH:MM` marker.",
+                symbol: "clock",
+                iconColor: Color(0x8E8E93)
+            ) {
+                settingsToggle($appState.includeTimestamp)
             }
+        }
+    }
 
+    private var captureBoxCard: some View {
+        settingsCard("CAPTURE BOX") {
+            // The sample is the row's own second line, rendered in the chosen
+            // face — it was a separate row with its own icon square, which read
+            // as a second setting (#116).
+            settingsRow(label: "Input font", symbol: "textformat", iconColor: Color(0x8E8E93)) {
+                Text("What needs doing?")
+                    .font(.system(size: 13, design: appState.captureFontDesign.design))
+                    .foregroundStyle(t.inkSecondary)
+            } control: {
+                Picker("", selection: $appState.captureFontDesign) {
+                    ForEach(CaptureFontDesign.allCases) { d in Text(d.label).tag(d) }
+                }
+                .labelsHidden()
+                .frame(width: 180)
+            }
+        }
+    }
+
+    private var editorCard: some View {
+        settingsCard("EDITOR") {
+            settingsRow(
+                label: "Vim keybindings",
+                note: "When off, standard editing. ⌥⌘I still toggles the editor.",
+                symbol: "terminal",
+                iconColor: Color(0x34C759)
+            ) {
+                settingsToggle($appState.vimEnabled)
+            }
+        }
+    }
+
+    /// The card plus its "Add Folder…" button. The button sits below the group
+    /// rather than inside a row of its own — an action isn't a setting, and a
+    /// row needs an icon square it has no business having.
+    private var refileTargetsSection: some View {
+        VStack(alignment: .leading, spacing: Metrics.s2) {
             settingsCard("REFILE TARGETS") {
                 if appState.refileTargets.isEmpty {
                     settingsRow(
                         label: "No targets yet",
-                        note: "⌥⌘U in the editor files the item under your cursor into a target's inbox.md.",
+                        note: "⌥⌘U in the editor files the item under your cursor into a target's `inbox.md`.",
                         symbol: "folder",
                         iconColor: Color(0xFF9F0A)
-                    ) {
-                        Button("Add Folder…", action: addRefileTarget)
-                            .buttonStyle(SettingsGhostButton(t: t))
-                    }
+                    ) { EmptyView() }
                 } else {
                     ForEach(appState.refileTargets.indices, id: \.self) { index in
+                        if index > 0 { rowDivider }
                         refileTargetRow(index: index)
-                        t.border.frame(height: 0.5).padding(.leading, 50)
-                    }
-                    settingsRow(label: "Add another destination", note: nil, symbol: "plus", iconColor: Color(0x8E8E93)) {
-                        Button("Add Folder…", action: addRefileTarget)
-                            .buttonStyle(SettingsGhostButton(t: t))
                     }
                 }
             }
+            Button("Add Folder…", action: addRefileTarget)
+                .buttonStyle(SettingsGhostButton(t: t))
+                .padding(.leading, 2)
         }
-        .padding(Metrics.s3)
-        .frame(width: 520)
-        .background(t.bg)
+    }
+
+    private var rowDivider: some View {
+        t.border.frame(height: 0.5).padding(.leading, 50)
+    }
+
+    private func settingsToggle(_ isOn: Binding<Bool>) -> some View {
+        Toggle("", isOn: isOn)
+            .labelsHidden()
+            .toggleStyle(.switch)
+            .controlSize(.small)
     }
 
     // MARK: - Components
@@ -132,12 +170,36 @@ struct SettingsView: View {
         }
     }
 
+    /// A row whose secondary line is explanatory text. `Text(.init(note))`
+    /// rather than `Text(note)`: SwiftUI parses markdown only for
+    /// `LocalizedStringKey`, so the plain-String overload rendered the
+    /// backticks in these notes as literal characters (#116).
     private func settingsRow<Control: View>(
         label: String,
         note: String?,
-        labelColor: Color? = nil,
         symbol: String? = nil,
         iconColor: Color = Color(0x8E8E93),
+        @ViewBuilder control: () -> Control
+    ) -> some View {
+        settingsRow(label: label, symbol: symbol, iconColor: iconColor) {
+            if let note {
+                Text(.init(note))
+                    .font(TypeScale.caption)
+                    .foregroundStyle(t.inkTertiary)
+                    .fixedSize(horizontal: false, vertical: true)
+            }
+        } control: {
+            control()
+        }
+    }
+
+    /// The general form: the second line is whatever the row wants it to be —
+    /// a note, or the live font sample.
+    private func settingsRow<Secondary: View, Control: View>(
+        label: String,
+        symbol: String? = nil,
+        iconColor: Color = Color(0x8E8E93),
+        @ViewBuilder secondary: () -> Secondary,
         @ViewBuilder control: () -> Control
     ) -> some View {
         HStack(alignment: .center, spacing: Metrics.s2) {
@@ -147,14 +209,10 @@ struct SettingsView: View {
             VStack(alignment: .leading, spacing: 3) {
                 Text(label)
                     .font(Typeface.ui(13))
-                    .foregroundStyle(labelColor ?? t.ink)
-                if let note {
-                    Text(note)
-                        .font(TypeScale.caption)
-                        .foregroundStyle(t.inkTertiary)
-                }
+                    .foregroundStyle(t.ink)
+                secondary()
             }
-            Spacer()
+            Spacer(minLength: Metrics.s2)
             control()
         }
         .padding(.horizontal, Metrics.s3)
@@ -197,32 +255,53 @@ struct SettingsView: View {
                     .lineLimit(1)
             }
             Spacer(minLength: Metrics.s2)
+
+            // The label was a borderless TextField, which gave no sign it could
+            // be typed in (#116). A well — the same recipe as the capture
+            // field — is what makes it read as an input.
             TextField("Label", text: labelBinding(index))
                 .textFieldStyle(.plain)
                 .font(Typeface.ui(12))
                 .foregroundStyle(t.ink)
-                .multilineTextAlignment(.trailing)
-                .frame(width: 84)
-            Button { moveRefileTarget(from: index, to: index - 1) } label: {
-                Image(systemName: "chevron.up")
+                .padding(.horizontal, 8)
+                .padding(.vertical, 4)
+                .frame(width: 96)
+                .background(
+                    RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                        .fill(t.surfaceField)
+                )
+
+            // Reorder and remove read as chrome, not as actions competing with
+            // the accent — the accent means interaction elsewhere (ADR-0005).
+            HStack(spacing: 2) {
+                reorderButton("chevron.up", enabled: index > 0) {
+                    moveRefileTarget(from: index, to: index - 1)
+                }
+                reorderButton("chevron.down", enabled: index < appState.refileTargets.count - 1) {
+                    moveRefileTarget(from: index, to: index + 1)
+                }
             }
-            .buttonStyle(.plain)
-            .foregroundStyle(t.accent)
-            .disabled(index == 0)
-            Button { moveRefileTarget(from: index, to: index + 1) } label: {
-                Image(systemName: "chevron.down")
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(t.accent)
-            .disabled(index == appState.refileTargets.count - 1)
             Button { removeRefileTarget(at: index) } label: {
                 Image(systemName: "xmark")
+                    .font(.system(size: 10, weight: .semibold))
             }
             .buttonStyle(.plain)
             .foregroundStyle(t.inkTertiary)
+            .help("Remove this refile target")
         }
         .padding(.horizontal, Metrics.s3)
-        .padding(.vertical, 12)
+        .padding(.vertical, 11)
+    }
+
+    private func reorderButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
+        Button(action: action) {
+            Image(systemName: symbol)
+                .font(.system(size: 10, weight: .semibold))
+                .frame(width: 16, height: 14)
+        }
+        .buttonStyle(.plain)
+        .foregroundStyle(enabled ? t.inkSecondary : t.inkTertiary.opacity(0.5))
+        .disabled(!enabled)
     }
 
     /// Maps the target's optional label to a non-optional text binding; a blank
