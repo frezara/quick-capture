@@ -90,6 +90,7 @@ final class MainPanel: NSPanel {
     private var fileDescriptor: CInt = -1
     private var vimObserver: NSObjectProtocol?
     private var refileTargetsObserver: NSObjectProtocol?
+    private var tagHuesObserver: NSObjectProtocol?
     /// True for the duration of the editor→capture collapse animation, so
     /// `captureContentDidChange` defers window geometry to the animation.
     private var isCollapsing = false
@@ -108,6 +109,7 @@ final class MainPanel: NSPanel {
         stopWatching()
         if let vimObserver { NotificationCenter.default.removeObserver(vimObserver) }
         if let refileTargetsObserver { NotificationCenter.default.removeObserver(refileTargetsObserver) }
+        if let tagHuesObserver { NotificationCenter.default.removeObserver(tagHuesObserver) }
     }
 
     init(appState: AppState,
@@ -160,6 +162,12 @@ final class MainPanel: NSPanel {
         refileTargetsObserver = NotificationCenter.default.addObserver(
             forName: .refileTargetsDidChange, object: nil, queue: .main
         ) { [weak self] _ in self?.pushRefileTargets() }
+
+        // A new section allocates a hue (#102), which the editor can't derive
+        // for itself — re-push whenever the map grows.
+        tagHuesObserver = NotificationCenter.default.addObserver(
+            forName: .tagHuesDidChange, object: nil, queue: .main
+        ) { [weak self] _ in self?.pushTagHues() }
     }
 
     private func setupContainer() {
@@ -774,6 +782,10 @@ final class MainPanel: NSPanel {
         pushEditorKeymap()
         pushRefileTargets()
         let text = (try? String(contentsOf: loadedFileURL, encoding: .utf8)) ?? ""
+        // Unconditional: a fresh web view starts with an empty map, so it needs
+        // the push even when nothing was newly allocated.
+        appState.assignHues(inContent: text)
+        pushTagHues()
         pushContent(text)
         startWatching()
         // The editor no longer auto-focuses on mount; if it was opened before it
@@ -815,6 +827,26 @@ final class MainPanel: NSPanel {
               let jsonString = String(data: json, encoding: .utf8) else { return }
         webView.evaluateJavaScript(
             "window.qcEditor && window.qcEditor.setRefileTargets(\(jsonString))",
+            completionHandler: nil
+        )
+    }
+
+    /// Push the resolved section hues into the editor (#102). Sends the light
+    /// and dark pair per section name rather than an index, so the editor needs
+    /// no copy of `TagPalette` — the hand-synced palette and hash it used to
+    /// carry are gone. Keyed by lowercased name, which is how the editor looks
+    /// a heading up.
+    private func pushTagHues() {
+        guard webViewReady else { return }
+        var map: [String: [String: String]] = [:]
+        for (name, index) in appState.tagHues.indices {
+            let entry = TagPalette.entry(at: index)
+            map[name] = ["light": entry.lightCSS, "dark": entry.darkCSS]
+        }
+        guard let json = try? JSONEncoder().encode(map),
+              let jsonString = String(data: json, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.setTagHues && window.qcEditor.setTagHues(\(jsonString))",
             completionHandler: nil
         )
     }
@@ -868,6 +900,10 @@ final class MainPanel: NSPanel {
         do {
             try content.write(to: loadedFileURL, atomically: true, encoding: .utf8)
             lastSyncedContent = content
+            // A `## section` typed straight into the editor gets its hue here;
+            // the observer pushes the grown map back. Reads the buffer we were
+            // handed, not the disk.
+            appState.assignHues(inContent: content)
         } catch {
             NSLog("Editor failed to write \(loadedFileURL.path): \(error)")
         }
@@ -924,6 +960,9 @@ final class MainPanel: NSPanel {
 
     private func pushContent(_ text: String) {
         lastSyncedContent = text
+        // The single choke point for editor <- disk, so it covers the initial
+        // load, a capture-file switch, and a watcher-driven reload.
+        appState.assignHues(inContent: text)
         guard let encoded = String(data: try! JSONEncoder().encode(text), encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.qcEditor.setContent(\(encoded))", completionHandler: nil)
         // Keep the editor's status-bar filename in step with the loaded file.

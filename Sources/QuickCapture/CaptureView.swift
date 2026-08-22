@@ -375,6 +375,7 @@ struct CaptureView: View {
                 highlight: tagHighlightClamped,
                 visible: tagDropdownVisible,
                 isDark: colorScheme == .dark,
+                hues: appState.tagHues,
                 onPick: { acceptTag($0) }
             )
         )

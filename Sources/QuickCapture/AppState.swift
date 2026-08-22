@@ -6,6 +6,7 @@ extension Notification.Name {
     static let capturePanelDidHide   = Notification.Name("QuickCapture.capturePanelDidHide")
     static let vimModeDidChange      = Notification.Name("QuickCapture.vimModeDidChange")
     static let refileTargetsDidChange = Notification.Name("QuickCapture.refileTargetsDidChange")
+    static let tagHuesDidChange      = Notification.Name("QuickCapture.tagHuesDidChange")
 }
 
 /// Font design applied to the capture panel's todo input. Maps directly onto
@@ -43,6 +44,7 @@ final class AppState: ObservableObject {
         static let captureFontDesign      = "captureFontDesign"
         static let vimEnabled             = "vimEnabled"
         static let refileTargets          = "refileTargets"
+        static let tagHues                = "tagHues"
     }
 
     @Published var captureFilePath: String {
@@ -95,6 +97,55 @@ final class AppState: ObservableObject {
             }
             NotificationCenter.default.post(name: .refileTargetsDidChange, object: nil)
         }
+    }
+
+    /// Which hue each section owns (#102). Allocated as the capture file is
+    /// scanned — first section seen takes the first hue, and keeps it — then
+    /// persisted, so hues don't shuffle when the file is reordered or the app
+    /// relaunches. The editor can't read settings and no longer derives the hue
+    /// itself, so `MainPanel` pushes the resolved map in; hence the broadcast.
+    @Published private(set) var tagHues: TagHueAssignment {
+        didSet {
+            guard tagHues != oldValue else { return }
+            if let data = try? JSONEncoder().encode(tagHues) {
+                UserDefaults.standard.set(data, forKey: Keys.tagHues)
+            }
+            NotificationCenter.default.post(name: .tagHuesDidChange, object: nil)
+        }
+    }
+
+    /// The hue a tag owns, or nil when it has never been seen in the capture
+    /// file — an unmatched tag has no identity yet, so callers fall back to the
+    /// accent rather than inventing one.
+    func hueEntry(for tag: String) -> TagPalette.Entry? { tagHues.entry(for: tag) }
+
+    /// Give a hue to any section in `content` that hasn't got one, in file
+    /// order. Runs over the editor's buffer as well as the capture-file scan,
+    /// so a `## section` typed straight into the editor gets its hue without
+    /// waiting for the next summon. Returns true when anything was allocated.
+    @discardableResult
+    func assignHues(inContent content: String) -> Bool {
+        var updated = tagHues
+        guard updated.assign(Self.sectionNames(in: content)) else { return false }
+        tagHues = updated
+        return true
+    }
+
+    /// Section names in the order they appear, excluding the untagged
+    /// catch-all — `## Quick capture` is not a tag and takes no hue.
+    static func sectionNames(in content: String) -> [String] {
+        let untaggedKey = FileWriter.untaggedSection.lowercased()
+        var seen: Set<String> = []
+        var names: [String] = []
+        for line in content.components(separatedBy: "\n") {
+            guard line.hasPrefix("##"), !line.hasPrefix("###") else { continue }
+            let name = line.dropFirst(2).trimmingCharacters(in: .whitespaces)
+            let key = name.lowercased()
+            guard !name.isEmpty, key != untaggedKey, !seen.contains(key) else { continue }
+            seen.insert(key)
+            names.append(name)
+        }
+        return names
     }
 
     /// The refile targets actually offered in the editor: the capture file's own
@@ -164,6 +215,10 @@ final class AppState: ObservableObject {
             a.value != b.value ? a.value > b.value : a.key < b.key
         }
         recentTags = sorted.compactMap { canonicalName[$0.key] }
+
+        // Allocation follows the file, not the count-sorted suggestion order —
+        // the first section in the file takes the first hue.
+        assignHues(inContent: content)
     }
 
     var captureFileURL: URL {
@@ -208,6 +263,13 @@ final class AppState: ObservableObject {
             self.refileTargets = decoded
         } else {
             self.refileTargets = []
+        }
+
+        if let data = UserDefaults.standard.data(forKey: Keys.tagHues),
+           let decoded = try? JSONDecoder().decode(TagHueAssignment.self, from: data) {
+            self.tagHues = decoded
+        } else {
+            self.tagHues = TagHueAssignment()
         }
     }
 }

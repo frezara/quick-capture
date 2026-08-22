@@ -26,6 +26,9 @@ struct TagDropdownAnchor: NSViewRepresentable {
     var highlight: Int
     var visible: Bool
     var isDark: Bool
+    /// Section hues (#102). Passed in rather than derived: the hue is now
+    /// allocated state owned by AppState, not a function of the tag name.
+    var hues: TagHueAssignment
     var onPick: (String) -> Void
 
     func makeCoordinator() -> Coordinator { Coordinator() }
@@ -36,10 +39,10 @@ struct TagDropdownAnchor: NSViewRepresentable {
         // Deferred: during the first layout pass the view isn't in a window
         // yet, and AppKit dislikes window mutations mid-layout.
         let coordinator = context.coordinator
-        let (tags, highlight, visible, isDark, onPick) = (tags, highlight, visible, isDark, onPick)
+        let (tags, highlight, visible, isDark, hues, onPick) = (tags, highlight, visible, isDark, hues, onPick)
         DispatchQueue.main.async {
             coordinator.update(anchor: view, tags: tags, highlight: highlight,
-                               visible: visible, isDark: isDark, onPick: onPick)
+                               visible: visible, isDark: isDark, hues: hues, onPick: onPick)
         }
     }
 
@@ -59,7 +62,7 @@ struct TagDropdownAnchor: NSViewRepresentable {
         }
 
         func update(anchor: NSView, tags: [String], highlight: Int, visible: Bool,
-                    isDark: Bool, onPick: @escaping (String) -> Void) {
+                    isDark: Bool, hues: TagHueAssignment, onPick: @escaping (String) -> Void) {
             self.anchor = anchor
             guard visible, !tags.isEmpty, let parent = anchor.window, parent.isVisible else {
                 close()
@@ -67,7 +70,7 @@ struct TagDropdownAnchor: NSViewRepresentable {
             }
 
             let content = TagDropdownContent(tags: tags, highlight: highlight,
-                                             isDark: isDark, onPick: onPick)
+                                             isDark: isDark, hues: hues, onPick: onPick)
             if let hosting {
                 hosting.rootView = content
             } else {
@@ -143,6 +146,7 @@ struct TagDropdownContent: View {
     var tags: [String]
     var highlight: Int
     var isDark: Bool
+    var hues: TagHueAssignment
     var onPick: (String) -> Void
 
     private var theme: Theme { isDark ? .dark : .light }
@@ -170,15 +174,22 @@ struct TagDropdownContent: View {
 
     private func row(_ name: String, highlighted: Bool) -> some View {
         let isCal = name.lowercased() == "cal"
-        let hue = TagPalette.entry(for: name)
+        // No hue means the tag isn't a section in the capture file yet, so it
+        // has no identity to show — the dot is simply absent rather than
+        // guessed at. `cal` is a command, not a tag, and keeps its glyph.
+        let hue = hues.entry(for: name)
         return HStack(spacing: 6) {
             if isCal {
                 Image(systemName: "calendar")
                     .font(.system(size: 11, weight: .semibold))
                     .foregroundStyle(theme.inkTertiary)
-            } else {
+            } else if let hue {
                 Circle()
                     .fill(hue.dot(dark: isDark))
+                    .frame(width: 7, height: 7)
+            } else {
+                Circle()
+                    .fill(theme.inkTertiary.opacity(0.35))
                     .frame(width: 7, height: 7)
             }
             Text(name)

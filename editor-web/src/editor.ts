@@ -99,28 +99,21 @@ const darkPalette: Palette = {
     priLow: "#30D158",
 };
 
-// Finder-tag-style hues for `##` section headings — mirrors TagPalette in
-// TagColor.swift (same DJB2 hash, same curated entries) so a tag's dot in the
-// capture box matches its section dot here. Keep the two in sync.
-const tagHuesLight = ["#E8643F", "#2A9D8F", "#C2479B", "#4F9E4F", "#3B82F6", "#C77800", "#5856D6", "#64748B"];
-const tagHuesDark  = ["#F4795A", "#3DBDAD", "#DA62B4", "#5FBF60", "#5C9DFF", "#E0A33E", "#7D7AFF", "#8B98AB"];
+// Section hues for `##` headings (#102). The editor no longer derives these:
+// a hue is allocated on first sight and remembered, so it is state Swift owns.
+// It pushes the resolved light/dark pair per section name via
+// `qcEditor.setTagHues`, which replaced the DJB2 hash and palette copy this
+// file used to keep in sync with TagColor.swift by hand.
+//
+// Empty until that push lands — including in the browser harness, where no
+// Swift side exists, so headings render without their dot there.
+type TagHuePair = { light: string; dark: string };
+let tagHues: Record<string, TagHuePair> = {};
 
-const U64 = (1n << 64n) - 1n;
-const I64_MIN = 1n << 63n;
-
-function tagHue(name: string): string {
-    const normalized = name.toLowerCase();
-    // BigInt with a 64-bit two's-complement wrap — Swift's `Int` is 64-bit and
-    // the hash overflows past ~6 characters, so 32-bit JS arithmetic would
-    // pick different hues than the capture box.
-    let h = 5381n;
-    for (const ch of normalized) {
-        h = (h * 33n + BigInt(ch.codePointAt(0) ?? 0)) & U64;
-    }
-    let signed = h >= I64_MIN ? h - (U64 + 1n) : h;
-    if (signed < 0n) signed = -signed;
-    const hues = palette === darkPalette ? tagHuesDark : tagHuesLight;
-    return hues[Number(signed % BigInt(hues.length))];
+function tagHue(name: string): string | null {
+    const pair = tagHues[name.trim().toLowerCase()];
+    if (!pair) return null;
+    return palette === darkPalette ? pair.dark : pair.light;
 }
 
 const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
@@ -361,7 +354,11 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     const attrs: Record<string, string> = {};
                     if (headingLevel === 2) {
                         const name = line.text.replace(/^#{1,6}\s*/, "").trim();
-                        if (name) attrs.style = `--qc-section-hue: ${tagHue(name)}`;
+                        const hue = name ? tagHue(name) : null;
+                        // No hue = a section Swift hasn't assigned one to (the
+                        // untagged catch-all, or a heading typed a moment ago).
+                        // The ::before dot falls back to transparent.
+                        if (hue) attrs.style = `--qc-section-hue: ${hue}`;
                     }
                     ranges.push({
                         from: line.from, to: line.from,
@@ -1167,6 +1164,7 @@ declare global {
             flushSave: () => void;
             attachmentLoaded: (path: string, dataURL: string | null) => void;
             setRefileTargets: (names: string[]) => void;
+            setTagHues: (hues: Record<string, TagHuePair>) => void;
             refileDidComplete: (targetName: string) => void;
             startRefile: () => void;
             setKeymap: (map: Record<string, string>) => void;
@@ -2152,6 +2150,14 @@ window.qcEditor = {
     },
     // Swift pushes the effective refile-target display names (dropdown order).
     setRefileTargets: (names: string[]) => { refileTargets = Array.isArray(names) ? names : []; },
+    // Same shape as setRefileTargets: Swift is the source of truth and pushes
+    // on editor boot and whenever a new section takes a hue. The rebuild is the
+    // theme-swap trick — section hues are baked into line attributes, so the
+    // decorations have to be recomputed for a new map to show.
+    setTagHues: (hues: Record<string, TagHuePair>) => {
+        tagHues = hues && typeof hues === "object" ? hues : {};
+        view?.dispatch({ effects: attachmentStateChanged.of(null) });
+    },
     // Swift's success ack after the disk move — flash the confirmation toast
     // (the file watcher separately reloads the editor without the subtree).
     refileDidComplete: (targetName: string) => {
