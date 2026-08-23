@@ -321,18 +321,12 @@ struct CaptureView: View {
                 .font(TypeScale.tag)
                 .foregroundStyle(tagActive ? tagFieldInk : theme.ink)
                 .focused($focused, equals: .tag)
+                // Enter commits the highlighted suggestion and saves in one
+                // press (#122). This used to live in an .onKeyPress(.return)
+                // that never ran: a focused TextField consumes Return to fire
+                // its submission action, so the key never reached a key-press
+                // modifier outside it, and `submit()` always saw the raw text.
                 .onSubmit { submit() }
-                .onKeyPress(.return) {
-                    // Enter accepts the highlighted suggestion when it differs
-                    // from the typed text; otherwise falls through (.ignored)
-                    // to onSubmit, which saves the capture.
-                    guard tagDropdownVisible else { return .ignored }
-                    let pick = filteredTags[tagHighlightClamped]
-                    let query = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
-                    guard pick.lowercased() != query.lowercased() else { return .ignored }
-                    acceptTag(pick)
-                    return .handled
-                }
                 // Tab cycles through every prefix match (Shift-Tab reverses) by
                 // walking the dropdown highlight, wrapping at the ends — it does
                 // NOT fill `tagText`, so the filtered set stays put while you
@@ -379,6 +373,27 @@ struct CaptureView: View {
                 onPick: { acceptTag($0) }
             )
         )
+    }
+
+    /// The tag Enter should file under: the highlighted suggestion when the
+    /// dropdown is offering one, otherwise exactly what was typed.
+    private var tagToCommit: String {
+        Self.tagToCommit(
+            typed: tagText,
+            suggestion: tagDropdownVisible ? filteredTags[tagHighlightClamped] : nil
+        )
+    }
+
+    /// Pure form of the rule (#122), so the edges are testable without standing
+    /// up the view.
+    ///
+    /// The empty case matters: with nothing typed the dropdown lists *every*
+    /// known tag with the first highlighted, and Enter there means "no tag" —
+    /// not "file under whichever tag happens to sort first".
+    static func tagToCommit(typed: String, suggestion: String?) -> String {
+        let query = typed.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard !query.isEmpty, let suggestion else { return typed }
+        return suggestion
     }
 
     /// Tags that are always present in the suggestions and Tab autocomplete,
@@ -990,7 +1005,10 @@ struct CaptureView: View {
             }
             return
         }
-        let trimmedTag = tagText.trimmingCharacters(in: .whitespacesAndNewlines)
+        // Reads the resolved tag, not `tagText` — and reads it rather than
+        // writing it first, because assigning @State and reading it back in the
+        // same scope yields the stale value.
+        let trimmedTag = tagToCommit.trimmingCharacters(in: .whitespacesAndNewlines)
         let tag: String? = trimmedTag.isEmpty ? nil : trimmedTag
         // Calendar captures never write markdown, so attachments have nowhere
         // to go — the chips are visibly disabled in that mode (R21).

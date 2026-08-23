@@ -61,3 +61,41 @@ final class CaptureViewTests: XCTestCase {
                        Set([a]))
     }
 }
+
+/// What Enter files the capture under (#122). The dropdown highlight is a
+/// promise; these pin that Enter keeps it.
+final class TagToCommitTests: XCTestCase {
+
+    func testHighlightedSuggestionWinsOverThePartialText() {
+        // The reported bug: typing "fa" with "fahad" highlighted filed under a
+        // new "fa" section.
+        XCTAssertEqual(CaptureView.tagToCommit(typed: "fa", suggestion: "fahad"), "fahad")
+    }
+
+    func testTypedTextIsUsedWhenTheDropdownOffersNothing() {
+        // Esc dismisses the dropdown — Enter then means exactly what was typed,
+        // which is how you capture a literal tag that prefixes an existing one.
+        XCTAssertEqual(CaptureView.tagToCommit(typed: "fa", suggestion: nil), "fa")
+    }
+
+    func testEmptyFieldCommitsNoTagEvenThoughTheDropdownIsFull() {
+        // With nothing typed the dropdown lists every known tag with the first
+        // highlighted. Enter there means untagged, not "file under `cal`".
+        XCTAssertEqual(CaptureView.tagToCommit(typed: "", suggestion: "cal"), "")
+    }
+
+    func testWhitespaceOnlyFieldAlsoCommitsNoTag() {
+        XCTAssertEqual(CaptureView.tagToCommit(typed: "   ", suggestion: "cal"), "   ")
+    }
+
+    func testSuggestionIsTakenVerbatimSoItsCasingSurvives() {
+        // The section name is the suggestion's, not the query's — typing "DES"
+        // must not create "## DES" alongside "## design".
+        XCTAssertEqual(CaptureView.tagToCommit(typed: "DES", suggestion: "design"), "design")
+    }
+
+    func testFullyTypedTagIsUnchanged() {
+        // Typing a tag in full hides the dropdown (suggestion nil by then).
+        XCTAssertEqual(CaptureView.tagToCommit(typed: "fahad", suggestion: nil), "fahad")
+    }
+}
