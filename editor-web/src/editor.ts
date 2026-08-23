@@ -1260,6 +1260,8 @@ declare global {
             attachmentLoaded: (path: string, dataURL: string | null) => void;
             setRefileTargets: (names: string[]) => void;
             setTagHues: (hues: Record<string, TagHuePair>) => void;
+            attachToItem: (lines: string[]) => void;
+            toast: (message: string) => void;
             refileDidComplete: (targetName: string) => void;
             startRefile: () => void;
             setKeymap: (map: Record<string, string>) => void;
@@ -2029,6 +2031,50 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
 }
 
 let refileToastTimer: number | null = null;
+/// Insert attachment child lines under the item owning the cursor (#126).
+///
+/// They land directly under the item and after any attachment lines it already
+/// has, but ABOVE its nested sub-items — which is the shape capture writes
+/// (`FileWriter.appendUnderHeading` emits the item then its child lines), and
+/// it keeps an item's own attachments next to it rather than after a subtree.
+///
+/// Indent is the item's plus two spaces, matching the child rule the rest of
+/// the app uses (2+ spaces or a tab).
+function insertAttachmentLines(v: EditorView, lines: string[]): boolean {
+    const state = v.state;
+    const span = resolveSubtreeSpan(state, state.selection.main.head);
+    if (!span) {
+        // A heading, a blank line, the H1 — nothing to attach to. Say so
+        // rather than doing nothing on a key the cluster advertises.
+        showRefileToast(v, "Put the cursor on an item first");
+        return false;
+    }
+
+    const doc = state.doc;
+    const itemLine = doc.line(span.from + 1);
+    const indent = " ".repeat(refileIndentWidth(itemLine.text) + 2);
+
+    // Walk past attachment lines the item already owns, so a second ⌥⌘O appends
+    // rather than interleaving.
+    let insertAfter = span.from;
+    for (let i = span.from + 1; i < span.to; i++) {
+        const text = doc.line(i + 1).text;
+        if (isRefileItemLine(text)) break;          // a nested sub-item
+        if (!/!\[[^\]]*\]\([^)]*\)/.test(text)) break;  // not an image line
+        insertAfter = i;
+    }
+
+    const at = doc.line(insertAfter + 1).to;
+    const insert = lines.map((line) => "\n" + indent + line.replace(/^\s+/, "")).join("");
+    v.dispatch({
+        changes: { from: at, insert },
+        selection: { anchor: at + insert.length },
+        scrollIntoView: true,
+    });
+    showRefileToast(v, lines.length === 1 ? "Screenshot attached" : `${lines.length} screenshots attached`);
+    return true;
+}
+
 function showRefileToast(v: EditorView, message: string) {
     let toast = v.dom.querySelector(".cm-refile-toast") as HTMLDivElement | null;
     if (!toast) {
@@ -2257,6 +2303,17 @@ window.qcEditor = {
     // (the file watcher separately reloads the editor without the subtree).
     refileDidComplete: (targetName: string) => {
         if (view) showRefileToast(view, `Refiled to ${targetName}`);
+    },
+    toast: (message: string) => {
+        if (view) showRefileToast(view, message);
+    },
+    // Swift has copied the files in and formatted the child lines (#126); the
+    // editor decides where they land. Read mode is inert — the document isn't
+    // editable there, and silently mutating it would be worse than refusing.
+    attachToItem: (lines: string[]) => {
+        if (!view || !Array.isArray(lines) || lines.length === 0) return;
+        if (readMode) { showRefileToast(view, "Not in read mode (⌘E)"); return; }
+        insertAttachmentLines(view, lines);
     },
     // Legacy entry point for the refile gesture (superseded by invoke("refile");
     // kept so an older Swift layer or external driver can still trigger it).
