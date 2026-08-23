@@ -380,6 +380,10 @@ final class MainPanel: NSPanel {
     /// while the window shrinks back to the centered capture box.
     func closeEditor() {
         guard editorOpen else { return }
+        // The overlay is an editor-mode affordance, so leaving cancels it —
+        // mirroring openEditor()'s cancel of the capture-mode picker. The
+        // crossfade below owns the alphas, so this only clears state.
+        cancelPickerOverEditor()
         flushEditorSave()   // disk canonical before capture mode can write (ADR-0004)
         editorOpen = false
         isCollapsing = true
@@ -433,6 +437,7 @@ final class MainPanel: NSPanel {
     }
 
     private func collapseStateReset() {
+        cancelPickerOverEditor()
         editorOpen = false
         pickerOpen = false
         isCollapsing = false   // a fresh summon cancels any in-flight collapse
@@ -727,20 +732,49 @@ final class MainPanel: NSPanel {
     /// attaches to the item under the cursor; nil cancels.
     private func closePickerOverEditor(attaching urls: [URL]?) {
         guard pickerOverEditor else { return }
-        pickerOverEditor = false
-        appState.screenshotPickerItems = nil
-        container.pickerOverEditor = false
+        cancelPickerOverEditor()
         captureHost.alphaValue = 0
         editorContainer.alphaValue = 1
         focusEditor()
         if let urls, !urls.isEmpty { attachToEditorItem(urls) }
     }
 
-    /// Copy the chosen screenshots into the capture file's attachments folder
-    /// and hand the editor the child lines to insert under the item at the
-    /// cursor. Swift does the copying — the web layer has no file access
-    /// beyond the app bundle — and the editor owns where they land.
+    /// Tear the overlay's state down without touching alpha or focus, for the
+    /// callers that are already animating both (leaving editor mode) or
+    /// rebuilding them wholesale (a fresh summon).
+    ///
+    /// These flags MUST NOT outlive editor mode: `perform(.attachScreenshot)`
+    /// branches on `pickerOverEditor` first, so a stale one sends the next ⌥⌘O
+    /// to `closePickerOverEditor` — which fades the capture box to nothing and
+    /// moves focus to the hidden web view, instead of opening the picker.
+    private func cancelPickerOverEditor() {
+        guard pickerOverEditor else { return }
+        pickerOverEditor = false
+        appState.screenshotPickerItems = nil
+        container.pickerOverEditor = false
+    }
+
+    /// Attach the chosen screenshots to the item under the cursor.
+    ///
+    /// The editor is asked whether it *can* take them before a single file is
+    /// copied: read mode and a cursor with no item under it both refuse, and a
+    /// refusal discovered after the copy would strand the files in the
+    /// attachments folder beside the user's capture file with nothing pointing
+    /// at them. The editor surfaces the reason itself, next to the rule.
     private func attachToEditorItem(_ urls: [URL]) {
+        guard webViewReady else { return }
+        webView.evaluateJavaScript(
+            "!!(window.qcEditor && window.qcEditor.canAttachToItem && window.qcEditor.canAttachToItem())"
+        ) { [weak self] result, _ in
+            guard let self, result as? Bool == true else { return }
+            self.copyAndInsertAttachments(urls)
+        }
+    }
+
+    /// Copy the screenshots into the capture file's attachments folder and hand
+    /// the editor the child lines. Swift does the copying — the web layer has no
+    /// file access beyond the app bundle — and the editor owns where they land.
+    private func copyAndInsertAttachments(_ urls: [URL]) {
         var lines: [String] = []
         for url in urls {
             do {
@@ -1175,9 +1209,6 @@ private final class PanelContainerView: NSView {
     /// editor is the active surface.
     var captureHeight: CGFloat = 100 { didSet { if editorActive, captureHeight != oldValue { layoutSurfaces() } } }
 
-    /// True while the editor is the active surface (and through the open/close
-    /// crossfade). Flips the capture host between fill (capture mode) and a
-    /// fixed centred box (editor mode / transition).
     /// True while the ⌥⌘O picker is overlaying the editor (#126). The capture
     /// host fills the window as it does in capture mode — CaptureView already
     /// swaps its own content to the picker when items are set — while the
@@ -1196,6 +1227,9 @@ private final class PanelContainerView: NSView {
         }
     }
 
+    /// True while the editor is the active surface (and through the open/close
+    /// crossfade). Flips the capture host between fill (capture mode) and a
+    /// fixed centred box (editor mode / transition).
     var editorActive = false {
         didSet {
             guard editorActive != oldValue else { return }

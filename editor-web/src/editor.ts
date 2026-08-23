@@ -1261,6 +1261,7 @@ declare global {
             setRefileTargets: (names: string[]) => void;
             setTagHues: (hues: Record<string, TagHuePair>) => void;
             attachToItem: (lines: string[]) => void;
+            canAttachToItem: () => boolean;
             toast: (message: string) => void;
             refileDidComplete: (targetName: string) => void;
             startRefile: () => void;
@@ -2031,6 +2032,30 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
 }
 
 let refileToastTimer: number | null = null;
+
+/// The item an attachment would land on, or null with the reason shown (#126).
+///
+/// Swift calls this through `canAttachToItem` BEFORE copying any files in, and
+/// `insertAttachmentLines` re-checks when the lines arrive. Both paths must
+/// refuse on the same rule, hence one function: a refusal that only happened at
+/// insert time would leave the copies orphaned in the attachments folder.
+function attachTarget(v: EditorView): SubtreeSpan | null {
+    // Read mode is inert — the document isn't editable there, and silently
+    // mutating it would be worse than refusing.
+    if (readMode) {
+        showRefileToast(v, "Read mode is on — ⌘E to edit");
+        return null;
+    }
+    const span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
+    if (!span) {
+        // A heading, a blank line, the H1 — nothing to attach to. Say so
+        // rather than doing nothing on a key the cluster advertises.
+        showRefileToast(v, "Put the cursor on an item first");
+        return null;
+    }
+    return span;
+}
+
 /// Insert attachment child lines under the item owning the cursor (#126).
 ///
 /// They land directly under the item and after any attachment lines it already
@@ -2042,13 +2067,8 @@ let refileToastTimer: number | null = null;
 /// the app uses (2+ spaces or a tab).
 function insertAttachmentLines(v: EditorView, lines: string[]): boolean {
     const state = v.state;
-    const span = resolveSubtreeSpan(state, state.selection.main.head);
-    if (!span) {
-        // A heading, a blank line, the H1 — nothing to attach to. Say so
-        // rather than doing nothing on a key the cluster advertises.
-        showRefileToast(v, "Put the cursor on an item first");
-        return false;
-    }
+    const span = attachTarget(v);
+    if (!span) return false;
 
     const doc = state.doc;
     const itemLine = doc.line(span.from + 1);
@@ -2307,12 +2327,12 @@ window.qcEditor = {
     toast: (message: string) => {
         if (view) showRefileToast(view, message);
     },
+    // Asked before Swift copies anything in (#126), so a refusal costs no files.
+    canAttachToItem: () => (view ? attachTarget(view) !== null : false),
     // Swift has copied the files in and formatted the child lines (#126); the
-    // editor decides where they land. Read mode is inert — the document isn't
-    // editable there, and silently mutating it would be worse than refusing.
+    // editor decides where they land.
     attachToItem: (lines: string[]) => {
         if (!view || !Array.isArray(lines) || lines.length === 0) return;
-        if (readMode) { showRefileToast(view, "Not in read mode (⌘E)"); return; }
         insertAttachmentLines(view, lines);
     },
     // Legacy entry point for the refile gesture (superseded by invoke("refile");
