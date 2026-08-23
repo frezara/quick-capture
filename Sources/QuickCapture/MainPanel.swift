@@ -88,6 +88,10 @@ final class MainPanel: NSPanel {
     private var webViewReady = false
     private var fileWatcher: DispatchSourceFileSystemObject?
     private var fileDescriptor: CInt = -1
+    /// The ⌥⌘O picker is overlaying the editor (#126) rather than growing the
+    /// capture window. Distinct from `pickerOpen`, which drives the capture-mode
+    /// takeover and its frame animation.
+    private var pickerOverEditor = false
     private var vimObserver: NSObjectProtocol?
     private var refileTargetsObserver: NSObjectProtocol?
     private var tagHuesObserver: NSObjectProtocol?
@@ -211,8 +215,8 @@ final class MainPanel: NSPanel {
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
             onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
-            onPickerAttach: { [weak self] urls in self?.closePickerSurface(attaching: urls) },
-            onPickerCancel: { [weak self] in self?.closePickerSurface(attaching: nil) }
+            onPickerAttach: { [weak self] urls in self?.pickerDidFinish(attaching: urls) },
+            onPickerCancel: { [weak self] in self?.pickerDidFinish(attaching: nil) }
         )
     }
 
@@ -376,6 +380,10 @@ final class MainPanel: NSPanel {
     /// while the window shrinks back to the centered capture box.
     func closeEditor() {
         guard editorOpen else { return }
+        // The overlay is an editor-mode affordance, so leaving cancels it —
+        // mirroring openEditor()'s cancel of the capture-mode picker. The
+        // crossfade below owns the alphas, so this only clears state.
+        cancelPickerOverEditor()
         flushEditorSave()   // disk canonical before capture mode can write (ADR-0004)
         editorOpen = false
         isCollapsing = true
@@ -429,6 +437,7 @@ final class MainPanel: NSPanel {
     }
 
     private func collapseStateReset() {
+        cancelPickerOverEditor()
         editorOpen = false
         pickerOpen = false
         isCollapsing = false   // a fresh summon cancels any in-flight collapse
@@ -615,20 +624,30 @@ final class MainPanel: NSPanel {
         attachLookupGeneration += 1
         let generation = attachLookupGeneration
         ScreenshotLocator.recent(limit: 10) { [weak self] result in
-            guard let self, generation == self.attachLookupGeneration,
-                  !self.editorOpen else { return }
+            guard let self, generation == self.attachLookupGeneration else { return }
+            let report: (String) -> Void = { message in
+                if self.editorOpen {
+                    self.appState.screenshotPickerItems = nil
+                    self.editorToast(message)
+                } else {
+                    self.appState.screenshotPickerItems = nil
+                    self.appState.attachFeedback = message
+                }
+            }
             if result.accessDenied {
                 // Spotlight may still have returned names, but every thumbnail
                 // would be a placeholder — the actionable hint wins over both the
                 // empty state and the broken-looking list.
-                self.appState.screenshotPickerItems = nil
-                self.appState.attachFeedback = "Quick Capture needs Desktop access — System Settings → Privacy & Security → Files & Folders"
+                report("Quick Capture needs Desktop access — System Settings → Privacy & Security → Files & Folders")
             } else if result.screenshots.isEmpty {
-                self.appState.screenshotPickerItems = nil
-                self.appState.attachFeedback = "No screenshots found"
+                report("No screenshots found")
             } else {
                 self.appState.screenshotPickerItems = result.screenshots
-                self.enterPickerSurface()
+                if self.editorOpen {
+                    self.enterPickerOverEditor()
+                } else {
+                    self.enterPickerSurface()
+                }
             }
         }
     }
@@ -676,6 +695,117 @@ final class MainPanel: NSPanel {
         canDismissOnBlur = false
         recenterCaptureAfterPicker = true
         appState.screenshotPickerItems = nil
+    }
+
+    /// Which surface the picker was on decides what "attach" means: capture
+    /// mode fills the capture box's chips, editor mode attaches to the item
+    /// under the cursor (#126).
+    private func pickerDidFinish(attaching urls: [URL]?) {
+        if pickerOverEditor {
+            closePickerOverEditor(attaching: urls)
+        } else {
+            closePickerSurface(attaching: urls)
+        }
+    }
+
+    /// Show the picker over the editor. The capture host already renders the
+    /// picker whenever items are set, so it comes forward full-bleed with the
+    /// editor behind it — no frame animation, since the window keeps the
+    /// editor's geometry and this should read as a sheet rather than a resize.
+    private func enterPickerOverEditor() {
+        guard editorOpen, !pickerOverEditor else { return }
+        pickerOverEditor = true
+        canDismissOnBlur = false
+        container.pickerOverEditor = true
+        captureHost.alphaValue = 1
+        editorContainer.alphaValue = 0
+        // The web view holds first responder in editor mode; hand it to the
+        // capture host so CaptureView's root key handlers (arrows, space,
+        // Enter) receive the picker's keys.
+        makeFirstResponder(captureHost)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.2) { [weak self] in
+            self?.canDismissOnBlur = true
+        }
+    }
+
+    /// Dismiss the overlay and hand focus back to the editor. A non-nil `urls`
+    /// attaches to the item under the cursor; nil cancels.
+    private func closePickerOverEditor(attaching urls: [URL]?) {
+        guard pickerOverEditor else { return }
+        cancelPickerOverEditor()
+        captureHost.alphaValue = 0
+        editorContainer.alphaValue = 1
+        focusEditor()
+        if let urls, !urls.isEmpty { attachToEditorItem(urls) }
+    }
+
+    /// Tear the overlay's state down without touching alpha or focus, for the
+    /// callers that are already animating both (leaving editor mode) or
+    /// rebuilding them wholesale (a fresh summon).
+    ///
+    /// These flags MUST NOT outlive editor mode: `perform(.attachScreenshot)`
+    /// branches on `pickerOverEditor` first, so a stale one sends the next ⌥⌘O
+    /// to `closePickerOverEditor` — which fades the capture box to nothing and
+    /// moves focus to the hidden web view, instead of opening the picker.
+    private func cancelPickerOverEditor() {
+        guard pickerOverEditor else { return }
+        pickerOverEditor = false
+        appState.screenshotPickerItems = nil
+        container.pickerOverEditor = false
+    }
+
+    /// Attach the chosen screenshots to the item under the cursor.
+    ///
+    /// The editor is asked whether it *can* take them before a single file is
+    /// copied: read mode and a cursor with no item under it both refuse, and a
+    /// refusal discovered after the copy would strand the files in the
+    /// attachments folder beside the user's capture file with nothing pointing
+    /// at them. The editor surfaces the reason itself, next to the rule.
+    private func attachToEditorItem(_ urls: [URL]) {
+        guard webViewReady else { return }
+        webView.evaluateJavaScript(
+            "!!(window.qcEditor && window.qcEditor.canAttachToItem && window.qcEditor.canAttachToItem())"
+        ) { [weak self] result, _ in
+            guard let self, result as? Bool == true else { return }
+            self.copyAndInsertAttachments(urls)
+        }
+    }
+
+    /// Copy the screenshots into the capture file's attachments folder and hand
+    /// the editor the child lines. Swift does the copying — the web layer has no
+    /// file access beyond the app bundle — and the editor owns where they land.
+    private func copyAndInsertAttachments(_ urls: [URL]) {
+        var lines: [String] = []
+        for url in urls {
+            do {
+                let relative = try AttachmentStore.copy(url, besideFile: loadedFileURL)
+                lines.append(FileWriter.attachmentChildLine(relative))
+            } catch {
+                NSLog("Attach failed for \(url.lastPathComponent): \(error)")
+            }
+        }
+        guard !lines.isEmpty else {
+            editorToast("Couldn't copy those screenshots")
+            return
+        }
+        guard let data = try? JSONEncoder().encode(lines),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.attachToItem && window.qcEditor.attachToItem(\(json))",
+            completionHandler: nil
+        )
+    }
+
+    /// Surface a message in the editor's own toast — editor mode has no capture
+    /// box to put `attachFeedback` in.
+    private func editorToast(_ message: String) {
+        guard webViewReady,
+              let data = try? JSONEncoder().encode(message),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript(
+            "window.qcEditor && window.qcEditor.toast && window.qcEditor.toast(\(json))",
+            completionHandler: nil
+        )
     }
 
     /// Animated centered shrink from the picker frame to a capture box of
@@ -749,7 +879,9 @@ final class MainPanel: NSPanel {
         case .attachScreenshot:
             // ⌥⌘O toggles: a second press while the picker is up closes it the
             // same way Esc does (cancel, attachments untouched).
-            if pickerOpen {
+            if pickerOverEditor {
+                closePickerOverEditor(attaching: nil)
+            } else if pickerOpen {
                 closePickerSurface(attaching: nil)
             } else {
                 openScreenshotPicker()
@@ -1077,6 +1209,24 @@ private final class PanelContainerView: NSView {
     /// editor is the active surface.
     var captureHeight: CGFloat = 100 { didSet { if editorActive, captureHeight != oldValue { layoutSurfaces() } } }
 
+    /// True while the ⌥⌘O picker is overlaying the editor (#126). The capture
+    /// host fills the window as it does in capture mode — CaptureView already
+    /// swaps its own content to the picker when items are set — while the
+    /// editor stays mounted behind it.
+    var pickerOverEditor = false {
+        didSet {
+            guard pickerOverEditor != oldValue else { return }
+            guard let captureHost else { return }
+            if pickerOverEditor {
+                captureHost.autoresizingMask = [.width, .height]
+                captureHost.frame = bounds
+            } else if editorActive {
+                captureHost.autoresizingMask = []
+                layoutSurfaces()
+            }
+        }
+    }
+
     /// True while the editor is the active surface (and through the open/close
     /// crossfade). Flips the capture host between fill (capture mode) and a
     /// fixed centred box (editor mode / transition).
@@ -1113,7 +1263,7 @@ private final class PanelContainerView: NSView {
     // layout pass) corrupts the hosting view's intrinsic measurement.
     override func setFrameSize(_ newSize: NSSize) {
         super.setFrameSize(newSize)
-        if editorActive { layoutSurfaces() }
+        if editorActive, !pickerOverEditor { layoutSurfaces() }
     }
 
     private func layoutSurfaces() {

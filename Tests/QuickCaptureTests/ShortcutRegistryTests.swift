@@ -68,14 +68,18 @@ final class ShortcutRegistryTests: XCTestCase {
         )
     }
 
-    func testOptionCommandOAttachesOnlyInCaptureMode() {
-        XCTAssertEqual(
-            ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: false),
-            .attachScreenshot
-        )
-        XCTAssertNil(
-            ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: true)
-        )
+    /// ⌥⌘O attaches in BOTH modes (#126) — capture fills the box's chips, the
+    /// editor attaches to the item under the cursor. It was capture-only, which
+    /// left the key silently dead in the editor and made attaching a screenshot
+    /// to an existing item impossible.
+    func testOptionCommandOAttachesInBothModes() {
+        for editorOpen in [false, true] {
+            XCTAssertEqual(
+                ShortcutRegistry.interceptedAction(key: "o", modifiers: [.command, .option], editorOpen: editorOpen),
+                .attachScreenshot,
+                "⌥⌘O should attach with editorOpen = \(editorOpen)"
+            )
+        }
     }
 
     /// ⌘⇧S was retired in favor of the ⌥⌘ family — it must bind nothing now,

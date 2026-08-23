@@ -141,7 +141,10 @@ enum ShortcutAction: String, CaseIterable {
         case .toggleEditor, .dismissPanel:
             return .anyMode
         case .attachScreenshot:
-            return .captureMode
+            // Both modes (#126): in capture it fills the box's chips, in the
+            // editor it attaches to the item under the cursor. Same gesture,
+            // different target.
+            return .anyMode
         case .refile, .swallowReload, .readMode, .toggleTask, .save, .reorg,
              .nextSection, .prevSection:
             return .editorMode
