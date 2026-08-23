@@ -218,10 +218,41 @@ final class MainPanel: NSPanel {
 
     // MARK: - Presentation
 
-    /// Summon input-only. Always resets so re-summoning after a dismiss lands on
-    /// the capture box.
+    /// ⌥⌘P — the home key. From any surface it lands on the capture box, and it
+    /// gets there through the same exits the toggles use (#124): `closeEditor()`
+    /// flushes the editor's pending save (ADR-0004) and crossfades, and the
+    /// picker shrinks back animated. It used to reset that state underneath
+    /// them, which skipped both — and skipping the flush is a data-loss race,
+    /// since the web view is never torn down and its queued save can land after
+    /// a capture has been written.
     func show() {
         recordPreviousApp()   // before NSApp.activate steals frontmost from it
+
+        if editorOpen {
+            closeEditor()     // handles activate, focus and the dismiss guard
+            return
+        }
+        if pickerOpen {
+            // Cancel, don't attach — same as a second ⌥⌘O or Esc. The recenter
+            // animation restores focus and re-arms click-away dismiss.
+            closePickerSurface(attaching: nil)
+            NSApp.activate(ignoringOtherApps: true)
+            makeKeyAndOrderFront(nil)
+            return
+        }
+        if isVisible {
+            // Already home. Bring it forward and focus, but leave a capture in
+            // progress alone: R20's clean slate is about a *fresh* summon, and
+            // wiping here would discard typed text and attachments that ⌥⌘I
+            // preserves.
+            NSApp.activate(ignoringOtherApps: true)
+            makeKeyAndOrderFront(nil)
+            orderFrontRegardless()
+            focusCapture()
+            return
+        }
+
+        // Fresh summon from hidden — the one path that starts clean (R20).
         collapseStateReset()
         resetCaptureAttachments()
         if let screen = currentScreenVisibleFrame() {
@@ -478,7 +509,11 @@ final class MainPanel: NSPanel {
     private func recordPreviousApp() {
         let myPID = ProcessInfo.processInfo.processIdentifier
         let front = NSWorkspace.shared.frontmostApplication
-        previousApp = (front?.processIdentifier == myPID) ? nil : front
+        // Keep what we already had when we're the frontmost app: ⌥⌘P pressed
+        // from inside the editor must not erase the app Esc returns you to
+        // (#124). Editor mode runs `.regular`, so we ARE frontmost there.
+        guard front?.processIdentifier != myPID else { return }
+        previousApp = front
     }
 
     /// True when *we* are the app currently holding focus (or nothing is). Read
