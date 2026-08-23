@@ -1172,6 +1172,11 @@ function makeTheme() {
     ".cm-heading-2": {
         paddingTop: "10px",
         paddingBottom: "3px",
+        // Inset the caption within its band. Padding, not margin: margins on a
+        // line decoration break vertical cursor navigation (see above), and
+        // this is also why the band itself stays full-width rather than being
+        // pulled in with a negative margin.
+        paddingLeft: "12px",
         // Band and rule are the section's hue (#103), falling back to no tint
         // and the plain hairline when it hasn't got one. The band spans the
         // line box — i.e. the content width inside .cm-content's padding — so
