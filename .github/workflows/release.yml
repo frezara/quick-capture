@@ -40,12 +40,19 @@ jobs:
             CODE_SIGNING_ALLOWED=NO \
             build
 
+      # The signing overrides matter: the scheme's test action builds Debug,
+      # and Debug pins CODE_SIGN_IDENTITY to the local "QuickCapture Dev"
+      # identity (#77), which no runner has. ci.yml already passes these; this
+      # step was missed, so every release since #77 would have failed here.
       - name: Run tests
         run: |
           xcodebuild \
             -project QuickCapture.xcodeproj \
             -scheme QuickCapture \
             -derivedDataPath build/ \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
             test
 
       - name: Package DMG
