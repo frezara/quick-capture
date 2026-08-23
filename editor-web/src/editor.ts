@@ -167,6 +167,7 @@ const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 // appearance listener reassigns it and reconfigures the theme compartment.
 let palette: Palette = prefersDark.matches ? darkPalette : lightPalette;
 
+const monoFamily = 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace';
 const sansFamily = '-apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue", sans-serif';
 
 function makeHighlight() {
@@ -178,7 +179,13 @@ function makeHighlight() {
     { tag: tags.heading1, fontFamily: sansFamily, fontSize: "22px", fontWeight: "600", letterSpacing: "-0.3px", color: palette.text, lineHeight: "1.4" },
     // Colour is the section's, mixed toward the primary ink (#103) — falls back
     // to the neutral caption grey for a section with no hue.
-    { tag: tags.heading2, fontFamily: sansFamily, fontSize: "11px", fontWeight: "600", letterSpacing: "0.8px", color: `var(--qc-section-ink, ${palette.soft})`, lineHeight: "2" },
+    //
+    // Monospace at the body's size and line-height, NOT the 11px sans it used
+    // to be. The mouse I-beam and the caret are sized from the line box, so a
+    // smaller face on the heading made both shrink as they crossed it. The
+    // caption still reads as chrome — uppercase, tracked, semibold, hued, on
+    // its band — without breaking the document's metrics.
+    { tag: tags.heading2, fontFamily: monoFamily, fontSize: "13px", fontWeight: "600", letterSpacing: "0.8px", color: `var(--qc-section-ink, ${palette.soft})`, lineHeight: "1.6" },
     { tag: tags.heading3, fontFamily: sansFamily, fontSize: "1.1em", fontWeight: "600", color: palette.text },
     { tag: tags.heading4, fontFamily: sansFamily, fontSize: "1em", fontWeight: "600", color: palette.text },
     { tag: tags.heading5, fontWeight: "700", color: palette.text },
@@ -394,6 +401,10 @@ function buildLivePreview(view: EditorView): DecorationSet {
         const firstLine = view.state.doc.lineAt(from).number;
         const lastLine = view.state.doc.lineAt(to).number;
         let section = enclosingSection(view.state, firstLine);
+        // Seeded from the line above the viewport, so a section whose heading
+        // is scrolled just out of view still spaces its first item.
+        let prevWasHeading = firstLine > 1
+            && sectionNameOnLine(view.state.doc.line(firstLine - 1).text) !== null;
         for (let n = firstLine; n <= lastLine; n++) {
             const line = view.state.doc.line(n);
             const heading = sectionNameOnLine(line.text);
@@ -402,12 +413,15 @@ function buildLivePreview(view: EditorView): DecorationSet {
             // No hue means Swift hasn't assigned this section one — the
             // untagged catch-all, or a heading typed a moment ago. Every rule
             // that reads these falls back to its neutral, so nothing is drawn
-            // in a guessed colour.
-            if (!hue) continue;
-            ranges.push({
-                from: line.from, to: line.from,
-                deco: Decoration.line({ attributes: { style: sectionVars(hue) } }),
-            });
+            // in a guessed colour. The first-line class is independent of that,
+            // so an unhued section gets its breathing room too.
+            const spec: { class?: string; attributes?: Record<string, string> } = {};
+            if (!heading && prevWasHeading) spec.class = "cm-section-first";
+            if (hue) spec.attributes = { style: sectionVars(hue) };
+            if (spec.class || spec.attributes) {
+                ranges.push({ from: line.from, to: line.from, deco: Decoration.line(spec) });
+            }
+            prevWasHeading = heading !== null;
         }
     }
 
@@ -1186,6 +1200,14 @@ function makeTheme() {
         borderRadius: "5px 5px 0 0",
         borderBottom: `0.5px solid var(--qc-section-rule, ${palette.borderSoft})`,
         textTransform: "uppercase",
+    },
+    // Breathing room between a section's heading block and the items it heads.
+    // On the following line rather than the heading's own padding-bottom: the
+    // band is the heading line's background, so padding there grows the band
+    // and pushes the hue rule away from the caption instead of away from the
+    // items.
+    ".cm-line.cm-section-first": {
+        paddingTop: "8px",
     },
     // The H1 app-mark: accent-gradient rounded square with a white hash,
     // standing in for the hidden `# ` mark.

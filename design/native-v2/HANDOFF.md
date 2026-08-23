@@ -115,7 +115,11 @@ section borrows one. Mockups and the generator that produced them live in
 - **Editor content + file paths: monospace** — `ui-monospace` (SF Mono) 13px,
   line-height ~1.6 in the editor; 12px for paths in settings/status bar.
 - Scale: page H1 (editor "Inbox") 22px semibold sans, tracking -0.3;
-  section captions 11px semibold UPPERCASE tracked +0.8 in `text2`;
+  section captions UPPERCASE tracked +0.8 — **mono 13px semibold**, not the
+  11px sans this spec originally called for: the caret and the mouse I-beam
+  are sized from the line box, so a smaller face on the heading resized both
+  as they crossed it. They read as captions through weight, tracking,
+  uppercasing and hue instead;
   body UI 13px; status bar 11px; capture input 16px regular;
   tag field 13px mono-ish is NOT used — tag field is 13px sans.
 
