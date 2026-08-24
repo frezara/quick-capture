@@ -1097,6 +1097,13 @@ final class MainPanel: NSPanel {
     fileprivate func archive() {
         do {
             try FileWriter.archiveCompleted(at: loadedFileURL)
+        } catch FileWriter.ArchiveError.contentDrifted {
+            // Archive failures stay NSLog-only by convention, but a drift skip
+            // means the user hit the action cluster's archive button and the
+            // file simply didn't change — silence there reads as broken. A toast
+            // says so without the interruption of an alert.
+            NSLog("Editor archive skipped: \(loadedFileURL.path) changed mid-archive")
+            editorToast("The file changed while archiving — try again")
         } catch {
             NSLog("Editor archive failed for \(loadedFileURL.path): \(error)")
         }

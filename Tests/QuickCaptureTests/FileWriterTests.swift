@@ -783,6 +783,43 @@ final class FileWriterTests: XCTestCase {
                        "an indented checked item flattens to top level but keeps its token")
     }
 
+    /// The guard behind the archive path's final write. `archiveCompleted`
+    /// computes what remains from a read taken before it writes the archive
+    /// file, and the capture file is shared with the watcher and any external
+    /// editor — so the source is re-checked immediately before being
+    /// overwritten. Tested directly: the drift it defends against is a race, and
+    /// driving one through the full archive path could only be timing-dependent.
+    func testWriteIfStillMatchingRefusesWhenTheFileChanged() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let onDisk = "# Inbox\n\n- [ ] typed in Obsidian while archiving"
+        try onDisk.write(to: url, atomically: true, encoding: .utf8)
+
+        let stale = Data("# Inbox\n".utf8)
+        XCTAssertThrowsError(
+            try FileWriter.write(stale, to: url, ifStillMatching: "# Inbox\n\n- [x] done")
+        ) { error in
+            guard case FileWriter.ArchiveError.contentDrifted = error else {
+                return XCTFail("expected contentDrifted, got \(error)")
+            }
+        }
+
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), onDisk,
+                       "the concurrent edit survives — a stale read must never overwrite it")
+    }
+
+    func testWriteIfStillMatchingWritesWhenTheFileIsUnchanged() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let onDisk = "# Inbox\n\n- [x] done"
+        try onDisk.write(to: url, atomically: true, encoding: .utf8)
+
+        try FileWriter.write(Data("# Inbox\n".utf8), to: url, ifStillMatching: onDisk)
+
+        XCTAssertEqual(try String(contentsOf: url, encoding: .utf8), "# Inbox\n",
+                       "an unchanged file is written normally — the guard only blocks drift")
+    }
+
     // MARK: - Helpers
 
     private func makeTempFile() -> URL {
