@@ -221,10 +221,17 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   reloads the editor — same pattern as archive. The source file is written
   **last** so any failure leaves it byte-for-byte intact (the item never
   vanishes); a byte-for-byte verify of the editor's subtree against disk guards
-  against the file drifting between flush and move. Targets are configured in
-  Settings (folders, optional labels, reorderable); Swift **pushes** the
-  effective list into the editor (it can't read settings) on entry and on
-  change. `⌥⌘U` is window-intercepted and drives `qcEditor.invoke("refile")`
+  against the file drifting between flush and move, and `RefileService` refuses
+  outright (`targetIsSource`) if the target's `inbox.md` resolves to the capture
+  file — that pipeline would append the subtree and then overwrite it away.
+  Targets are configured in Settings (folders, optional labels, reorderable);
+  Swift **pushes** the effective list into the editor (it can't read settings)
+  on entry and on change, as `{ id, name }` pairs. `target` in the message is
+  that **id (the target's path), never a list position** — the effective list is
+  filtered by on-disk existence, which changes with nothing to trigger a
+  re-push, so an index could silently re-point at a different folder. The R17
+  "not the capture folder" filter compares paths with symlinks resolved for the
+  same reason. `⌥⌘U` is window-intercepted and drives `qcEditor.invoke("refile")`
   over the bridge; the editor keeps an `Alt-Mod-r` keymap entry for the
   browser harness.
 

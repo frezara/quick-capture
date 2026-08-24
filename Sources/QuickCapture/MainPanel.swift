@@ -983,14 +983,28 @@ final class MainPanel: NSPanel {
         )
     }
 
-    /// Push the effective refile targets (display names) into the editor so the
-    /// ⌥⌘U dropdown can render them. The editor refers to a target by its index
-    /// in this list when it posts a `refile` message. Pushed on editor entry and
-    /// whenever Settings change the list.
+    /// One entry of the ⌥⌘U dropdown as the editor sees it: what to show, and
+    /// the opaque `id` it hands back so the choice survives the list changing.
+    private struct RefileTargetDTO: Encodable {
+        let id: String
+        let name: String
+    }
+
+    /// Push the effective refile targets into the editor so the ⌥⌘U dropdown can
+    /// render them. Pushed on editor entry and whenever Settings change the list.
+    ///
+    /// Each entry carries its target's **path as an id**, and the editor posts
+    /// that id back rather than a position. The effective list is filtered by
+    /// on-disk existence, which changes with no notification to fire a re-push —
+    /// so a folder deleted in Finder used to shift every index below it and land
+    /// the item in the wrong inbox. An id can only resolve to the target the
+    /// user actually picked, or to nothing.
     private func pushRefileTargets() {
         guard webViewReady else { return }
-        let names = appState.effectiveRefileTargets.map(\.displayName)
-        guard let json = try? JSONEncoder().encode(names),
+        let targets = appState.effectiveRefileTargets.map {
+            RefileTargetDTO(id: $0.id, name: $0.displayName)
+        }
+        guard let json = try? JSONEncoder().encode(targets),
               let jsonString = String(data: json, encoding: .utf8) else { return }
         webView.evaluateJavaScript(
             "window.qcEditor && window.qcEditor.setRefileTargets(\(jsonString))",
@@ -1023,11 +1037,15 @@ final class MainPanel: NSPanel {
     /// watcher reloads the editor afterwards (same pattern as archive). On
     /// success the editor flashes a toast; on any failure the source is left
     /// intact and an `NSAlert` explains why (the failure contract, R29).
-    fileprivate func refile(targetIndex: Int, fromLine: Int, toLine: Int, subtree: String) {
-        let targets = appState.effectiveRefileTargets
-        guard targets.indices.contains(targetIndex) else { return }
-        let target = targets[targetIndex]
+    fileprivate func refile(targetID: String, fromLine: Int, toLine: Int, subtree: String) {
         do {
+            // Resolved by identity, not position: the effective list is
+            // recomputed here and may have shrunk since the dropdown was
+            // populated. A missing id means the target went away — say so
+            // rather than refiling into whatever now sits at that slot.
+            guard let target = appState.effectiveRefileTargets.first(where: { $0.id == targetID }) else {
+                throw FileWriter.RefileError.targetUnavailable
+            }
             try RefileService.refile(
                 subtree: subtree,
                 range: fromLine..<toLine,
@@ -1360,11 +1378,11 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
             if let path = dict["path"] as? String { panel?.sendAttachment(relativePath: path) }
         case "refile":
             // Move the subtree at [fromLine, toLine) into the chosen target.
-            if let target = dict["target"] as? Int,
+            if let target = dict["target"] as? String,
                let fromLine = dict["fromLine"] as? Int,
                let toLine = dict["toLine"] as? Int,
                let subtree = dict["subtree"] as? String {
-                panel?.refile(targetIndex: target, fromLine: fromLine, toLine: toLine, subtree: subtree)
+                panel?.refile(targetID: target, fromLine: fromLine, toLine: toLine, subtree: subtree)
             }
         default:
             break

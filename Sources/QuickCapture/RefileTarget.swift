@@ -27,13 +27,19 @@ struct RefileTarget: Codable, Equatable, Identifiable {
     /// The list actually offered in the editor dropdown: drop the capture
     /// file's own folder (you can't refile into the file you're editing, R17)
     /// and any folder that no longer exists on disk (R18). Order is preserved.
+    ///
+    /// Both sides are compared with symlinks resolved. `standardizedFileURL`
+    /// alone leaves `/tmp/notes` and `/private/tmp/notes` looking like different
+    /// folders, which would let the capture folder past the R17 filter — and
+    /// that filter is load-bearing: refiling into the capture file itself makes
+    /// `RefileService` append the subtree and then overwrite it away.
     static func effective(_ targets: [RefileTarget], captureFolder: URL, fileManager: FileManager = .default) -> [RefileTarget] {
-        let capturePath = captureFolder.standardizedFileURL.path
+        let capturePath = captureFolder.resolvingSymlinksInPath().standardizedFileURL.path
         return targets.filter { target in
             let url = target.folderURL.standardizedFileURL
             var isDir: ObjCBool = false
             guard fileManager.fileExists(atPath: url.path, isDirectory: &isDir), isDir.boolValue else { return false }
-            return url.path != capturePath
+            return url.resolvingSymlinksInPath().path != capturePath
         }
     }
 }

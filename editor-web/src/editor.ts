@@ -1258,7 +1258,7 @@ declare global {
             setVimEnabled: (on: boolean) => void;
             flushSave: () => void;
             attachmentLoaded: (path: string, dataURL: string | null) => void;
-            setRefileTargets: (names: string[]) => void;
+            setRefileTargets: (targets: RefileTargetEntry[]) => void;
             setTagHues: (hues: Record<string, TagHuePair>) => void;
             attachToItem: (lines: string[]) => void;
             canAttachToItem: () => boolean;
@@ -1279,7 +1279,12 @@ let suppressNextSave = false;
 
 // Refile targets pushed from Swift (display names, dropdown order). The editor
 // can't read settings, so it relies on this being kept current (R35).
-let refileTargets: string[] = [];
+/// One ⌥⌘U destination as Swift pushes it: `name` to show, `id` to hand back.
+/// The id (the target's path) is what the refile message carries — an index
+/// would silently re-point if the effective list changed under the open editor.
+interface RefileTargetEntry { id: string; name: string }
+
+let refileTargets: RefileTargetEntry[] = [];
 let refileOpen = false;
 // 0-based line where the just-refiled subtree started. After Swift removes it
 // and the file watcher reloads us, `mount()` lands the cursor on the item now
@@ -1955,10 +1960,10 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
     menu.className = "cm-refile-dropdown";
 
     let selected = 0;
-    const items = refileTargets.map((name, i) => {
+    const items = refileTargets.map((entry, i) => {
         const el = document.createElement("div");
         el.className = "cm-refile-item";
-        el.textContent = name;
+        el.textContent = entry.name;
         el.addEventListener("mousedown", (e) => { e.preventDefault(); selected = i; commit(); });
         menu.appendChild(el);
         return el;
@@ -2003,8 +2008,9 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
     };
 
     const commit = () => {
-        const target = selected;
+        const target = refileTargets[selected]?.id;
         close();
+        if (target === undefined) return;
         // Flush the current content to disk (no "Saved" badge — the refile toast
         // is the feedback) so the file matches the snapshot whose range we send.
         if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
@@ -2310,7 +2316,11 @@ window.qcEditor = {
         view?.requestMeasure();
     },
     // Swift pushes the effective refile-target display names (dropdown order).
-    setRefileTargets: (names: string[]) => { refileTargets = Array.isArray(names) ? names : []; },
+    setRefileTargets: (targets: RefileTargetEntry[]) => {
+        refileTargets = Array.isArray(targets)
+            ? targets.filter((t) => t && typeof t.id === "string" && typeof t.name === "string")
+            : [];
+    },
     // Same shape as setRefileTargets: Swift is the source of truth and pushes
     // on editor boot and whenever a new section takes a hue. The rebuild is the
     // theme-swap trick — section hues are baked into line attributes, so the

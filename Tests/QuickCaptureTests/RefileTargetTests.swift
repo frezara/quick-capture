@@ -38,6 +38,24 @@ final class RefileTargetTests: XCTestCase {
                        "the capture file's own folder is never offered as a target (R17)")
     }
 
+    /// R17 compares the capture folder against each target, and that comparison
+    /// has to survive the same folder having two names. A symlinked spelling
+    /// used to pass the filter — and past it, the refile pipeline appends the
+    /// subtree to the capture file and then overwrites it away.
+    func testEffectiveExcludesCaptureFolderReachedThroughASymlink() throws {
+        let root = try makeTempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let real = root.appendingPathComponent("notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("notes-link", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+
+        let effective = RefileTarget.effective([RefileTarget(path: link.path, label: nil)],
+                                               captureFolder: real)
+
+        XCTAssertTrue(effective.isEmpty,
+                      "the capture folder under a symlinked name is still the capture folder (R17)")
+    }
+
     func testEffectiveFiltersFoldersThatNoLongerExist() throws {
         let present = try makeTempDir(); defer { try? FileManager.default.removeItem(at: present) }
         let capture = try makeTempDir(); defer { try? FileManager.default.removeItem(at: capture) }

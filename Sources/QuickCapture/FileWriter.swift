@@ -341,10 +341,22 @@ enum FileWriter {
         /// subtree text — the file changed underneath us, so refusing to move
         /// the wrong item.
         case contentDrifted
+        /// The target's `inbox.md` resolves to the capture file itself. The
+        /// pipeline would append the subtree and then overwrite it away with the
+        /// source write, destroying the item; refuse before touching anything.
+        case targetIsSource
+        /// The chosen target is no longer in the effective list — its folder was
+        /// removed or renamed after the editor's dropdown was populated.
+        case targetUnavailable
+
         var errorDescription: String? {
             switch self {
             case .contentDrifted:
                 return "The file changed since you pressed ⌥⌘U. Refile again."
+            case .targetIsSource:
+                return "That target is the file you're editing. Pick a different folder."
+            case .targetUnavailable:
+                return "That refile target is no longer available. Check it still exists in Settings (⌘,)."
             }
         }
     }

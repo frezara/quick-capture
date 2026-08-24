@@ -168,6 +168,63 @@ final class RefileServiceTests: XCTestCase {
 
     // MARK: - Helpers
 
+    /// The dropdown filters the capture file's own folder out (R17), but that
+    /// filter compares paths and a symlinked folder can slip past it. If one
+    /// ever does, the pipeline must refuse: step 4 appends the subtree to the
+    /// target and step 5 overwrites the same file with the source-minus-subtree,
+    /// which would delete the item outright — the one outcome the whole
+    /// write-source-last ordering exists to prevent.
+    func testRefilingIntoTheSourceFileItselfRefusesAndLeavesItIntact() throws {
+        let source = try makeTempDir(); defer { try? FileManager.default.removeItem(at: source) }
+        let sourceInbox = source.appendingPathComponent("inbox.md")
+        let original = """
+        # Inbox
+
+        ## Quick capture
+        - [ ] keep this
+        - [ ] move me
+        """
+        try original.write(to: sourceInbox, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try RefileService.refile(subtree: "- [ ] move me", range: 4..<5,
+                                     from: sourceInbox, toFolder: source)
+        ) { error in
+            guard case FileWriter.RefileError.targetIsSource = error else {
+                return XCTFail("expected targetIsSource, got \(error)")
+            }
+        }
+
+        XCTAssertEqual(try String(contentsOf: sourceInbox, encoding: .utf8), original,
+                       "the source must be byte-for-byte intact — the item never vanishes")
+    }
+
+    /// Same refusal when the target reaches the source folder through a
+    /// symlink. This is the case the path-comparison filter in
+    /// `RefileTarget.effective` used to miss, so the service must catch it.
+    func testRefilingIntoTheSourceFolderViaSymlinkAlsoRefuses() throws {
+        let root = try makeTempDir(); defer { try? FileManager.default.removeItem(at: root) }
+        let real = root.appendingPathComponent("notes", isDirectory: true)
+        try FileManager.default.createDirectory(at: real, withIntermediateDirectories: true)
+        let link = root.appendingPathComponent("notes-link", isDirectory: true)
+        try FileManager.default.createSymbolicLink(at: link, withDestinationURL: real)
+
+        let sourceInbox = real.appendingPathComponent("inbox.md")
+        let original = "# Inbox\n\n## Quick capture\n- [ ] move me"
+        try original.write(to: sourceInbox, atomically: true, encoding: .utf8)
+
+        XCTAssertThrowsError(
+            try RefileService.refile(subtree: "- [ ] move me", range: 3..<4,
+                                     from: sourceInbox, toFolder: link)
+        ) { error in
+            guard case FileWriter.RefileError.targetIsSource = error else {
+                return XCTFail("expected targetIsSource, got \(error)")
+            }
+        }
+        XCTAssertEqual(try String(contentsOf: sourceInbox, encoding: .utf8), original,
+                       "a symlinked route to the source folder is refused too")
+    }
+
     private func makeTempDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("quickcapture-refile-service-\(UUID().uuidString)", isDirectory: true)
