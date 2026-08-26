@@ -248,6 +248,18 @@ enum FileWriter {
 
     // MARK: - Archive
 
+    enum ArchiveError: LocalizedError {
+        /// The source changed between the read that computed the split and the
+        /// write that would apply it — writing now would discard those edits.
+        case contentDrifted
+        var errorDescription: String? {
+            switch self {
+            case .contentDrifted:
+                return "The file changed while archiving. Try again."
+            }
+        }
+    }
+
     /// Moves every `- [x]` line from `sourceURL` into a sibling `_archive`
     /// file, inserting each item under the same `## section` heading it had
     /// in the source. The archive file mirrors the source's `# Inbox` + H2
@@ -270,7 +282,30 @@ enum FileWriter {
             throw WriteError.encodingFailed
         }
         try archiveData.write(to: archiveURL, options: .atomic)
-        try remainingData.write(to: sourceURL, options: .atomic)
+
+        // `remaining` was computed from a read taken before the archive write
+        // above, and that write is a real window — the capture file is shared
+        // with the file watcher and whatever else has it open (Obsidian).
+        //
+        // A throw here leaves the archive holding items the source still has —
+        // the next archive re-adds them, so the cost is a duplicate rather than
+        // a loss. That trade is deliberate: this ordering never loses an edit.
+        try write(remainingData, to: sourceURL, ifStillMatching: sourceText)
+    }
+
+    /// Overwrite `url` with `data`, but only if the file still reads back as
+    /// `expected` — otherwise throw `ArchiveError.contentDrifted` and leave it
+    /// alone. Refile guards the identical hazard with `verifyAndRemove`; this is
+    /// the same idea against the whole file, applied immediately before the only
+    /// write in the archive path that can destroy something.
+    ///
+    /// Split out from `archiveCompleted` so the guard is testable directly: the
+    /// drift it defends against is a race, and reproducing one through the full
+    /// archive path could only ever be timing-dependent.
+    static func write(_ data: Data, to url: URL, ifStillMatching expected: String) throws {
+        let current = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        guard current == expected else { throw ArchiveError.contentDrifted }
+        try data.write(to: url, options: .atomic)
     }
 
     struct ArchivedItem: Equatable {
@@ -341,10 +376,22 @@ enum FileWriter {
         /// subtree text — the file changed underneath us, so refusing to move
         /// the wrong item.
         case contentDrifted
+        /// The target's `inbox.md` resolves to the capture file itself. The
+        /// pipeline would append the subtree and then overwrite it away with the
+        /// source write, destroying the item; refuse before touching anything.
+        case targetIsSource
+        /// The chosen target is no longer in the effective list — its folder was
+        /// removed or renamed after the editor's dropdown was populated.
+        case targetUnavailable
+
         var errorDescription: String? {
             switch self {
             case .contentDrifted:
                 return "The file changed since you pressed ⌥⌘U. Refile again."
+            case .targetIsSource:
+                return "That target is the file you're editing. Pick a different folder."
+            case .targetUnavailable:
+                return "That refile target is no longer available. Check it still exists in Settings (⌘,)."
             }
         }
     }

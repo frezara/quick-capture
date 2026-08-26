@@ -25,6 +25,16 @@ enum RefileService {
 
         let targetInbox = targetFolder.appendingPathComponent("inbox.md")
 
+        // Last line of defence for R17. The dropdown already filters the capture
+        // file's own folder out, but that filter compares paths — so a target
+        // reaching the same file by another route (a symlinked folder, a
+        // hand-edited defaults entry) would get here. Steps 4 and 5 both write:
+        // the subtree would be appended and then overwritten away, deleting the
+        // item outright. Refuse while the source is still untouched.
+        let sameFile = targetInbox.resolvingSymlinksInPath().standardizedFileURL.path
+            == sourceURL.resolvingSymlinksInPath().standardizedFileURL.path
+        guard !sameFile else { throw FileWriter.RefileError.targetIsSource }
+
         // 2. Copy attachments into the target first (record only true renames).
         //    Copy-first means a copy failure aborts with the source intact.
         let paths = FileWriter.attachmentPaths(in: subtree)
