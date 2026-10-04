@@ -42,7 +42,10 @@ jobs:
         working-directory: editor-web
         run: |
           npm ci
+          npm run typecheck
+          npm test
           npm run build
+          git diff --exit-code -- dist/editor.js
 
       - name: Generate Xcode project
         run: xcodegen generate

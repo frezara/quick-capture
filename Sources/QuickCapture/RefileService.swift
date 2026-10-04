@@ -17,7 +17,7 @@ enum RefileService {
     /// from the copy/write — in every throwing case the source is untouched.
     static func refile(subtree: String, range: Range<Int>, from sourceURL: URL, toFolder targetFolder: URL) throws {
         let fm = FileManager.default
-        let sourceContent = (try? String(contentsOf: sourceURL, encoding: .utf8)) ?? ""
+        let sourceContent = try FileWriter.read(sourceURL)
 
         // 1. Verify the range still matches the editor's snapshot and compute
         //    the source-without-subtree. Throws before anything touches disk.
@@ -55,13 +55,17 @@ enum RefileService {
         // 4. Write the target inbox (atomic): scaffold # Inbox if new, append
         //    the subtree at end-of-file.
         try fm.createDirectory(at: targetFolder, withIntermediateDirectories: true)
-        let targetContent = (try? String(contentsOf: targetInbox, encoding: .utf8)) ?? ""
+        let targetContent = try FileWriter.read(targetInbox, allowingMissing: true)
         let newTarget = FileWriter.appendUnderInbox(subtree: moved, to: targetContent)
         try newTarget.write(to: targetInbox, atomically: true, encoding: .utf8)
 
         // 5. Only now write the source without the subtree. Up to here the
         //    source on disk is byte-for-byte its original self.
-        try newSource.write(to: sourceURL, atomically: true, encoding: .utf8)
+        do {
+            try FileWriter.write(Data(newSource.utf8), to: sourceURL, ifStillMatching: sourceContent)
+        } catch FileWriter.ArchiveError.contentDrifted {
+            throw FileWriter.RefileError.contentDrifted
+        }
 
         // 6. Only now delete the moved originals — keeping any the post-removal
         //    source still references (shared-path safety).

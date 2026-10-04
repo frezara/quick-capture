@@ -40,6 +40,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         setupHotKey()
     }
 
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard let panel = mainPanel else { return .terminateNow }
+        DispatchQueue.main.async {
+            panel.flushEditorSave { saved in sender.reply(toApplicationShouldTerminate: saved) }
+        }
+        return .terminateLater
+    }
+
     // MARK: - Main menu
     //
     // LSUIElement apps don't get a standard application menu by default, so
@@ -249,7 +257,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func toggleCapture() {
         if mainPanel?.isVisible == true {
-            hideCapture()
+            mainPanel?.dismiss()
         } else {
             showCapture()
         }

@@ -820,6 +820,46 @@ final class FileWriterTests: XCTestCase {
                        "an unchanged file is written normally — the guard only blocks drift")
     }
 
+    func testMissingFileIsEmptyOnlyWhenExplicitlyAllowed() throws {
+        let url = makeTempFile()
+        XCTAssertEqual(try FileWriter.read(url, allowingMissing: true), "")
+        XCTAssertThrowsError(try FileWriter.read(url))
+    }
+
+    func testInvalidUTF8IsNeverTreatedAsEmptyOrOverwritten() throws {
+        let url = makeTempFile()
+        defer { try? FileManager.default.removeItem(at: url) }
+        let original = Data([0xff, 0xfe, 0xff])
+        try original.write(to: url)
+        XCTAssertThrowsError(try FileWriter.read(url, allowingMissing: true))
+        XCTAssertThrowsError(try FileWriter.appendTodo("new item", to: url))
+        XCTAssertThrowsError(try FileWriter.write(Data("replacement".utf8), to: url, ifStillMatching: ""))
+        XCTAssertEqual(try Data(contentsOf: url), original)
+    }
+
+    func testUnreadableArchiveDoesNotRemoveCompletedItems() throws {
+        let source = makeTempFile()
+        let archive = FileWriter.archiveURL(for: source)
+        defer {
+            try? FileManager.default.removeItem(at: source)
+            try? FileManager.default.removeItem(at: archive)
+        }
+        let original = "# Inbox\n\n## Quick capture\n- [x] done"
+        try original.write(to: source, atomically: true, encoding: .utf8)
+        let invalid = Data([0xff])
+        try invalid.write(to: archive)
+        XCTAssertThrowsError(try FileWriter.archiveCompleted(at: source))
+        XCTAssertEqual(try FileWriter.read(source), original)
+        XCTAssertEqual(try Data(contentsOf: archive), invalid)
+    }
+
+    func testDirectoryReadFailureIsNotAnEmptyInbox() throws {
+        let url = makeTempFile()
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: url) }
+        XCTAssertThrowsError(try FileWriter.read(url, allowingMissing: true))
+    }
+
     // MARK: - Helpers
 
     private func makeTempFile() -> URL {

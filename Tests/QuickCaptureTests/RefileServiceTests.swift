@@ -225,6 +225,23 @@ final class RefileServiceTests: XCTestCase {
                        "a symlinked route to the source folder is refused too")
     }
 
+    func testInvalidTargetContentPreservesBothFiles() throws {
+        let root = try makeTempDir()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let source = root.appendingPathComponent("source.md")
+        let target = root.appendingPathComponent("target")
+        try FileManager.default.createDirectory(at: target, withIntermediateDirectories: true)
+        let inbox = target.appendingPathComponent("inbox.md")
+        let original = "# Inbox\n- [ ] move me"
+        let invalid = Data([0xff])
+        try original.write(to: source, atomically: true, encoding: .utf8)
+        try invalid.write(to: inbox)
+        XCTAssertThrowsError(try RefileService.refile(subtree: "- [ ] move me", range: 1..<2,
+                                                     from: source, toFolder: target))
+        XCTAssertEqual(try FileWriter.read(source), original)
+        XCTAssertEqual(try Data(contentsOf: inbox), invalid)
+    }
+
     private func makeTempDir() throws -> URL {
         let dir = FileManager.default.temporaryDirectory
             .appendingPathComponent("quickcapture-refile-service-\(UUID().uuidString)", isDirectory: true)

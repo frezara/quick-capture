@@ -5,7 +5,9 @@
   "description": "CodeMirror-based markdown editor embedded in Quick Capture via WKWebView.",
   "scripts": {
     "build": "esbuild src/editor.ts --bundle --outfile=dist/editor.js --format=iife --target=safari16 --minify --log-level=warning",
-    "dev": "esbuild src/editor.ts --bundle --outfile=dist/editor.js --format=iife --target=safari16 --watch --sourcemap"
+    "dev": "esbuild src/editor.ts --bundle --outfile=dist/editor.js --format=iife --target=safari16 --watch --sourcemap",
+    "typecheck": "tsc --noEmit",
+    "test": "node --test tests/*.test.mjs"
   },
   "devDependencies": {
     "esbuild": "^0.21.5",

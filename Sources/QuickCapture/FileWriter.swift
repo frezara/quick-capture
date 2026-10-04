@@ -10,6 +10,18 @@ enum FileWriter {
         }
     }
 
+    /// Only a missing file is an empty inbox. Permissions and decoding errors
+    /// must never turn existing user data into a new document.
+    static func read(_ url: URL, allowingMissing: Bool = false) throws -> String {
+        do { return try String(contentsOf: url, encoding: .utf8) }
+        catch {
+            let nsError = error as NSError
+            if allowingMissing && nsError.domain == NSCocoaErrorDomain
+                && nsError.code == NSFileReadNoSuchFileError { return "" }
+            throw error
+        }
+    }
+
     static let documentHeading = "# Inbox"
     static let untaggedSection = "Quick capture"
 
@@ -104,7 +116,7 @@ enum FileWriter {
             try fm.createDirectory(at: parent, withIntermediateDirectories: true)
         }
 
-        let existing = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let existing = try read(url, allowingMissing: true)
         let withDocHeading = ensureDocumentHeading(in: existing)
         let updated = insert(item: item, childLines: childLines, underHeading: heading, in: withDocHeading)
 
@@ -266,12 +278,12 @@ enum FileWriter {
     /// structure; missing sections are created. Indented checked tasks are
     /// unindented so the archive reads as a flat list of completed items.
     static func archiveCompleted(at sourceURL: URL) throws {
-        let sourceText = (try? String(contentsOf: sourceURL, encoding: .utf8)) ?? ""
+        let sourceText = try read(sourceURL)
         let (remaining, archived) = extractCompletedItems(from: sourceText)
         guard !archived.isEmpty else { return }
 
         let archiveURL = archiveURL(for: sourceURL)
-        let archiveExisting = (try? String(contentsOf: archiveURL, encoding: .utf8)) ?? ""
+        let archiveExisting = try read(archiveURL, allowingMissing: true)
         var archiveText = ensureDocumentHeading(in: archiveExisting)
         for item in archived {
             archiveText = insert(item: item.text, childLines: item.children, underHeading: item.section ?? untaggedSection, in: archiveText)
@@ -303,7 +315,7 @@ enum FileWriter {
     /// drift it defends against is a race, and reproducing one through the full
     /// archive path could only ever be timing-dependent.
     static func write(_ data: Data, to url: URL, ifStillMatching expected: String) throws {
-        let current = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
+        let current = try read(url, allowingMissing: true)
         guard current == expected else { throw ArchiveError.contentDrifted }
         try data.write(to: url, options: .atomic)
     }

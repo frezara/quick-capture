@@ -85,9 +85,10 @@ final class MainPanel: NSPanel {
     /// Last content we wrote to disk or pushed to the editor — lets the watcher
     /// ignore our own writes instead of looping them back as external changes.
     private var lastSyncedContent = ""
+    private var editorFileLoaded = false
+    private var exitPending = false
     private var webViewReady = false
     private var fileWatcher: DispatchSourceFileSystemObject?
-    private var fileDescriptor: CInt = -1
     /// The ⌥⌘O picker is overlaying the editor (#126) rather than growing the
     /// capture window. Distinct from `pickerOpen`, which drives the capture-mode
     /// takeover and its frame animation.
@@ -211,7 +212,7 @@ final class MainPanel: NSPanel {
             // Capture and editor are mutually exclusive (ADR-0004), so a
             // submit always writes straight to disk, the canonical copy.
             onSubmit: { [weak self] text, tag, attachments in self?.onSubmit(text, tag, attachments) ?? false },
-            onClose: { [weak self] in self?.onDismiss() },
+            onClose: { [weak self] in self?.dismiss() },
             onToggleEditor: { [weak self] in self?.toggleEditor() },
             onEscape: { [weak self] in self?.handleEscape() },
             onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
@@ -379,12 +380,20 @@ final class MainPanel: NSPanel {
     /// Switch to capture mode: crossfade the editor out and the capture box in
     /// while the window shrinks back to the centered capture box.
     func closeEditor() {
-        guard editorOpen else { return }
+        guard editorOpen, !exitPending else { return }
+        exitPending = true
+        flushEditorSave { [weak self] saved in
+            guard let self else { return }
+            self.exitPending = false
+            if saved { self.finishClosingEditor() }
+        }
+    }
+
+    private func finishClosingEditor() {
         // The overlay is an editor-mode affordance, so leaving cancels it —
         // mirroring openEditor()'s cancel of the capture-mode picker. The
         // crossfade below owns the alphas, so this only clears state.
         cancelPickerOverEditor()
-        flushEditorSave()   // disk canonical before capture mode can write (ADR-0004)
         editorOpen = false
         isCollapsing = true
         isMovableByWindowBackground = true
@@ -594,9 +603,14 @@ final class MainPanel: NSPanel {
     /// Fully dismiss the panel. Flushes the editor's pending save first so disk
     /// is current, then hands off to the dismiss closure (which hides the panel
     /// and clears any preserved capture text).
-    private func dismiss() {
-        flushEditorSave()
-        onDismiss()
+    func dismiss() {
+        guard !exitPending else { return }
+        exitPending = true
+        flushEditorSave { [weak self] saved in
+            guard let self else { return }
+            self.exitPending = false
+            if saved { self.onDismiss() }
+        }
     }
 
     /// Esc in the editor with vim off (posted from editor.ts via the bridge).
@@ -829,13 +843,25 @@ final class MainPanel: NSPanel {
         })
     }
 
-    /// Flush the editor's debounced autosave so disk is current before leaving
-    /// editor mode (no-op until the editor has loaded). The call is async, but
-    /// the web view is never torn down, so the queued save still lands.
-    private func flushEditorSave() {
-        guard webViewReady else { return }
-        webView.evaluateJavaScript("window.qcEditor && window.qcEditor.flushSave && window.qcEditor.flushSave()",
-                                   completionHandler: nil)
+    /// Await the bridge acknowledgement, not just JavaScript dispatch, before
+    /// another surface can write the capture file.
+    func flushEditorSave(_ completion: @escaping (Bool) -> Void) {
+        guard webViewReady else { completion(true); return }
+        webView.callAsyncJavaScript("return await window.qcEditor.flushSave()",
+                                    arguments: [:], in: nil, in: .page) { [weak self] result in
+            switch result {
+            case .success(let value): completion((value as? Bool) == true)
+            case .failure(let error):
+                self?.reportSaveError(error.localizedDescription)
+                completion(false)
+            }
+        }
+    }
+
+    private func reportSaveError(_ message: String) {
+        guard let data = try? JSONEncoder().encode(message),
+              let json = String(data: data, encoding: .utf8) else { return }
+        webView.evaluateJavaScript("window.qcEditor.saveError(\(json))", completionHandler: nil)
     }
 
     // MARK: - Window overrides
@@ -948,7 +974,18 @@ final class MainPanel: NSPanel {
         pushVimSetting()
         pushEditorKeymap()
         pushRefileTargets()
-        let text = (try? String(contentsOf: loadedFileURL, encoding: .utf8)) ?? ""
+        let text: String
+        do {
+            text = try FileWriter.read(loadedFileURL, allowingMissing: true)
+            editorFileLoaded = true
+        } catch {
+            // Mount a surface for the persistent error, but refuse writes until
+            // this document has actually been read successfully.
+            pushContent("")
+            reportSaveError("Couldn’t open the file: " + error.localizedDescription)
+            startWatching()
+            return
+        }
         // Unconditional: a fresh web view starts with an empty map, so it needs
         // the push even when nothing was newly allocated.
         appState.assignHues(inContent: text)
@@ -1072,25 +1109,40 @@ final class MainPanel: NSPanel {
     /// in Settings). When the file is unchanged this is a no-op.
     private func reconcileEditorFile() {
         let url = appState.captureFileURL
-        guard url != loadedFileURL else { return }
-        loadedFileURL = url
-        guard webViewReady else { return }
-        stopWatching()
-        let text = (try? String(contentsOf: url, encoding: .utf8)) ?? ""
-        pushContent(text)
-        startWatching()
+        guard url != loadedFileURL, webViewReady else { return }
+        flushEditorSave { [weak self] saved in
+            guard let self, saved else { return }
+            do {
+                let text = try FileWriter.read(url, allowingMissing: true)
+                self.stopWatching()
+                self.loadedFileURL = url
+                self.editorFileLoaded = true
+                self.pushContent(text)
+                self.startWatching()
+            } catch { self.reportSaveError("Couldn’t open the file: " + error.localizedDescription) }
+        }
     }
 
-    fileprivate func write(_ content: String) {
+    fileprivate func write(_ content: String, expected: String, id: Int) {
+        var failure: String?
+        var disk: String?
         do {
-            try content.write(to: loadedFileURL, atomically: true, encoding: .utf8)
+            guard editorFileLoaded else {
+                throw CocoaError(.fileReadUnknown)
+            }
+            try FileWriter.write(Data(content.utf8), to: loadedFileURL, ifStillMatching: expected)
             lastSyncedContent = content
-            // A `## section` typed straight into the editor gets its hue here;
-            // the observer pushes the grown map back. Reads the buffer we were
-            // handed, not the disk.
             appState.assignHues(inContent: content)
+        } catch FileWriter.ArchiveError.contentDrifted {
+            failure = "The file changed elsewhere. Your unsaved edits are still here. Choose which version to keep."
+            disk = try? FileWriter.read(loadedFileURL, allowingMissing: true)
         } catch {
-            NSLog("Editor failed to write \(loadedFileURL.path): \(error)")
+            failure = "Couldn’t save. Your edits are still here. " + error.localizedDescription
+        }
+        let reply: [String: Any] = ["id": id, "error": failure as Any? ?? NSNull(), "disk": disk as Any? ?? NSNull()]
+        if let data = try? JSONSerialization.data(withJSONObject: reply),
+           let json = String(data: data, encoding: .utf8) {
+            webView.evaluateJavaScript("{ const r = \(json); window.qcEditor.saveResult(r.id, r.error, r.disk); }", completionHandler: nil)
         }
     }
 
@@ -1174,19 +1226,15 @@ final class MainPanel: NSPanel {
         stopWatching()
         let fd = open(loadedFileURL.path, O_EVTONLY)
         guard fd >= 0 else { return }
-        fileDescriptor = fd
         let source = DispatchSource.makeFileSystemObjectSource(
             fileDescriptor: fd,
             eventMask: [.write, .extend, .delete, .rename],
             queue: .main
         )
         source.setEventHandler { [weak self] in self?.handleWatcherEvent() }
-        source.setCancelHandler { [weak self] in
-            if let fd = self?.fileDescriptor, fd >= 0 {
-                Darwin.close(fd)
-                self?.fileDescriptor = -1
-            }
-        }
+        // Capture this watcher's descriptor; a delayed cancellation must not
+        // close the replacement watcher's descriptor.
+        source.setCancelHandler { Darwin.close(fd) }
         source.resume()
         fileWatcher = source
     }
@@ -1211,9 +1259,14 @@ final class MainPanel: NSPanel {
     }
 
     private func reloadIfChanged() {
-        let current = (try? String(contentsOf: loadedFileURL, encoding: .utf8)) ?? ""
-        if current == lastSyncedContent { return }
-        pushContent(current)
+        do {
+            let current = try FileWriter.read(loadedFileURL)
+            editorFileLoaded = true
+            if current == lastSyncedContent { return }
+            pushContent(current)
+        } catch {
+            reportSaveError("Couldn’t reload the file. Your editor content is unchanged. " + error.localizedDescription)
+        }
     }
 }
 
@@ -1374,7 +1427,9 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
         case "ready":
             panel?.editorDidBecomeReady()
         case "save":
-            if let content = dict["content"] as? String { panel?.write(content) }
+            if let content = dict["content"] as? String,
+               let expected = dict["expected"] as? String,
+               let id = dict["id"] as? Int { panel?.write(content, expected: expected, id: id) }
         case "archive":
             panel?.archive()
         case "dismiss":

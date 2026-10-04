@@ -1,3 +1,4 @@
+import { DocumentSession } from "./document-session";
 import { EditorState, RangeSetBuilder, Compartment, StateEffect } from "@codemirror/state";
 import {
     EditorView, keymap, drawSelection, highlightActiveLine,
@@ -1256,7 +1257,9 @@ declare global {
             focus: () => void;
             setFilename: (name: string) => void;
             setVimEnabled: (on: boolean) => void;
-            flushSave: () => void;
+            flushSave: () => Promise<boolean>;
+            saveResult: (id: number, error: string | null, disk: string | null) => void;
+            saveError: (message: string) => void;
             attachmentLoaded: (path: string, dataURL: string | null) => void;
             setRefileTargets: (targets: RefileTargetEntry[]) => void;
             setTagHues: (hues: Record<string, TagHuePair>) => void;
@@ -1276,6 +1279,68 @@ declare global {
 let view: EditorView | null = null;
 let saveTimer: number | null = null;
 let suppressNextSave = false;
+const documentSession = new DocumentSession(
+    () => view?.state.doc.toString() ?? "",
+    request => sendToSwift(request),
+    (message, disk) => showSaveError(message, disk),
+    () => clearSaveError(),
+);
+
+function clearSaveError() { document.getElementById("qc-save-error")?.remove(); }
+
+function showSaveError(message: string, disk: string | null = null) {
+    if (!view) return;
+    clearSaveError();
+    const banner = document.createElement("div");
+    banner.id = "qc-save-error";
+    banner.setAttribute("role", "alert");
+    banner.style.cssText = "position:absolute;top:8px;left:16px;right:60px;z-index:100;background:Canvas;color:CanvasText;border:1px solid #c65c00;border-radius:8px;padding:12px;font:13px system-ui;box-shadow:0 2px 12px #0003";
+    const label = document.createElement("div");
+    label.textContent = message;
+    banner.appendChild(label);
+    const button = (title: string, action: () => void) => {
+        const el = document.createElement("button");
+        el.textContent = title;
+        el.style.margin = "8px 8px 0 0";
+        el.onclick = async () => {
+            el.disabled = true;
+            if (documentSession.pendingSave) await documentSession.pendingSave.promise;
+            action();
+        };
+        banner.appendChild(el);
+    };
+    if (disk !== null) {
+        button("Keep my edits", () => {
+            // The next write still compares this exact disk snapshot; a newer
+            // external edit causes another conflict instead of being overwritten.
+            documentSession.useDiskBaseline(disk);
+            clearSaveError();
+            void saveDocument();
+        });
+        button("Use disk version", () => {
+            if (saveTimer !== null) window.clearTimeout(saveTimer);
+            saveTimer = null;
+            documentSession.useDiskBaseline(disk);
+            mount(disk);
+            clearSaveError();
+        });
+    } else {
+        button("Retry save", () => { void saveDocument(); });
+    }
+    view.dom.appendChild(banner);
+}
+
+async function saveDocument(): Promise<boolean> {
+    if (saveTimer !== null) window.clearTimeout(saveTimer);
+    saveTimer = null;
+    if (!view) return true;
+    if (!window.webkit?.messageHandlers?.editorBridge) {
+        showSaveError("Saving is only available inside Quick Capture.");
+        return false;
+    }
+    return documentSession.save();
+}
+
 
 // Refile targets pushed from Swift (display names, dropdown order). The editor
 // can't read settings, so it relies on this being kept current (R35).
@@ -1604,7 +1669,7 @@ function ensureSidebar(view: EditorView) {
                 <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/>
                 <line x1="10" y1="13" x2="14" y2="13"/>
             </svg>`,
-        action: () => sendToSwift({ type: "archive" }),
+        action: () => { void saveDocument().then(ok => { if (ok) sendToSwift({ type: "archive" }); }); },
     }));
 
     view.dom.appendChild(sidebar);
@@ -2007,7 +2072,7 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
         v.focus();
     };
 
-    const commit = () => {
+    const commit = async () => {
         const target = refileTargets[selected]?.id;
         close();
         if (target === undefined) return;
@@ -2016,8 +2081,8 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
         if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
         // After the subtree is removed and the watcher reloads us, land on the
         // item now occupying the subtree's start line (the next item) — see mount().
+        if (!await saveDocument()) return;
         pendingRefileCursorLine = span.from;
-        sendToSwift({ type: "save", content: v.state.doc.toString() });
         sendToSwift({ type: "refile", target, fromLine: span.from, toLine: span.to, subtree: span.text });
     };
 
@@ -2125,8 +2190,8 @@ function scheduleSave() {
     }
     if (saveTimer !== null) window.clearTimeout(saveTimer);
     saveTimer = window.setTimeout(() => {
-        if (view) sendToSwift({ type: "save", content: view.state.doc.toString() });
         saveTimer = null;
+        void saveDocument();
     }, 400);
 }
 
@@ -2137,8 +2202,7 @@ function saveNow(v: EditorView) {
         window.clearTimeout(saveTimer);
         saveTimer = null;
     }
-    sendToSwift({ type: "save", content: v.state.doc.toString() });
-    showSavedBadge(v);
+    void saveDocument().then(ok => { if (ok) showSavedBadge(v); });
 }
 
 function showSavedBadge(v: EditorView) {
@@ -2166,13 +2230,13 @@ function showSavedBadge(v: EditorView) {
 
 function mount(content: string) {
     const parent = document.getElementById("editor")!;
-    suppressNextSave = true;
-
     // Reload = fresh disk truth: the cache may be stale (file replaced on disk).
     attachmentCache.clear();
 
     if (view) {
+        suppressNextSave = true;
         view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } });
+        suppressNextSave = false;
         if (pendingRefileCursorLine !== null) {
             placeCursorAfterRefile(view, pendingRefileCursorLine);
             pendingRefileCursorLine = null;
@@ -2278,7 +2342,16 @@ function attachVimModeListener(v: EditorView) {
 }
 
 window.qcEditor = {
-    setContent: (content: string) => mount(content),
+    setContent: (content: string) => {
+        if (view && !documentSession.acceptDisk(content)) return;
+        documentSession.useDiskBaseline(content);
+        mount(content);
+        clearSaveError();
+    },
+    saveError: (message: string) => showSaveError(message),
+    saveResult: (id: number, error: string | null, disk: string | null) => {
+        documentSession.acknowledge(id, error, disk);
+    },
     getContent: () => view?.state.doc.toString() ?? "",
     focus: () => view?.focus(),
     setFilename: (name: string) => {
@@ -2299,10 +2372,7 @@ window.qcEditor = {
     // Flush the debounced autosave immediately. Swift calls this before leaving
     // editor mode so the file on disk is canonical before capture mode can write
     // (ADR-0004 — disk is the single source of truth).
-    flushSave: () => {
-        if (saveTimer !== null) { window.clearTimeout(saveTimer); saveTimer = null; }
-        if (view) sendToSwift({ type: "save", content: view.state.doc.toString() });
-    },
+    flushSave: saveDocument,
     // Swift's reply to an `attachment` bridge request: a data URL, or null
     // when the file is missing (R22 — render the missing state, never hang).
     attachmentLoaded: (path: string, dataURL: string | null) => {
