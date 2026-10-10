@@ -50,8 +50,7 @@ Vim.defineMotion("moveToPrevMarkdownSection", (cm: any, head: any, motionArgs: a
 Vim.mapCommand("]]", "motion", "moveToNextMarkdownSection", {}, {});
 Vim.mapCommand("[[", "motion", "moveToPrevMarkdownSection", {}, {});
 
-// Native-v2 ("Pure System + Color") palettes — mirror DesignSystem.swift
-// (Theme.light / .dark); see design/native-v2/HANDOFF.md. The active one
+// Clear & Charcoal palettes — mirror DesignSystem.swift and design-system-overview.md. The active one
 // follows the system appearance (prefers-color-scheme). Functional colour
 // only: priority orbs and the per-section tag hues.
 // NOTE: priHigh/Med/Low and accent must stay 6-digit hex — alpha is appended
@@ -59,53 +58,49 @@ Vim.mapCommand("[[", "motion", "moveToPrevMarkdownSection", {}, {});
 type Palette = typeof lightPalette;
 
 const lightPalette = {
-    surface: "#F6F6F8",                       // window
-    surfaceField: "rgba(120, 120, 128, 0.10)", // well
-    surfaceRail: "rgba(0, 0, 0, 0.025)",       // bar
-    highlight: "rgba(255, 255, 255, 0.55)",
-    text: "rgba(0, 0, 0, 0.88)",               // text-1
-    // `text` resolved over `surface`. The section caption mixes toward this
-    // rather than toward `soft`, which is what makes it both more colourful
-    // and more legible than the grey it replaced (#103).
-    textOpaque: "#1E1E1E",
-    // text-2 — every readable label: status bar, search panel, quotes,
-    // strikethrough. 0.75 rather than 0.62 so it clears 4.5:1 on the surfaces
-    // it lands on; mirrors Theme.inkSecondary (ADR-0006).
-    soft: "rgba(60, 60, 67, 0.75)",
-    muted: "rgba(60, 60, 67, 0.36)",           // text-3 — syntax marks, placeholders
-    accent: "#007AFF",
-    accentInk: "#0066D6",
-    accentSoft: "rgba(0, 122, 255, 0.12)",
+    surface: "#FAFCFB",
+    surfaceField: "#E8EEEB",
+    surfaceRail: "#F0F3F1",
+    highlight: "#FAFCFB",
+    text: "#202D29",
+    textOpaque: "#202D29",
+    soft: "#596B64",
+    muted: "rgba(89, 107, 100, 0.60)",
+    accent: "#1672DF",
+    accentInk: "#165EB8",
+    accentSoft: "rgba(22, 114, 223, 0.07)",
     onAccent: "#FFFFFF",
-    codeBg: "rgba(120, 120, 128, 0.10)",       // recessed wells
-    selection: "rgba(0, 122, 255, 0.20)",      // accent-tint-2
-    borderSoft: "rgba(0, 0, 0, 0.14)",         // hairline
-    borderStrong: "rgba(0, 0, 0, 0.28)",       // unchecked checkbox border
-    priHigh: "#FF3B30",
-    priMed: "#FF9500",
-    priLow: "#34C759",
+    codeBg: "#E8EEEB",
+    selection: "rgba(22, 114, 223, 0.07)",
+    borderSoft: "#D5DEDB",
+    borderStrong: "#D5DEDB",
+    priHigh: "#BA503C",
+    priMed: "#956018",
+    priLow: "#3D6C4B",
+    warningFill: "#FCF2DF",
 };
 
 const darkPalette: Palette = {
-    surface: "#212125",
-    surfaceField: "rgba(120, 120, 128, 0.20)",
-    surfaceRail: "rgba(255, 255, 255, 0.03)",
-    highlight: "rgba(255, 255, 255, 0.10)",
-    text: "rgba(255, 255, 255, 0.92)",
-    textOpaque: "#EDEDEE",
-    soft: "rgba(235, 235, 245, 0.60)",
-    muted: "rgba(235, 235, 245, 0.32)",
-    accent: "#0A84FF",
-    accentInk: "#409CFF",
-    accentSoft: "rgba(10, 132, 255, 0.16)",
-    onAccent: "#FFFFFF",
-    codeBg: "rgba(120, 120, 128, 0.20)",
-    selection: "rgba(10, 132, 255, 0.28)",
-    borderSoft: "rgba(255, 255, 255, 0.13)",
-    borderStrong: "rgba(255, 255, 255, 0.35)",
-    priHigh: "#FF453A",
-    priMed: "#FF9F0A",
-    priLow: "#30D158",
+    surface: "#242C2A",
+    surfaceField: "#303B37",
+    surfaceRail: "#1E2522",
+    highlight: "#242C2A",
+    text: "#F1F4F2",
+    textOpaque: "#F1F4F2",
+    soft: "#B6C5BD",
+    muted: "rgba(182, 197, 189, 0.55)",
+    accent: "#69A8FF",
+    accentInk: "#91BFFF",
+    accentSoft: "rgba(105, 168, 255, 0.09)",
+    onAccent: "#122335",
+    codeBg: "#303B37",
+    selection: "rgba(105, 168, 255, 0.09)",
+    borderSoft: "#46534D",
+    borderStrong: "#46534D",
+    priHigh: "#F09C86",
+    priMed: "#E5B95B",
+    priLow: "#A4D2B0",
+    warningFill: "#373025",
 };
 
 // Section hues for `##` headings (#102). The editor no longer derives these:
@@ -208,9 +203,9 @@ function makeHighlight() {
     { tag: tags.quote, color: palette.soft, fontStyle: "italic" },
 
     // Markdown syntax characters (#, *, `, etc.) — muted so they recede.
-    { tag: tags.processingInstruction, color: palette.muted },
-    { tag: tags.meta, color: palette.muted },
-    { tag: tags.contentSeparator, color: palette.muted },
+    { tag: tags.processingInstruction, color: palette.soft },
+    { tag: tags.meta, color: palette.soft },
+    { tag: tags.contentSeparator, color: palette.soft },
     ]);
 }
 
@@ -608,7 +603,7 @@ function buildLivePreview(view: EditorView): DecorationSet {
                         from: line.from, to: line.from,
                         deco: Decoration.line({
                             class: `cm-priority-dot cm-priority-dot-${level}`,
-                            attributes: { "data-priority-label": priorityLabel },
+                            attributes: { "data-priority-label": priorityLabel, "data-priority-short": level === 3 ? "High" : level === 2 ? "Medium" : "Low" },
                         }),
                     });
                     if (!onLine) {
@@ -654,17 +649,44 @@ function makeTheme() {
         backgroundColor: palette.surface,
         color: palette.text,
         height: "100%",
+        paddingTop: "50px",
+        paddingBottom: "33px",
+        boxSizing: "border-box",
     },
+    ".qc-workspace-header": { position: "absolute", top: "0", left: "0", right: "0", height: "50px", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: palette.surfaceRail, borderBottom: `1px solid ${palette.borderSoft}`, fontFamily: sansFamily, fontSize: "12px" },
+    ".qc-workspace-header button, .qc-navigation button, .qc-inspector button": { fontFamily: sansFamily, fontSize: "12px", color: palette.soft, background: "transparent", border: "none", borderRadius: "6px", padding: "6px 10px", cursor: "pointer", textAlign: "left" },
+    ".qc-workspace-header button:hover, .qc-navigation button:hover, .qc-inspector button:hover": { background: palette.surfaceField },
+    ".qc-workspace-header button:focus-visible, .qc-navigation button:focus-visible, .qc-inspector button:focus-visible": { outline: `2px solid ${palette.accent}`, outlineOffset: "2px" },
+    ".qc-navigation": { position: "absolute", top: "50px", bottom: "33px", left: "0", width: "170px", boxSizing: "border-box", background: palette.surfaceRail, borderRight: `1px solid ${palette.borderSoft}`, padding: "22px 10px", display: "flex", flexDirection: "column", fontFamily: sansFamily },
+    ".qc-navigation h2, .qc-inspector h2": { fontSize: "11px", fontWeight: "600", color: palette.soft, margin: "0 0 10px" },
+    ".qc-navigation h2": { padding: "0 10px" },
+    ".qc-sections": { overflowY: "auto", flex: "1" },
+    ".qc-navigation button": { display: "flex", alignItems: "center", gap: "10px", width: "100%", marginBottom: "6px" },
+    ".qc-navigation button.active": { background: palette.accentSoft, color: palette.accentInk },
+    ".qc-section-dot": { width: "6px", height: "6px", borderRadius: "50%", flexShrink: "0" },
+    ".qc-section-name": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    ".qc-section-count": { marginLeft: "auto", fontSize: "11px", color: palette.soft },
+    ".qc-inspector": { position: "absolute", top: "50px", right: "0", bottom: "33px", width: "215px", padding: "22px 16px", boxSizing: "border-box", background: palette.surfaceRail, borderLeft: `1px solid ${palette.borderSoft}`, overflowY: "auto", fontFamily: sansFamily },
+    ".qc-inspector h3": { fontSize: "16px", fontWeight: "600", lineHeight: "1.4", margin: "16px 0", overflowWrap: "anywhere" },
+    ".qc-property": { display: "flex", justifyContent: "space-between", gap: "10px", padding: "10px 0", borderTop: `1px solid ${palette.borderSoft}`, fontSize: "12px", overflowWrap: "anywhere" },
+    ".qc-property span:first-child": { color: palette.soft },
+    ".qc-inspector button": { display: "block", width: "100%", border: `1px solid ${palette.borderSoft}`, marginTop: "16px", background: palette.surface },
+    ".qc-inspector button:disabled": { opacity: "0.5", cursor: "default" },
+    ".qc-save-error": { position: "absolute", top: "56px", left: "180px", right: "22px", zIndex: "100", background: palette.warningFill, color: palette.text, border: `1px solid ${palette.priMed}`, borderRadius: "8px", padding: "16px", font: `13px ${sansFamily}` },
+    "@media(max-width: 850px)": { ".qc-inspector": { display: "none" }, ".cm-scroller": { marginRight: "0", width: "calc(100% - 170px)" } },
     ".cm-content": {
         fontFamily: 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace',
         fontSize: "13px",
         lineHeight: "1.6",
         // Full-width content (no left rail, no centered column) per the mockup;
         // generous side padding, extra bottom clearance for the status bar + fab.
-        padding: "36px 44px 110px",
+        padding: "22px 22px 66px",
         caretColor: palette.text,
     },
     ".cm-scroller": {
+        marginLeft: "170px",
+        marginRight: "215px",
+        width: "calc(100% - 385px)",
         overflow: "auto",
         fontFamily: 'inherit',
     },
@@ -740,7 +762,7 @@ function makeTheme() {
     // Empty-state overlay — shown when the document has zero todo lines.
     ".cm-empty-state": {
         position: "absolute",
-        inset: "0",
+        inset: "50px 215px 33px 170px",
         bottom: "33px",   // clear the status bar
         display: "flex",
         flexDirection: "column",
@@ -749,7 +771,7 @@ function makeTheme() {
         gap: "6px",
         pointerEvents: "none",
         userSelect: "none",
-        color: palette.muted,
+        color: palette.soft,
         fontFamily: sansFamily,
         fontSize: "12px",
         lineHeight: "1.6",
@@ -932,28 +954,10 @@ function makeTheme() {
     ".cm-searchMatch.cm-searchMatch-selected": {
         backgroundColor: `${palette.accent}66`,
     },
-    // Floating action cluster, bottom-right (replaces the old left rail). A
-    // small surface card holding the reorg + archive buttons; clears the
-    // status bar.
-    ".cm-sidebar": {
-        position: "absolute",
-        right: "18px",
-        bottom: "52px",
-        top: "auto",
-        left: "auto",
-        transform: "none",
-        display: "flex",
-        flexDirection: "column",
-        gap: "5px",
-        padding: "5px",
-        borderRadius: "10px",
-        backgroundColor: palette.surface,
-        border: `0.5px solid ${palette.borderSoft}`,
-        boxShadow: "0 12px 28px -16px rgba(0, 0, 0, 0.45)",
-        zIndex: "9",
-    },
+    // Persistent actions sit below section navigation.
+    ".cm-sidebar": { display: "flex", flexDirection: "column", gap: "6px", marginTop: "16px" },
     ".cm-sidebar-btn": {
-        width: "34px",
+        width: "100%",
         height: "34px",
         display: "flex",
         alignItems: "center",
@@ -1051,7 +1055,7 @@ function makeTheme() {
         borderRadius: "6px",
         backgroundColor: palette.surfaceField,
         border: `0.5px solid ${palette.borderSoft}`,
-        color: palette.muted,
+        color: palette.soft,
         fontSize: "12px",
         lineHeight: "1.5",
         verticalAlign: "1px",
@@ -1079,42 +1083,18 @@ function makeTheme() {
     // off the line), so editing the raw markdown reads normally.
     ".cm-done-label": {
         textDecoration: "line-through",
-        textDecorationColor: palette.muted,
-        color: palette.muted,
+        textDecorationColor: palette.soft,
+        color: palette.soft,
     },
     // Priority dot — a single colored circle at the far-right of the line,
     // drawn via a ::after pseudo-element so it doesn't disturb text layout.
     // Aligned to the first visual line so wrapped tasks still show the dot
     // at the top right.
-    ".cm-line.cm-priority-dot": {
-        position: "relative",
-        paddingRight: "28px",   // clear the 9px orb + 3px halo + 8px right offset
-    },
-    ".cm-line.cm-priority-dot::after": {
-        content: '""',
-        position: "absolute",
-        right: "8px",
-        top: "0.6em",
-        width: "9px",
-        height: "9px",
-        borderRadius: "50%",
-        pointerEvents: "none",
-    },
-    // Colour-coded priority orbs, each with a soft same-colour halo
-    // (`!!!` = high, `!!` = med, `!` = low). The only warm colour in the editor.
-    // `38` ≈ 22% alpha as an 8-digit hex, so the halo tracks the active palette.
-    ".cm-line.cm-priority-dot-3::after": {
-        backgroundColor: palette.priHigh,
-        boxShadow: `0 0 0 3px ${palette.priHigh}38`,
-    },
-    ".cm-line.cm-priority-dot-2::after": {
-        backgroundColor: palette.priMed,
-        boxShadow: `0 0 0 3px ${palette.priMed}38`,
-    },
-    ".cm-line.cm-priority-dot-1::after": {
-        backgroundColor: palette.priLow,
-        boxShadow: `0 0 0 3px ${palette.priLow}38`,
-    },
+    ".cm-line.cm-priority-dot": { position: "relative", paddingRight: "66px" },
+    ".cm-line.cm-priority-dot::after": { content: "attr(data-priority-short)", position: "absolute", right: "6px", top: "3px", fontFamily: sansFamily, fontSize: "11px", fontWeight: "500", pointerEvents: "none" },
+    ".cm-line.cm-priority-dot-3::after": { color: palette.priHigh },
+    ".cm-line.cm-priority-dot-2::after": { color: palette.priMed },
+    ".cm-line.cm-priority-dot-1::after": { color: palette.priLow },
     // Indent guides — thin vertical lines under each indent level on nested
     // list/task lines. Drawn via ::before + box-shadow so a single pseudo
     // element can render multiple lines (one per level) without extra DOM.
@@ -1197,9 +1177,9 @@ function makeTheme() {
         // line box — i.e. the content width inside .cm-content's padding — so
         // no horizontal margin is needed. (Vertical margins on a line
         // decoration break cursor navigation; see the note above.)
-        background: "var(--qc-section-band, transparent)",
-        borderRadius: "5px 5px 0 0",
-        borderBottom: `0.5px solid var(--qc-section-rule, ${palette.borderSoft})`,
+        background: "transparent",
+        borderRadius: "0",
+        borderBottom: `0.5px solid ${palette.borderSoft}`,
         textTransform: "uppercase",
     },
     // Breathing room between a section's heading block and the items it heads.
@@ -1221,7 +1201,7 @@ function makeTheme() {
         marginRight: "10px",
         borderRadius: "7px",
         background: `linear-gradient(180deg, ${palette.accent}E6, ${palette.accent})`,
-        color: "#FFFFFF",
+        color: palette.onAccent,
         fontFamily: sansFamily,
         fontSize: "15px",
         fontWeight: "700",
@@ -1294,7 +1274,7 @@ function showSaveError(message: string, disk: string | null = null) {
     const banner = document.createElement("div");
     banner.id = "qc-save-error";
     banner.setAttribute("role", "alert");
-    banner.style.cssText = "position:absolute;top:8px;left:16px;right:60px;z-index:100;background:Canvas;color:CanvasText;border:1px solid #c65c00;border-radius:8px;padding:12px;font:13px system-ui;box-shadow:0 2px 12px #0003";
+    banner.className = "qc-save-error";
     const label = document.createElement("div");
     label.textContent = message;
     banner.appendChild(label);
@@ -1637,8 +1617,115 @@ function moveCompletedToBottom(view: EditorView): void {
     });
 }
 
-/// Floating vertical toolbar on the left edge of the editor. Built once and
-/// reused; each button's click handler captures `view`.
+/// Existing document actions, mounted in the workspace navigation.
+// The navigation and inspector read the live document. Navigation moves the
+// cursor without filtering/replacing text, so markdown editing and undo stay intact.
+function ensureWorkspace(v: EditorView) {
+    const makeButton = (label: string, action: () => void) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        button.textContent = label;
+        button.addEventListener("mousedown", e => e.preventDefault());
+        button.onclick = action;
+        return button;
+    };
+    const header = document.createElement("header");
+    header.className = "qc-workspace-header";
+    const title = document.createElement("strong");
+    title.textContent = "Quick Capture";
+    header.append(title, makeButton("Capture  ⌥⌘P", () => sendToSwift({ type: "capture" })));
+    const nav = document.createElement("nav");
+    nav.className = "qc-navigation";
+    nav.setAttribute("aria-label", "Inbox sections");
+    const label = document.createElement("h2");
+    label.textContent = "Your inbox";
+    const sections = document.createElement("div");
+    sections.className = "qc-sections";
+    const actions = document.createElement("div");
+    actions.className = "qc-nav-actions";
+    const toolbar = v.dom.querySelector(".cm-sidebar");
+    if (toolbar) actions.append(toolbar);
+    actions.append(makeButton("Settings  ⌘,", () => sendToSwift({ type: "settings" })));
+    nav.append(label, sections, actions);
+    const inspector = document.createElement("aside");
+    inspector.className = "qc-inspector";
+    inspector.setAttribute("aria-label", "Selected item");
+    const detail = document.createElement("div");
+    detail.className = "qc-item-detail";
+    const refile = makeButton("Refile item  ⌥⌘U", () => startRefile(v));
+    const attach = makeButton("Attach screenshot", () => sendToSwift({ type: "screenshots" }));
+    refile.dataset.itemAction = attach.dataset.itemAction = "true";
+    inspector.append(detail, refile, attach);
+    v.dom.append(header, nav, inspector);
+    updateWorkspace(v);
+}
+
+function updateWorkspace(v: EditorView) {
+    const sections = v.dom.querySelector(".qc-sections") as HTMLElement | null;
+    const detail = v.dom.querySelector(".qc-item-detail") as HTMLElement | null;
+    if (!sections || !detail) return;
+    const doc = v.state.doc;
+    const current = doc.lineAt(v.state.selection.main.head);
+    const active = enclosingSection(v.state, current.number);
+    const entries: { name: string; from: number; count: number }[] = [];
+    let total = 0;
+    for (let n = 1; n <= doc.lines; n++) {
+        const line = doc.line(n);
+        const name = sectionNameOnLine(line.text);
+        if (name) entries.push({ name, from: line.from, count: 0 });
+        if (/^\s*[-*+] \[[ xX]\]/.test(line.text)) {
+            total++;
+            if (entries.length) entries[entries.length - 1].count++;
+        }
+    }
+    const signature = JSON.stringify([entries, total, active, palette.surface, tagHues]);
+    if (sections.dataset.signature !== signature) {
+        sections.dataset.signature = signature;
+        sections.replaceChildren();
+        for (const entry of [{ name: "All sections", from: 0, count: total }, ...entries]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = (entry.from === 0 ? !active : active === entry.name) ? "active" : "";
+            button.setAttribute("aria-current", button.className ? "location" : "false");
+            const dot = document.createElement("span");
+            dot.className = "qc-section-dot";
+            dot.style.background = tagHue(entry.name) ?? palette.soft;
+            const name = document.createElement("span");
+            name.className = "qc-section-name";
+            name.textContent = entry.name;
+            const count = document.createElement("span");
+            count.className = "qc-section-count";
+            count.textContent = String(entry.count);
+            button.append(dot, name, count);
+            button.onclick = () => {
+                v.dispatch({ selection: { anchor: entry.from }, effects: EditorView.scrollIntoView(entry.from, { y: "start" }) });
+                v.focus();
+            };
+            sections.append(button);
+        }
+    }
+    const span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
+    const item = span ? doc.line(span.from + 1).text : "";
+    const priority = /(!{1,3})(?:\s|$)/.exec(item)?.[1].length ?? 0;
+    const itemSignature = JSON.stringify([span?.text, active, readMode]);
+    if (detail.dataset.signature === itemSignature) return;
+    detail.dataset.signature = itemSignature;
+    detail.replaceChildren();
+    const label = document.createElement("h2");
+    label.textContent = "Selected item";
+    const title = document.createElement("h3");
+    title.textContent = span ? item.replace(/^\s*[-*+]\s+(?:\[[ xX]\]\s*)?/, "").replace(/\s*!{1,3}(?=\s|$)/, "") : "Select an item";
+    detail.append(label, title);
+    for (const [name, value] of [["Section", active ?? "Inbox"], ["Priority", ["None", "Low", "Medium", "High"][priority]], ["Attachments", String((span?.text.match(/!\[/g) ?? []).length)]]) {
+        const row = document.createElement("div");
+        row.className = "qc-property";
+        const key = document.createElement("span"); key.textContent = name;
+        const text = document.createElement("span"); text.textContent = value;
+        row.append(key, text); detail.append(row);
+    }
+    v.dom.querySelectorAll<HTMLButtonElement>("[data-item-action]").forEach(button => { button.disabled = !span; });
+}
+
 function ensureSidebar(view: EditorView) {
     if (view.dom.querySelector(".cm-sidebar")) return;
     const sidebar = document.createElement("div");
@@ -1729,7 +1816,10 @@ function makeSidebarButton(
     const tooltip = document.createElement("span");
     tooltip.className = "cm-btn-tooltip";
     tooltip.textContent = opts.label;
-    btn.appendChild(tooltip);
+    const text = document.createElement("span");
+    text.textContent = opts.label;
+    btn.appendChild(text);
+    btn.setAttribute("aria-label", opts.title);
     // Stop mousedown from bubbling to CodeMirror, which would otherwise treat
     // the button press as the start of a drag-select — and complete the
     // selection when the user next clicks in the editor.
@@ -2311,6 +2401,7 @@ function mount(content: string) {
                 ...historyKeymap,
             ]),
             EditorView.updateListener.of((update) => {
+                updateWorkspace(update.view);
                 if (update.docChanged) {
                     scheduleSave();
                     updateCounts(update.view);
@@ -2323,6 +2414,7 @@ function mount(content: string) {
     attachVimModeListener(view);
     updateBadge(view);
     ensureSidebar(view);
+    ensureWorkspace(view);
     // Deliberately NOT auto-focused. On a cold launch the editor mounts in the
     // background while the capture box is showing; focusing here would make the
     // (hidden) web view the window's first responder and steal focus off the

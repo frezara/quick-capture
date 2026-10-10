@@ -1,30 +1,7 @@
 import SwiftUI
 
-// "Pure System + Color" (native v2) design system — see design/native-v2/HANDOFF.md.
-// First-party-Apple feel: system typography, frosted materials, 0.5px hairlines,
-// system blue as THE accent. Everything visual is read from the tokens below —
-// no hard-coded values in the views.
-//
-// Ink has three levels and no more (ADR-0006): `ink` for primary text,
-// `inkSecondary` for every readable label, `inkTertiary` for placeholders
-// only. A fourth "hint" level was tried and removed — it split a keycap from
-// its own label.
-//
-// Color has three jobs and no others (the "Sectioned" direction, #101):
-//   - tag hue (TagColor.swift) = SECTION IDENTITY. A section's hue carries its
-//     dot, caption, rule, indent guides and the checkboxes inside it, plus the
-//     capture tag field — the same tag. Nothing else borrows a tag hue.
-//   - system blue = INTERACTION. Focus, selection, links, checked state outside
-//     a section, the vim mode pill.
-//   - neutral = the ground. Surfaces stay near-monochrome; warmer surfaces were
-//     explored and rejected.
-// Priority orbs and the settings row icons are the standing exceptions — they
-// are functional color that predates the direction.
-//
-// The `Theme` tokens below are deliberately unchanged by that direction: the
-// hue is per-section state (TagColor.swift), not a theme colour, and warmer
-// surfaces were explored and rejected. Landed as #102 (hue assignment),
-// #103 (editor), #104 (capture tag field); see design/color-directions/.
+// Clear & Charcoal — shared tokens from design-system-overview.md.
+// Accent means interaction; section hues mean identity; tertiary ink is placeholder-only.
 
 extension Color {
     /// Color(0xRRGGBB). Positional/`alpha:` form from the handoff — distinct from
@@ -57,72 +34,65 @@ struct Theme {
     let ink, inkSecondary, inkTertiary: Color
     let accent, accentInk, accentSoft, accentRing, onAccent: Color
     let panel, control, chip, chipHover, rowHover, group: Color
-    let priHigh, priMed, priLow: Color    // priority orbs
+    let priHigh, priMed, priLow, warningFill: Color    // priority orbs
 }
 
 extension Theme {
     static let light = Theme(
-        bg:           Color(0xECEDF0),               // behind-window haze
-        bgHaze:       Color(0xDDE0E5),
-        surface:      Color(0xF6F6F8),               // opaque windows (editor, settings)
-        surfaceField: Color(0x787880, alpha: 0.10),  // recessed input wells
-        surfaceRail:  Color(0x000000, alpha: 0.025), // status-bar wash
-        border:       Color(0x000000, alpha: 0.14),  // hairline separators (0.5px)
-        borderStrong: Color(0x000000, alpha: 0.18),  // 0.5px outer panel ring
-        highlight:    Color(0xFFFFFF, alpha: 0.55),  // inset top-edge light
-        ink:          Color(0x000000, alpha: 0.88),
-        // Every readable label: keycaps and their hints, picker times and day
-        // lines, dropdown rows, the editor status bar. 0.75 is the lowest value
-        // that clears 4.5:1 on all three backgrounds these land on — and the
-        // binding one is the keycap CHIP (4.59:1), not the frosted panel
-        // (4.97:1), because the chip's own fill darkens what sits behind the
-        // glyph. See ADR-0006.
-        inkSecondary: Color(0x3C3C43, alpha: 0.75),
-        inkTertiary:  Color(0x3C3C43, alpha: 0.36),  // placeholders ONLY — deliberately faint
-        accent:       Color(0x007AFF),               // THE accent (system blue)
-        accentInk:    Color(0x0066D6),               // accent text on soft fill
-        accentSoft:   Color(0x007AFF, alpha: 0.12),  // soft accent fill
-        accentRing:   Color(0x007AFF, alpha: 0.35),  // 3px focus halo
-        onAccent:     Color(0xFFFFFF),
-        panel:        Color(0xFCFCFE, alpha: 0.66),  // frosted wash over blur material
-        control:      Color(0xFFFFFF, alpha: 0.95),  // push buttons / pop-ups
-        chip:         Color(0x787880, alpha: 0.12),
-        chipHover:    Color(0x787880, alpha: 0.20),
-        rowHover:     Color(0x787880, alpha: 0.07),
-        group:        Color(0xFFFFFF, alpha: 0.62),  // settings group card
-        priHigh:      Color(0xFF3B30),
-        priMed:       Color(0xFF9500),
-        priLow:       Color(0x34C759)
+        bg: Color(0xF0F3F1),
+        bgHaze: Color(0xF0F3F1),
+        surface: Color(0xFAFCFB),
+        surfaceField: Color(0xE8EEEB),
+        surfaceRail: Color(0xF0F3F1),
+        border: Color(0xD5DEDB),
+        borderStrong: Color(0xD5DEDB),
+        highlight: Color(0xFAFCFB),
+        ink: Color(0x202D29),
+        inkSecondary: Color(0x596B64),
+        inkTertiary: Color(0x596B64, alpha: 0.60),
+        accent: Color(0x1672DF),
+        accentInk: Color(0x165EB8),
+        accentSoft: Color(0x1672DF, alpha: 0.07),
+        accentRing: Color(0x1672DF, alpha: 0.14),
+        onAccent: Color(0xFFFFFF),
+        panel: Color(0xFAFCFB, alpha: 0.66),
+        control: Color(0xFAFCFB),
+        chip: Color(0xE8EEEB),
+        chipHover: Color(0xD5DEDB),
+        rowHover: Color(0xE8EEEB),
+        group: Color(0xFAFCFB),
+        priHigh: Color(0xBA503C),
+        priMed: Color(0x956018),
+        priLow: Color(0x3D6C4B),
+        warningFill: Color(0xFCF2DF)
     )
-
     static let dark = Theme(
-        bg:           Color(0x1E1E22),
-        bgHaze:       Color(0x141417),
-        surface:      Color(0x212125),
-        surfaceField: Color(0x787880, alpha: 0.20),
-        surfaceRail:  Color(0xFFFFFF, alpha: 0.03),
-        border:       Color(0xFFFFFF, alpha: 0.13),
-        borderStrong: Color(0xFFFFFF, alpha: 0.14),
-        highlight:    Color(0xFFFFFF, alpha: 0.10),
-        ink:          Color(0xFFFFFF, alpha: 0.92),
-        // Unchanged: dark already cleared AA on every surface (4.73–5.76:1).
-        // The inversion this ramp fixes was light-only.
-        inkSecondary: Color(0xEBEBF5, alpha: 0.60),
-        inkTertiary:  Color(0xEBEBF5, alpha: 0.32),
-        accent:       Color(0x0A84FF),
-        accentInk:    Color(0x409CFF),
-        accentSoft:   Color(0x0A84FF, alpha: 0.16),
-        accentRing:   Color(0x0A84FF, alpha: 0.40),
-        onAccent:     Color(0xFFFFFF),
-        panel:        Color(0x26262A, alpha: 0.58),
-        control:      Color(0xFFFFFF, alpha: 0.14),
-        chip:         Color(0x787880, alpha: 0.24),
-        chipHover:    Color(0x787880, alpha: 0.34),
-        rowHover:     Color(0xFFFFFF, alpha: 0.05),
-        group:        Color(0xFFFFFF, alpha: 0.05),
-        priHigh:      Color(0xFF453A),
-        priMed:       Color(0xFF9F0A),
-        priLow:       Color(0x30D158)
+        bg: Color(0x1E2522),
+        bgHaze: Color(0x1E2522),
+        surface: Color(0x242C2A),
+        surfaceField: Color(0x303B37),
+        surfaceRail: Color(0x1E2522),
+        border: Color(0x46534D),
+        borderStrong: Color(0x46534D),
+        highlight: Color(0x242C2A),
+        ink: Color(0xF1F4F2),
+        inkSecondary: Color(0xB6C5BD),
+        inkTertiary: Color(0xB6C5BD, alpha: 0.55),
+        accent: Color(0x69A8FF),
+        accentInk: Color(0x91BFFF),
+        accentSoft: Color(0x69A8FF, alpha: 0.09),
+        accentRing: Color(0x69A8FF, alpha: 0.20),
+        onAccent: Color(0x122335),
+        panel: Color(0x242C2A, alpha: 0.58),
+        control: Color(0x242C2A),
+        chip: Color(0x303B37),
+        chipHover: Color(0x46534D),
+        rowHover: Color(0x303B37),
+        group: Color(0x242C2A),
+        priHigh: Color(0xF09C86),
+        priMed: Color(0xE5B95B),
+        priLow: Color(0xA4D2B0),
+        warningFill: Color(0x373025)
     )
 }
 

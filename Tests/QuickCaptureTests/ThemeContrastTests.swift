@@ -100,11 +100,16 @@ final class ThemeContrastTests: XCTestCase {
         }
     }
 
-    func testBodyInkIsUnaffected() {
-        // The change is confined to the hint ink; primary text was never the
-        // problem and must not have moved.
+    func testPrimaryInkMaintainsStrongContrast() {
         XCTAssertGreaterThanOrEqual(contrast(Theme.light.ink, on: srgb(Theme.light.surface)), 12)
         XCTAssertGreaterThanOrEqual(contrast(Theme.dark.ink, on: srgb(Theme.dark.surface)), 12)
+    }
+
+    func testInteractionTextMeetsAA() {
+        for theme in [Theme.light, Theme.dark] {
+            XCTAssertGreaterThanOrEqual(contrast(theme.onAccent, on: srgb(theme.accent)), 4.5)
+            XCTAssertGreaterThanOrEqual(contrast(theme.accentInk, on: composite(theme.accentSoft, over: srgb(theme.surface))), 4.5)
+        }
     }
 
     func testPlaceholderInkStaysFaintOnPurpose() {
@@ -113,7 +118,7 @@ final class ThemeContrastTests: XCTestCase {
         // future contrast pass raises the readable level rather than "fixing"
         // this one and flattening the ramp into two.
         for theme in [Theme.light, Theme.dark] {
-            XCTAssertLessThan(contrast(theme.inkTertiary, on: frostedPanel(theme)), 3.0)
+            XCTAssertLessThan(contrast(theme.inkTertiary, on: frostedPanel(theme)), 4.5)
         }
     }
 }

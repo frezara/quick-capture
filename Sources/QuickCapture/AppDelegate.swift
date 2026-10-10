@@ -1,5 +1,4 @@
 import AppKit
-import CoreText
 import HotKey
 import SwiftUI
 
@@ -33,7 +32,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return
         }
 
-        registerBundledFonts()
         scaffoldDefaultCaptureFile()
         setupStatusItem()
         setupMainMenu()
@@ -387,25 +385,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     @objc func showSettings() {
         settingsController.show()
-    }
-
-    // MARK: - Font registration
-
-    /// Registers the IBM Plex Mono / Sans OTFs bundled in Resources/Fonts/
-    /// for the process lifetime. CTFontManager makes them available to SwiftUI
-    /// (.custom(…)) and AppKit (NSFont(name:size:)) without a system install.
-    private func registerBundledFonts() {
-        guard let fontsURL = Bundle.main.url(forResource: "Fonts", withExtension: nil) else {
-            NSLog("QuickCapture: Fonts/ folder not found in bundle")
-            return
-        }
-        let otfs = (try? FileManager.default.contentsOfDirectory(
-            at: fontsURL, includingPropertiesForKeys: nil
-        ))?.filter { $0.pathExtension == "otf" } ?? []
-
-        for url in otfs {
-            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
-        }
     }
 
     // MARK: - Default capture file scaffolding

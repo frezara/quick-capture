@@ -13,17 +13,20 @@ struct SettingsView: View {
         // this the window was pinned to 360pt and everything past Advanced was
         // unreachable (#116).
         ScrollView {
-            VStack(alignment: .leading, spacing: 14) {
+            VStack(alignment: .leading, spacing: Metrics.s3) {
+                Text("Settings").font(TypeScale.h1).foregroundStyle(t.ink)
+                Text("A small tool, fitted to your workflow.").font(Typeface.ui(11)).foregroundStyle(t.inkSecondary)
                 generalCard
                 captureFileCard
                 captureBoxCard
                 editorCard
                 refileTargetsSection
             }
-            .padding(Metrics.s3)
-            .frame(width: 520)
+            .padding(Metrics.s4)
+            .frame(width: 680)
         }
-        .background(t.bg)
+        .background(t.surface)
+        .tint(t.accent)
     }
 
     // MARK: - Cards
@@ -37,8 +40,7 @@ struct SettingsView: View {
             settingsRow(
                 label: "Global hotkey",
                 note: "Click, press your combo, Esc cancels. Needs ⌃⌥⇧⌘.",
-                symbol: "command",
-                iconColor: Color(0x5856D6)
+                symbol: "command"
             ) {
                 KeyRecorderView(hotKey: $appState.hotKey)
             }
@@ -46,8 +48,7 @@ struct SettingsView: View {
             settingsRow(
                 label: "Launch at Login",
                 note: "App must be in /Applications for this to take effect.",
-                symbol: "power",
-                iconColor: Color(0xFF9500)
+                symbol: "power"
             ) {
                 settingsToggle(launchAtLoginBinding)
             }
@@ -56,7 +57,7 @@ struct SettingsView: View {
 
     private var captureFileCard: some View {
         settingsCard("CAPTURE FILE") {
-            settingsRow(label: "Path", note: nil, symbol: "doc.text", iconColor: Color(0x007AFF)) {
+            settingsRow(label: "Path", note: nil, symbol: "doc.text") {
                 HStack(spacing: Metrics.s2) {
                     TextField("", text: $appState.captureFilePath)
                         .textFieldStyle(.plain)
@@ -72,8 +73,7 @@ struct SettingsView: View {
             settingsRow(
                 label: "Append timestamp to each capture",
                 note: "Obsidian Tasks `\(FileWriter.createdMarker) YYYY-MM-DD HH:MM` marker.",
-                symbol: "clock",
-                iconColor: Color(0x8E8E93)
+                symbol: "clock"
             ) {
                 settingsToggle($appState.includeTimestamp)
             }
@@ -85,7 +85,7 @@ struct SettingsView: View {
             // The sample is the row's own second line, rendered in the chosen
             // face — it was a separate row with its own icon square, which read
             // as a second setting (#116).
-            settingsRow(label: "Input font", symbol: "textformat", iconColor: Color(0x8E8E93)) {
+            settingsRow(label: "Input font", symbol: "textformat") {
                 Text("What needs doing?")
                     .font(.system(size: 13, design: appState.captureFontDesign.design))
                     .foregroundStyle(t.inkSecondary)
@@ -104,8 +104,7 @@ struct SettingsView: View {
             settingsRow(
                 label: "Vim keybindings",
                 note: "When off, standard editing. ⌥⌘I still toggles the editor.",
-                symbol: "terminal",
-                iconColor: Color(0x34C759)
+                symbol: "terminal"
             ) {
                 settingsToggle($appState.vimEnabled)
             }
@@ -122,8 +121,7 @@ struct SettingsView: View {
                     settingsRow(
                         label: "No targets yet",
                         note: "⌥⌘U in the editor files the item under your cursor into a target's `inbox.md`.",
-                        symbol: "folder",
-                        iconColor: Color(0xFF9F0A)
+                        symbol: "folder"
                     ) { EmptyView() }
                 } else {
                     ForEach(appState.refileTargets.indices, id: \.self) { index in
@@ -162,9 +160,9 @@ struct SettingsView: View {
                 .foregroundStyle(t.inkSecondary)
             VStack(spacing: 0) { content() }
                 .background(t.group)
-                .clipShape(RoundedRectangle(cornerRadius: 10, style: .continuous))
+                .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous))
                 .overlay(
-                    RoundedRectangle(cornerRadius: 10, style: .continuous)
+                    RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
                         .strokeBorder(t.borderStrong, lineWidth: 0.5)
                 )
         }
@@ -178,14 +176,13 @@ struct SettingsView: View {
         label: String,
         note: String?,
         symbol: String? = nil,
-        iconColor: Color = Color(0x8E8E93),
         @ViewBuilder control: () -> Control
     ) -> some View {
-        settingsRow(label: label, symbol: symbol, iconColor: iconColor) {
+        settingsRow(label: label, symbol: symbol) {
             if let note {
                 Text(.init(note))
                     .font(TypeScale.caption)
-                    .foregroundStyle(t.inkTertiary)
+                    .foregroundStyle(t.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
         } control: {
@@ -198,17 +195,16 @@ struct SettingsView: View {
     private func settingsRow<Secondary: View, Control: View>(
         label: String,
         symbol: String? = nil,
-        iconColor: Color = Color(0x8E8E93),
         @ViewBuilder secondary: () -> Secondary,
         @ViewBuilder control: () -> Control
     ) -> some View {
         HStack(alignment: .center, spacing: Metrics.s2) {
             if let symbol {
-                settingsIcon(symbol, iconColor)
+                settingsIcon(symbol)
             }
             VStack(alignment: .leading, spacing: 3) {
                 Text(label)
-                    .font(Typeface.ui(13))
+                    .font(Typeface.ui(12, .medium))
                     .foregroundStyle(t.ink)
                 secondary()
             }
@@ -216,25 +212,17 @@ struct SettingsView: View {
             control()
         }
         .padding(.horizontal, Metrics.s3)
-        .padding(.vertical, 11)
+        .padding(.vertical, Metrics.s2)
     }
 
-    /// System-Settings-style row icon: a small rounded square with a vertical
-    /// gradient and a white SF Symbol. The one place (besides tag hues and
-    /// priority orbs) where colour appears.
-    private func settingsIcon(_ symbol: String, _ color: Color) -> some View {
-        RoundedRectangle(cornerRadius: 6, style: .continuous)
-            .fill(LinearGradient(colors: [color.opacity(0.85), color],
-                                 startPoint: .top, endPoint: .bottom))
-            .frame(width: 24, height: 24)
+    private func settingsIcon(_ symbol: String) -> some View {
+        RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+            .fill(t.accentSoft)
+            .frame(width: 25, height: 25)
             .overlay(
                 Image(systemName: symbol)
                     .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(.white)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: 6, style: .continuous)
-                    .strokeBorder(.black.opacity(0.06), lineWidth: 0.5)
+                    .foregroundStyle(t.accentInk)
             )
     }
 
@@ -243,14 +231,14 @@ struct SettingsView: View {
     private func refileTargetRow(index: Int) -> some View {
         let target = appState.refileTargets[index]
         return HStack(alignment: .center, spacing: Metrics.s2) {
-            settingsIcon("folder", Color(0xFF9F0A))
+            settingsIcon("folder")
             VStack(alignment: .leading, spacing: 3) {
                 Text(target.displayName)
-                    .font(Typeface.ui(13))
+                    .font(Typeface.ui(12, .medium))
                     .foregroundStyle(t.ink)
                 Text(target.path)
                     .font(TypeScale.caption)
-                    .foregroundStyle(t.inkTertiary)
+                    .foregroundStyle(t.inkSecondary)
                     .truncationMode(.head)
                     .lineLimit(1)
             }
@@ -286,11 +274,11 @@ struct SettingsView: View {
                     .font(.system(size: 10, weight: .semibold))
             }
             .buttonStyle(.plain)
-            .foregroundStyle(t.inkTertiary)
+            .foregroundStyle(t.inkSecondary)
             .help("Remove this refile target")
         }
         .padding(.horizontal, Metrics.s3)
-        .padding(.vertical, 11)
+        .padding(.vertical, Metrics.s2)
     }
 
     private func reorderButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
@@ -300,7 +288,7 @@ struct SettingsView: View {
                 .frame(width: 16, height: 14)
         }
         .buttonStyle(.plain)
-        .foregroundStyle(enabled ? t.inkSecondary : t.inkTertiary.opacity(0.5))
+        .foregroundStyle(enabled ? t.inkSecondary : t.inkSecondary.opacity(0.5))
         .disabled(!enabled)
     }
 

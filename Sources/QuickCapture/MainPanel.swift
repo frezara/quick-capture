@@ -107,7 +107,7 @@ final class MainPanel: NSPanel {
     /// so stale completions from a prior summon cannot resurrect a detached chip.
     private var attachLookupGeneration = 0
 
-    private let splitWidth: CGFloat = 1000
+    private let splitWidth: CGFloat = 1120
     private let captureWidth: CGFloat = 680
 
     deinit {
@@ -282,13 +282,12 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// Editor-mode frame: comfortable fixed width, full visible height (clears
-    /// the menu bar and Dock), centered horizontally on the active screen.
+    /// Center the workspace and keep it inside the active screen’s usable area.
     private func splitFrame(in screen: NSRect) -> NSRect {
-        NSRect(x: screen.midX - splitWidth / 2,
-               y: screen.minY,
-               width: splitWidth,
-               height: screen.height)
+        let width = min(splitWidth, screen.width - 40)
+        let height = min(820, screen.height - 40)
+        return NSRect(x: screen.midX - width / 2, y: screen.midY - height / 2,
+                      width: width, height: height)
     }
 
     /// Summon straight into the editor split, without the grow animation.
@@ -634,7 +633,7 @@ final class MainPanel: NSPanel {
     /// recent screenshots (newest pre-highlighted). Picking one attaches it as
     /// the chip; Esc closes without changing the attachment. No screenshots →
     /// the transient "No screenshots found" feedback instead of an empty panel.
-    private func openScreenshotPicker() {
+    func openScreenshotPicker() {
         attachLookupGeneration += 1
         let generation = attachLookupGeneration
         ScreenshotLocator.recent(limit: 10) { [weak self] result in
@@ -1367,16 +1366,12 @@ private final class EditorContainerView: NSView {
     // Dynamic so the panel surface/border track light/dark. Layer colours are
     // CGColors (no auto-update), so applyChrome() re-resolves them against the
     // effective appearance, and we re-apply on appearance change.
-    // Mirrors Theme.surface / Theme.borderStrong (design/native-v2/HANDOFF.md).
+    // Resolve shared SwiftUI tokens here so native and web window edges agree.
     static let windowSurface = NSColor(name: nil) { a in
-        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0x21/255, green: 0x21/255, blue: 0x25/255, alpha: 1)
-            : NSColor(srgbRed: 0xF6/255, green: 0xF6/255, blue: 0xF8/255, alpha: 1)
+        NSColor(a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? Theme.dark.surface : Theme.light.surface)
     }
     static let windowBorder = NSColor(name: nil) { a in
-        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(white: 1, alpha: 0.14)
-            : NSColor(white: 0, alpha: 0.18)
+        NSColor(a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? Theme.dark.border : Theme.light.border)
     }
 
     func configure(web: NSView) {
@@ -1430,6 +1425,12 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
             if let content = dict["content"] as? String,
                let expected = dict["expected"] as? String,
                let id = dict["id"] as? Int { panel?.write(content, expected: expected, id: id) }
+        case "capture":
+            panel?.toggleEditor()
+        case "screenshots":
+            panel?.openScreenshotPicker()
+        case "settings":
+            (NSApp.delegate as? AppDelegate)?.showSettings()
         case "archive":
             panel?.archive()
         case "dismiss":

@@ -234,15 +234,6 @@ struct CaptureView: View {
     private var panelSurface: some View {
         VisualEffectBlur()
             .overlay(theme.panel)
-            .overlay(
-                LinearGradient(
-                    stops: [
-                        .init(color: theme.highlight, location: 0),
-                        .init(color: .clear, location: 0.12),
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                )
-            )
             .allowsHitTesting(false)
     }
 
@@ -764,7 +755,7 @@ struct CaptureView: View {
         return VStack(alignment: .leading, spacing: Metrics.s3) {
             HStack(spacing: Metrics.s2) {
                 Text("Recent screenshots")
-                    .font(Typeface.ui(15, .semibold))
+                    .font(TypeScale.h1)
                     .foregroundStyle(theme.ink)
                 if !pickerSelection.isEmpty {
                     Text("\(pickerSelection.count) selected")
@@ -814,6 +805,20 @@ struct CaptureView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider().overlay(theme.border)
+            HStack(spacing: Metrics.s2) {
+                Text("\(max(1, pickerSelection.count)) selected")
+                    .font(Typeface.ui(11)).foregroundStyle(theme.inkSecondary)
+                Spacer()
+                Button("Cancel", action: onPickerCancel)
+                    .buttonStyle(.plain).foregroundStyle(theme.inkSecondary)
+                Button(action: attachPicked) {
+                    Text("Attach screenshot").font(Typeface.ui(12, .medium))
+                        .padding(.horizontal, Metrics.s2).padding(.vertical, Metrics.s1)
+                        .background(theme.accent).foregroundStyle(theme.onAccent)
+                        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField))
+                }.buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Anchors keyboard focus inside the panel while the picker is open so
@@ -830,7 +835,7 @@ struct CaptureView: View {
     /// mockup's keycap treatment).
     private func keycap(_ label: String) -> some View {
         Text(label)
-            .font(Typeface.mono(10, .medium))
+            .font(Typeface.mono(11, .medium))
             .foregroundStyle(theme.inkSecondary)
             .padding(.horizontal, 5)
             .padding(.vertical, 2)

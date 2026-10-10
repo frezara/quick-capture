@@ -27,6 +27,43 @@ final class EditorPersistenceTests: XCTestCase {
         return (web, bridge)
     }
 
+    func testWorkspaceNavigationAndInspectorPreserveDocument() async throws {
+        let (web, _) = try await loadEditor()
+        let content = "# Inbox\n\n## Work\n- [ ] Review design !!!\n  ![screen](attachments/test.png)\n\n## Personal\n- [ ] Book a table\n"
+        let json = String(data: try JSONEncoder().encode(content), encoding: .utf8)!
+        _ = try await web.evaluateJavaScript("qcEditor.setContent(\(json)); qcEditor.revealLine(3); true")
+        let details = try await web.evaluateJavaScript("document.querySelector('.qc-item-detail').textContent") as? String
+        XCTAssertTrue(details?.contains("Review design") == true)
+        XCTAssertTrue(details?.contains("High") == true)
+        XCTAssertTrue(details?.contains("Attachments1") == true)
+        _ = try await web.evaluateJavaScript("Array.from(document.querySelectorAll('.qc-sections button')).find(b => b.textContent.includes('Personal')).click(); true")
+        let active = try await web.evaluateJavaScript("document.querySelector('.qc-sections button.active').textContent") as? String
+        XCTAssertTrue(active?.contains("Personal") == true)
+        let buffer = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
+        XCTAssertEqual(buffer, content)
+        let disabled = try await web.evaluateJavaScript("Array.from(document.querySelectorAll('[data-item-action]')).every(b => b.disabled)") as? Bool
+        XCTAssertEqual(disabled, true, "A section heading cannot be refiled as an item")
+    }
+
+    func testWorkspaceUsesNativeActionsAndLeavesRoomForEditor() async throws {
+        let (web, bridge) = try await loadEditor()
+        let settings = expectation(description: "Settings routed through native bridge")
+        bridge.receive = { message in
+            if message["type"] as? String == "settings" { settings.fulfill() }
+        }
+        _ = try await web.evaluateJavaScript("document.querySelector('.qc-nav-actions > button').click(); true")
+        await fulfillment(of: [settings], timeout: 5)
+        let fits = try await web.evaluateJavaScript("""
+            (() => {
+                const nav = document.querySelector('.qc-navigation').getBoundingClientRect();
+                const editor = document.querySelector('.cm-scroller').getBoundingClientRect();
+                const inspector = document.querySelector('.qc-inspector').getBoundingClientRect();
+                return editor.left >= nav.right && editor.right <= inspector.left + 1 && editor.width >= 350;
+            })()
+            """) as? Bool
+        XCTAssertEqual(fits, true, "Workspace columns must not overlap at the normal window size")
+    }
+
     func testFirstEditAutosavesAndFailureKeepsBufferWithPersistentError() async throws {
         let (web, bridge) = try await loadEditor()
         let save = expectation(description: "First edit autosaved")
