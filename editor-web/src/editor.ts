@@ -667,7 +667,10 @@ function makeTheme() {
     ".qc-section-name": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     ".qc-section-count": { marginLeft: "auto", fontSize: "11px", color: palette.soft },
     ".qc-inspector": { position: "absolute", top: "50px", right: "0", bottom: "33px", width: "215px", padding: "22px 16px", boxSizing: "border-box", background: palette.surfaceRail, borderLeft: `1px solid ${palette.borderSoft}`, overflowY: "auto", fontFamily: sansFamily },
-    ".qc-inspector h3": { fontSize: "16px", fontWeight: "600", lineHeight: "1.4", margin: "16px 0", overflowWrap: "anywhere" },
+    ".qc-inspector h3": { fontSize: "13px", fontWeight: "400", lineHeight: "20px", margin: "10px 0", overflowWrap: "anywhere", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: "3", maxHeight: "60px", overflow: "hidden" },
+    ".qc-inspector h3.expanded": { display: "block", WebkitLineClamp: "unset", maxHeight: "160px", overflowY: "auto" },
+    ".qc-inspector .qc-preview-toggle": { border: "none", background: "transparent", color: palette.accentInk, padding: "0", margin: "0 0 10px", width: "auto", fontSize: "11px" },
+    ".qc-inspector .qc-preview-toggle[hidden]": { display: "none" },
     ".qc-property": { display: "flex", justifyContent: "space-between", gap: "10px", padding: "10px 0", borderTop: `1px solid ${palette.borderSoft}`, fontSize: "12px", overflowWrap: "anywhere" },
     ".qc-property span:first-child": { color: palette.soft },
     ".qc-inspector button": { display: "block", width: "100%", border: `1px solid ${palette.borderSoft}`, marginTop: "16px", background: palette.surface },
@@ -955,7 +958,7 @@ function makeTheme() {
         backgroundColor: `${palette.accent}66`,
     },
     // Persistent actions sit below section navigation.
-    ".cm-sidebar": { display: "flex", flexDirection: "column", gap: "6px", marginTop: "16px" },
+    ".cm-sidebar": { display: "flex", flexDirection: "column", gap: "0", marginTop: "16px" },
     ".cm-sidebar-btn": {
         width: "100%",
         height: "34px",
@@ -970,6 +973,8 @@ function makeTheme() {
         padding: "0",
         transition: "background-color 0.12s ease, color 0.12s ease",
     },
+    ".qc-nav-actions .cm-sidebar-btn": { display: "grid", gridTemplateColumns: "18px minmax(0, 1fr)", alignItems: "center", justifyContent: "start", gap: "10px", height: "34px", padding: "6px 10px", marginBottom: "6px", textAlign: "left", boxSizing: "border-box" },
+    ".qc-nav-actions .cm-sidebar-btn svg": { width: "18px", height: "18px" },
     ".cm-sidebar-btn:hover": {
         backgroundColor: palette.accentSoft,
         color: palette.accentInk,
@@ -1645,7 +1650,11 @@ function ensureWorkspace(v: EditorView) {
     actions.className = "qc-nav-actions";
     const toolbar = v.dom.querySelector(".cm-sidebar");
     if (toolbar) actions.append(toolbar);
-    actions.append(makeButton("Settings  ⌘,", () => sendToSwift({ type: "settings" })));
+    actions.append(makeSidebarButton(v, {
+        title: "Settings (⌘,)", label: "Settings ⌘,",
+        svg: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></svg>',
+        action: () => sendToSwift({ type: "settings" }),
+    }));
     nav.append(label, sections, actions);
     const inspector = document.createElement("aside");
     inspector.className = "qc-inspector";
@@ -1653,7 +1662,8 @@ function ensureWorkspace(v: EditorView) {
     const detail = document.createElement("div");
     detail.className = "qc-item-detail";
     const refile = makeButton("Refile item  ⌥⌘U", () => startRefile(v));
-    const attach = makeButton("Attach screenshot", () => sendToSwift({ type: "screenshots" }));
+    const attach = makeButton("Attach image  ⌥⌘O", () => sendToSwift({ type: "screenshots" }));
+    attach.title = "Choose a recent screenshot (⌥⌘O)";
     refile.dataset.itemAction = attach.dataset.itemAction = "true";
     inspector.append(detail, refile, attach);
     v.dom.append(header, nav, inspector);
@@ -1715,7 +1725,24 @@ function updateWorkspace(v: EditorView) {
     label.textContent = "Selected item";
     const title = document.createElement("h3");
     title.textContent = span ? item.replace(/^\s*[-*+]\s+(?:\[[ xX]\]\s*)?/, "").replace(/\s*!{1,3}(?=\s|$)/, "") : "Select an item";
-    detail.append(label, title);
+    title.id = "qc-selected-preview";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "qc-preview-toggle";
+    toggle.textContent = "Show full text";
+    toggle.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", title.id);
+    toggle.onclick = () => {
+        const expanded = title.classList.toggle("expanded");
+        toggle.textContent = expanded ? "Show less" : "Show full text";
+        toggle.setAttribute("aria-expanded", String(expanded));
+    };
+    detail.append(label, title, toggle);
+    v.requestMeasure({
+        read: () => title.scrollHeight > title.clientHeight + 1,
+        write: overflowing => { toggle.hidden = !overflowing; },
+    });
     for (const [name, value] of [["Section", active ?? "Inbox"], ["Priority", ["None", "Low", "Medium", "High"][priority]], ["Attachments", String((span?.text.match(/!\[/g) ?? []).length)]]) {
         const row = document.createElement("div");
         row.className = "qc-property";

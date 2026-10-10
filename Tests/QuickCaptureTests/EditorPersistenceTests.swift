@@ -64,6 +64,29 @@ final class EditorPersistenceTests: XCTestCase {
         XCTAssertEqual(fits, true, "Workspace columns must not overlap at the normal window size")
     }
 
+    func testLongPreviewIsCompactAndSidebarActionsAlign() async throws {
+        let (web, _) = try await loadEditor()
+        let content = "# Inbox\n## Work\n- [ ] " + String(repeating: "A long task with useful context. ", count: 15)
+        let json = String(data: try JSONEncoder().encode(content), encoding: .utf8)!
+        _ = try await web.evaluateJavaScript("qcEditor.setContent(\(json)); qcEditor.revealLine(2); true")
+        let compact = try await web.evaluateJavaScript("document.querySelector('#qc-selected-preview').getBoundingClientRect().height <= 60") as? Bool
+        XCTAssertEqual(compact, true)
+        _ = try await web.evaluateJavaScript("document.querySelector('.qc-preview-toggle').click(); true")
+        let expanded = try await web.evaluateJavaScript("document.querySelector('.qc-preview-toggle').getAttribute('aria-expanded')") as? String
+        XCTAssertEqual(expanded, "true")
+        let bounded = try await web.evaluateJavaScript("document.querySelector('#qc-selected-preview').getBoundingClientRect().height <= 160") as? Bool
+        XCTAssertEqual(bounded, true)
+        let aligned = try await web.evaluateJavaScript("""
+            (() => {
+                const rows = Array.from(document.querySelectorAll('.qc-nav-actions .cm-sidebar-btn'));
+                const icons = rows.map(b => b.querySelector('svg').getBoundingClientRect().left);
+                const labels = rows.map(b => b.querySelector('span').getBoundingClientRect().left);
+                return rows.length === 3 && Math.max(...icons) - Math.min(...icons) < 1 && Math.max(...labels) - Math.min(...labels) < 1;
+            })()
+            """) as? Bool
+        XCTAssertEqual(aligned, true)
+    }
+
     func testFirstEditAutosavesAndFailureKeepsBufferWithPersistentError() async throws {
         let (web, bridge) = try await loadEditor()
         let save = expectation(description: "First edit autosaved")
