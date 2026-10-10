@@ -666,7 +666,9 @@ function makeTheme() {
     ".qc-section-dot": { width: "6px", height: "6px", borderRadius: "50%", flexShrink: "0" },
     ".qc-section-name": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
     ".qc-section-count": { marginLeft: "auto", fontSize: "11px", color: palette.soft },
-    ".qc-inspector": { position: "absolute", top: "50px", right: "0", bottom: "33px", width: "215px", padding: "22px 16px", boxSizing: "border-box", background: palette.surfaceRail, borderLeft: `1px solid ${palette.borderSoft}`, overflowY: "auto", fontFamily: sansFamily },
+    ".qc-inspector": { position: "absolute", top: "50px", right: "0", bottom: "33px", width: "215px", padding: "22px 16px", boxSizing: "border-box", background: palette.surfaceRail, borderLeft: `1px solid ${palette.borderSoft}`, overflow: "hidden", display: "flex", flexDirection: "column", fontFamily: sansFamily },
+    ".qc-inspector-content": { flex: "1", minHeight: "0", overflowY: "auto" },
+    ".qc-inspector-actions": { flexShrink: "0", paddingTop: "16px", marginTop: "16px", borderTop: `1px solid ${palette.borderSoft}` },
     ".qc-inspector h3": { fontSize: "13px", fontWeight: "400", lineHeight: "20px", margin: "10px 0", overflowWrap: "anywhere", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: "3", maxHeight: "60px", overflow: "hidden" },
     ".qc-inspector h3.expanded": { display: "block", WebkitLineClamp: "unset", maxHeight: "160px", overflowY: "auto" },
     ".qc-inspector .qc-preview-toggle": { border: "none", background: "transparent", color: palette.accentInk, padding: "0", margin: "0 0 10px", width: "auto", fontSize: "11px" },
@@ -676,7 +678,7 @@ function makeTheme() {
     ".qc-inspector button": { display: "block", width: "100%", border: `1px solid ${palette.borderSoft}`, marginTop: "16px", background: palette.surface },
     ".qc-inspector button:disabled": { opacity: "0.5", cursor: "default" },
     ".qc-save-error": { position: "absolute", top: "56px", left: "180px", right: "22px", zIndex: "100", background: palette.warningFill, color: palette.text, border: `1px solid ${palette.priMed}`, borderRadius: "8px", padding: "16px", font: `13px ${sansFamily}` },
-    "@media(max-width: 850px)": { ".qc-inspector": { display: "none" }, ".cm-scroller": { marginRight: "0", width: "calc(100% - 170px)" } },
+    "@media(max-width: 850px)": { ".qc-navigation": { width: "130px" }, ".qc-inspector": { width: "190px", padding: "16px 10px" }, ".cm-scroller": { marginLeft: "130px", marginRight: "190px", width: "calc(100% - 320px)" } },
     ".cm-content": {
         fontFamily: 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace',
         fontSize: "13px",
@@ -958,7 +960,7 @@ function makeTheme() {
         backgroundColor: `${palette.accent}66`,
     },
     // Persistent actions sit below section navigation.
-    ".cm-sidebar": { display: "flex", flexDirection: "column", gap: "0", marginTop: "16px" },
+    ".cm-sidebar": { display: "flex", flexDirection: "column", gap: "0", marginTop: "0" },
     ".cm-sidebar-btn": {
         width: "100%",
         height: "34px",
@@ -973,8 +975,8 @@ function makeTheme() {
         padding: "0",
         transition: "background-color 0.12s ease, color 0.12s ease",
     },
-    ".qc-nav-actions .cm-sidebar-btn": { display: "grid", gridTemplateColumns: "18px minmax(0, 1fr)", alignItems: "center", justifyContent: "start", gap: "10px", height: "34px", padding: "6px 10px", marginBottom: "6px", textAlign: "left", boxSizing: "border-box" },
-    ".qc-nav-actions .cm-sidebar-btn svg": { width: "18px", height: "18px" },
+    ".qc-inspector-actions .cm-sidebar-btn": { display: "grid", gridTemplateColumns: "18px minmax(0, 1fr)", alignItems: "center", justifyContent: "start", gap: "10px", height: "34px", marginTop: "0", padding: "6px 10px", marginBottom: "6px", textAlign: "left", boxSizing: "border-box" },
+    ".qc-inspector-actions .cm-sidebar-btn svg": { width: "18px", height: "18px" },
     ".cm-sidebar-btn:hover": {
         backgroundColor: palette.accentSoft,
         color: palette.accentInk,
@@ -1647,15 +1649,10 @@ function ensureWorkspace(v: EditorView) {
     const sections = document.createElement("div");
     sections.className = "qc-sections";
     const actions = document.createElement("div");
-    actions.className = "qc-nav-actions";
+    actions.className = "qc-inspector-actions";
     const toolbar = v.dom.querySelector(".cm-sidebar");
     if (toolbar) actions.append(toolbar);
-    actions.append(makeSidebarButton(v, {
-        title: "Settings (⌘,)", label: "Settings ⌘,",
-        svg: '<svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"><path d="M4 7h16M4 17h16"/><circle cx="9" cy="7" r="3"/><circle cx="16" cy="17" r="3"/></svg>',
-        action: () => sendToSwift({ type: "settings" }),
-    }));
-    nav.append(label, sections, actions);
+    nav.append(label, sections);
     const inspector = document.createElement("aside");
     inspector.className = "qc-inspector";
     inspector.setAttribute("aria-label", "Selected item");
@@ -1665,7 +1662,10 @@ function ensureWorkspace(v: EditorView) {
     const attach = makeButton("Attach image  ⌥⌘O", () => sendToSwift({ type: "screenshots" }));
     attach.title = "Choose a recent screenshot (⌥⌘O)";
     refile.dataset.itemAction = attach.dataset.itemAction = "true";
-    inspector.append(detail, refile, attach);
+    const inspectorContent = document.createElement("div");
+    inspectorContent.className = "qc-inspector-content";
+    inspectorContent.append(detail, refile, attach);
+    inspector.append(inspectorContent, actions);
     v.dom.append(header, nav, inspector);
     updateWorkspace(v);
 }

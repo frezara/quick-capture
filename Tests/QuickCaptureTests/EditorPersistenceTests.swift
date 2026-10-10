@@ -47,12 +47,12 @@ final class EditorPersistenceTests: XCTestCase {
 
     func testWorkspaceUsesNativeActionsAndLeavesRoomForEditor() async throws {
         let (web, bridge) = try await loadEditor()
-        let settings = expectation(description: "Settings routed through native bridge")
+        let capture = expectation(description: "Capture routed through native bridge")
         bridge.receive = { message in
-            if message["type"] as? String == "settings" { settings.fulfill() }
+            if message["type"] as? String == "capture" { capture.fulfill() }
         }
-        _ = try await web.evaluateJavaScript("document.querySelector('.qc-nav-actions > button').click(); true")
-        await fulfillment(of: [settings], timeout: 5)
+        _ = try await web.evaluateJavaScript("document.querySelector('.qc-workspace-header button').click(); true")
+        await fulfillment(of: [capture], timeout: 5)
         let fits = try await web.evaluateJavaScript("""
             (() => {
                 const nav = document.querySelector('.qc-navigation').getBoundingClientRect();
@@ -78,10 +78,13 @@ final class EditorPersistenceTests: XCTestCase {
         XCTAssertEqual(bounded, true)
         let aligned = try await web.evaluateJavaScript("""
             (() => {
-                const rows = Array.from(document.querySelectorAll('.qc-nav-actions .cm-sidebar-btn'));
+                const rows = Array.from(document.querySelectorAll('.qc-inspector-actions .cm-sidebar-btn'));
                 const icons = rows.map(b => b.querySelector('svg').getBoundingClientRect().left);
                 const labels = rows.map(b => b.querySelector('span').getBoundingClientRect().left);
-                return rows.length === 3 && Math.max(...icons) - Math.min(...icons) < 1 && Math.max(...labels) - Math.min(...labels) < 1;
+                const inspector = document.querySelector('.qc-inspector').getBoundingClientRect();
+                const actions = document.querySelector('.qc-inspector-actions').getBoundingClientRect();
+                const noSettings = !Array.from(document.querySelectorAll('button')).some(b => b.textContent.includes('Settings'));
+                return noSettings && actions.bottom > inspector.bottom - 25 && rows.length === 2 && Math.max(...icons) - Math.min(...icons) < 1 && Math.max(...labels) - Math.min(...labels) < 1;
             })()
             """) as? Bool
         XCTAssertEqual(aligned, true)

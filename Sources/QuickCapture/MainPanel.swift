@@ -1429,8 +1429,6 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
             panel?.toggleEditor()
         case "screenshots":
             panel?.openScreenshotPicker()
-        case "settings":
-            (NSApp.delegate as? AppDelegate)?.showSettings()
         case "archive":
             panel?.archive()
         case "dismiss":
