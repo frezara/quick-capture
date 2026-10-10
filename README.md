@@ -47,8 +47,8 @@ Press **⌥⌘P** (or whatever you've configured) to summon the capture panel an
 - Press **⌥⌘I** to switch between capture and editor modes; **⌘F** searches in the editor.
 - Press **⌥⌘O** to pick screenshots, or **⌥⌘U** in the editor to refile an item.
 - Press **⌘S** to save immediately or **⌥⌘J** to reorganise items by priority and completion.
-- Press **⌥⌘K** to archive completed items after saving.
-- Images stay visible while editing; choose **Edit Markdown** beneath an image to change its source, then **Done** or **Cancel**.
+- Press **⌥⌘K** to archive completed items after saving. Re-organise and Archive require the cursor to be on an item; both are disabled on blank lines and in read mode.
+- Attachments appear as compact thumbnail rows. Click one to open a large preview; **Edit Markdown** inside the viewer changes its source with **Done** or **Cancel**.
 - Click the menu bar icon for **Settings** — file path, hotkey, timestamp, and input font are all configurable.
 
 ## Saving and external edits

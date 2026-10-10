@@ -98,13 +98,15 @@ final class EditorPersistenceTests: XCTestCase {
         _ = try await web.evaluateJavaScript("qcEditor.setContent(\(json)); qcEditor.revealLine(3); true")
         let count = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment').length") as? Int
         let html = try await web.evaluateJavaScript("JSON.stringify(window.testErrors)") as? String
+        let compact = try await web.evaluateJavaScript("document.querySelector('.cm-image-open').getBoundingClientRect().height <= 48") as? Bool
+        XCTAssertEqual(compact, true)
         XCTAssertEqual(count, 2, "Selecting an image line must not collapse its preview: \(html ?? "nil")")
-        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-edit').click(); true")
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-open').click(); document.querySelector('.cm-image-edit').click(); true")
         // A delayed image response must not destroy a source edit in progress.
         _ = try await web.evaluateJavaScript("qcEditor.attachmentLoaded('attachments/test.png', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'); true")
         let sourceExists = try await web.evaluateJavaScript("!!document.querySelector('.cm-image-source textarea')") as? Bool
         XCTAssertEqual(sourceExists, true)
-        let images = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment-img').length") as? Int
+        let images = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment .cm-attachment-img').length") as? Int
         XCTAssertEqual(images, 2)
         _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-source textarea').value = '![updated](attachments/other.png)'; document.querySelector('.cm-image-source button').click(); true")
         let changed = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
@@ -113,7 +115,7 @@ final class EditorPersistenceTests: XCTestCase {
         _ = try await web.evaluateJavaScript("document.querySelector('.cm-content').dispatchEvent(new KeyboardEvent('keydown', {key:'z', code:'KeyZ', metaKey:true, bubbles:true, cancelable:true})); true")
         let undone = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
         XCTAssertEqual(undone, content)
-        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-edit').click(); document.querySelector('.cm-image-source textarea').value='invalid draft'; document.querySelector('.cm-image-source button:last-child').click(); true")
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-open').click(); document.querySelector('.cm-image-edit').click(); document.querySelector('.cm-image-source textarea').value='invalid draft'; document.querySelector('.cm-image-source button:last-child').click(); true")
         let cancelled = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
         XCTAssertEqual(cancelled, content)
     }
@@ -128,7 +130,7 @@ final class EditorPersistenceTests: XCTestCase {
             if message["type"] as? String == "save" { saveID = message["id"] as? Int; save.fulfill() }
             if message["type"] as? String == "archive" { archived = true; archive.fulfill() }
         }
-        _ = try await web.evaluateJavaScript("qcEditor.focus(); document.execCommand('insertText', false, 'changed '); true")
+        _ = try await web.evaluateJavaScript("qcEditor.setContent('- [ ] Original'); qcEditor.revealLine(0); qcEditor.focus(); document.querySelector('.cm-content').dispatchEvent(new KeyboardEvent('keydown', {key:'ArrowRight',metaKey:true,bubbles:true})); document.execCommand('insertText', false, ' changed'); true")
         _ = try await web.evaluateJavaScript("qcEditor.invoke('archive'); true")
         await fulfillment(of: [save], timeout: 5)
         XCTAssertFalse(archived)
@@ -138,6 +140,26 @@ final class EditorPersistenceTests: XCTestCase {
         _ = try await web.evaluateJavaScript("qcEditor.setShortcutHints({archive:'⌥⌘K', reorg:'⌥⌘J'}); true")
         let hints = try await web.evaluateJavaScript("Array.from(document.querySelectorAll('.qc-inspector-actions kbd')).map(k => k.textContent)") as? [String]
         XCTAssertEqual(hints, ["⌥⌘J", "⌥⌘K"])
+    }
+
+    func testBlankLineCannotReorganiseOrArchive() async throws {
+        let (web, bridge) = try await loadEditor()
+        let content = "# Inbox\n## Work\n\n- [x] Completed\n- [ ] Open\n"
+        let json = String(data: try JSONEncoder().encode(content), encoding: .utf8)!
+        let archive = expectation(description: "No archive on a blank line")
+        archive.isInverted = true
+        bridge.receive = { [weak web] message in
+            if message["type"] as? String == "archive" { archive.fulfill() }
+            if message["type"] as? String == "save", let id = message["id"] as? Int {
+                web?.evaluateJavaScript("qcEditor.saveResult(\(id), null, null)", completionHandler: nil)
+            }
+        }
+        _ = try await web.evaluateJavaScript("qcEditor.setContent(\(json)); qcEditor.revealLine(2); qcEditor.invoke('reorg'); qcEditor.invoke('archive'); true")
+        let buffer = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
+        XCTAssertEqual(buffer, content)
+        await fulfillment(of: [archive], timeout: 0.3)
+        let disabled = try await web.evaluateJavaScript("Array.from(document.querySelectorAll('.qc-inspector-actions button')).every(b => b.disabled)") as? Bool
+        XCTAssertEqual(disabled, true)
     }
 
     func testFirstEditAutosavesAndFailureKeepsBufferWithPersistentError() async throws {

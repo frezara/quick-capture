@@ -286,6 +286,8 @@ const attachmentCache = new Map<string, string | null>();
 // checks for it and rebuilds decorations deterministically.
 const attachmentStateChanged = StateEffect.define<null>();
 
+const imageDialogs = new WeakMap<HTMLElement, HTMLDialogElement>();
+
 class ImageWidget extends WidgetType {
     constructor(readonly path: string, readonly label: string, readonly canEditSource: boolean) { super(); }
 
@@ -294,11 +296,22 @@ class ImageWidget extends WidgetType {
         wrap.className = "cm-attachment";
         wrap.dataset.path = this.path;
         wrap.dataset.label = this.label;
-        wrap.tabIndex = 0;
+
         wrap.setAttribute("aria-label", `Image: ${this.label}`);
         const preview = document.createElement("span");
         preview.className = "cm-attachment-preview";
-        wrap.append(preview);
+        const open = document.createElement("button");
+        open.type = "button";
+        open.className = "cm-image-open";
+        open.setAttribute("aria-label", `Preview image: ${this.label}`);
+        const name = document.createElement("span");
+        name.className = "cm-image-name"; name.textContent = this.label;
+        const hint = document.createElement("span");
+        hint.className = "cm-image-hint"; hint.textContent = "Preview ↗";
+        open.append(preview, name, hint);
+        wrap.append(open);
+        let sourceHost: HTMLElement = wrap;
+        let dialog: HTMLDialogElement | null = null;
         requestAttachmentIfNeeded(this.path);
         renderAttachment(wrap, this.path, this.label);
         const edit = document.createElement("button");
@@ -306,7 +319,31 @@ class ImageWidget extends WidgetType {
         edit.className = "cm-image-edit";
         edit.textContent = "Edit Markdown";
         edit.disabled = editor.state.readOnly;
-        wrap.append(edit);
+        open.onclick = () => {
+            if (dialog?.open) return;
+            editor.dispatch({ selection: { anchor: editor.posAtDOM(wrap) } });
+            dialog = document.createElement("dialog");
+            dialog.className = "cm-image-dialog";
+            dialog.setAttribute("aria-label", `Image preview: ${this.label}`);
+            const header = document.createElement("header");
+            const title = document.createElement("span"); title.textContent = this.label;
+            const close = document.createElement("button");
+            close.type = "button"; close.textContent = "Close";
+            close.onclick = () => dialog?.close();
+            header.append(title, close);
+            const large = document.createElement("div");
+            large.className = "cm-image-large"; large.dataset.path = this.path; large.dataset.label = this.label;
+            const content = document.createElement("span"); content.className = "cm-attachment-preview";
+            large.append(content); renderAttachment(large, this.path, this.label);
+            edit.hidden = false;
+            dialog.append(header, large, edit);
+            sourceHost = dialog;
+            dialog.addEventListener("keydown", e => e.stopPropagation());
+            dialog.addEventListener("close", () => { dialog?.remove(); sourceHost = wrap; open.focus(); });
+            editor.dom.append(dialog);
+            imageDialogs.set(wrap, dialog);
+            dialog.showModal();
+        };
         wrap.addEventListener("mousedown", e => {
             e.stopPropagation();
             if (!(e.target as HTMLElement).closest("button, textarea")) {
@@ -317,7 +354,7 @@ class ImageWidget extends WidgetType {
         });
         wrap.addEventListener("keydown", e => e.stopPropagation());
         edit.onclick = () => {
-            if (editor.state.readOnly || wrap.querySelector(".cm-image-source")) return;
+            if (editor.state.readOnly || sourceHost.querySelector(".cm-image-source")) return;
             const original = editor.state.doc.lineAt(editor.posAtDOM(wrap));
             const indent = /^\s*/.exec(original.text)![0];
             const form = document.createElement("span");
@@ -349,6 +386,7 @@ class ImageWidget extends WidgetType {
                     editor.requestMeasure(); return;
                 }
                 form.remove(); edit.hidden = false;
+                dialog?.close();
                 editor.dispatch({ changes: { from: current.from, to: current.to, insert: indent + markdown } });
                 editor.focus(); editor.requestMeasure();
             };
@@ -357,7 +395,7 @@ class ImageWidget extends WidgetType {
                 if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); done.click(); }
             });
             form.append(input, error, done, cancel);
-            wrap.append(form); edit.hidden = true;
+            sourceHost.append(form); edit.hidden = true;
             input.focus(); editor.requestMeasure();
         };
         return wrap;
@@ -366,11 +404,12 @@ class ImageWidget extends WidgetType {
     eq(other: WidgetType): boolean {
         return other instanceof ImageWidget && other.path === this.path && other.label === this.label && other.canEditSource === this.canEditSource;
     }
+    destroy(dom: HTMLElement) { imageDialogs.get(dom)?.close(); }
     ignoreEvent(): boolean { return true; }
 }
 
 function attachmentElements(path: string): HTMLElement[] {
-    return Array.from(document.querySelectorAll<HTMLElement>(".cm-attachment"))
+    return Array.from(document.querySelectorAll<HTMLElement>(".cm-attachment, .cm-image-large"))
         .filter((el) => el.dataset.path === path);
 }
 
@@ -767,6 +806,7 @@ function makeTheme() {
     },
     // Vim block cursor — steel accent (pops against the misted surface).
     ".cm-fat-cursor": {
+        maxHeight: "21px",
         backgroundColor: `${palette.accent} !important`,
         color: `${palette.onAccent} !important`,
     },
@@ -1109,6 +1149,17 @@ function makeTheme() {
         margin: "0 1px",
     },
     // Attachment image line — folded pill / expanded inline preview.
+    ".cm-image-open": { display: "flex", alignItems: "center", gap: "10px", width: "100%", maxWidth: "360px", height: "48px", padding: "6px 10px", boxSizing: "border-box", background: palette.surfaceField, color: palette.text, border: `1px solid ${palette.borderSoft}`, borderRadius: "8px", cursor: "pointer", textAlign: "left" },
+    ".cm-image-open .cm-attachment-preview": { display: "flex", alignItems: "center", width: "48px", height: "34px", overflow: "hidden", flexShrink: "0" },
+    ".cm-image-open .cm-attachment-img": { width: "48px", height: "34px", maxHeight: "34px", maxWidth: "48px", objectFit: "cover", margin: "0", boxShadow: "none" },
+    ".cm-image-name": { font: `12px ${sansFamily}`, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "1" },
+    ".cm-image-hint": { font: `11px ${sansFamily}`, color: palette.soft, whiteSpace: "nowrap" },
+    ".cm-image-dialog": { width: "min(760px, 85vw)", maxHeight: "85vh", padding: "16px", background: palette.surface, color: palette.text, border: `1px solid ${palette.borderSoft}`, borderRadius: "12px", boxShadow: "0 22px 60px #0004", fontFamily: sansFamily },
+    ".cm-image-dialog::backdrop": { background: "#0006" },
+    ".cm-image-dialog header": { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", marginBottom: "16px", overflowWrap: "anywhere" },
+    ".cm-image-dialog header button": { padding: "6px 10px", background: palette.surfaceField, color: palette.text, border: `1px solid ${palette.borderSoft}`, borderRadius: "6px", cursor: "pointer" },
+    ".cm-image-large": { display: "flex", justifyContent: "center", marginBottom: "16px" },
+    ".cm-image-large .cm-attachment-img": { maxWidth: "100%", maxHeight: "55vh", width: "auto", height: "auto", objectFit: "contain", boxShadow: "none" },
     ".cm-image-edit, .cm-image-source button": { fontFamily: sansFamily, fontSize: "11px", color: palette.accentInk, background: palette.surfaceField, border: `1px solid ${palette.borderSoft}`, borderRadius: "6px", padding: "6px 10px", cursor: "pointer" },
     ".cm-image-edit[hidden]": { display: "none" },
     ".cm-image-source": { display: "block", maxWidth: "360px", padding: "10px 0" },
@@ -1117,7 +1168,7 @@ function makeTheme() {
     ".cm-image-source button": { marginRight: "6px" },
     ".cm-attachment:focus, .cm-attachment:focus-within": { outline: `2px solid ${palette.accent}`, outlineOffset: "3px", borderRadius: "8px" },
     ".cm-attachment": {
-        display: "inline-block", maxWidth: "100%",
+        display: "inline-block", width: "360px", maxWidth: "100%", verticalAlign: "middle",
         cursor: "default",
     },
     ".cm-attachment-pill": {
@@ -1453,9 +1504,9 @@ const appCommands: Record<string, (v: EditorView) => boolean> = {
 
 let archivePending = false;
 async function archiveCompleted() {
-    if (archivePending) return;
+    if (archivePending || !view || !canRunItemAction(view)) return;
     archivePending = true;
-    try { if (await saveDocument()) sendToSwift({ type: "archive" }); }
+    try { if (await saveDocument() && view && canRunItemAction(view)) sendToSwift({ type: "archive" }); }
     finally { archivePending = false; }
 }
 
@@ -1553,7 +1604,12 @@ function toggleTaskAtMarker(view: EditorView, markerPos: number): void {
 /// where they were. Cursor stays at its (line, column) position so focus
 /// doesn't drift, and moved lines slide into their new spots via a FLIP
 /// (first/last/invert/play) animation.
+function canRunItemAction(editor: EditorView): boolean {
+    return !editor.state.readOnly && resolveSubtreeSpan(editor.state, editor.state.selection.main.head) !== null;
+}
+
 function moveCompletedToBottom(view: EditorView): void {
+    if (!canRunItemAction(view)) return;
     const original = view.state.doc.toString();
     const lines = original.split("\n");
 
@@ -1810,6 +1866,7 @@ function updateWorkspace(v: EditorView) {
     const span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
     const item = span ? doc.line(span.from + 1).text : "";
     const priority = /(!{1,3})(?:\s|$)/.exec(item)?.[1].length ?? 0;
+    v.dom.querySelectorAll<HTMLButtonElement>(".qc-inspector-actions button").forEach(button => { button.disabled = !canRunItemAction(v); });
     const itemSignature = JSON.stringify([span?.text, active, readMode]);
     if (detail.dataset.signature === itemSignature) return;
     detail.dataset.signature = itemSignature;
