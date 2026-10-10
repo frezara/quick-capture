@@ -127,7 +127,8 @@ final class ShortcutRegistryTests: XCTestCase {
             "readMode": "Mod-e",
             "toggleTask": "Mod-l",
             "save": "Mod-s",
-            "reorg": "Mod-'",
+            "reorg": "Alt-Mod-j",
+            "archive": "Alt-Mod-k",
             "nextSection": "Alt-Mod-ArrowDown",
             "prevSection": "Alt-Mod-ArrowUp",
         ])

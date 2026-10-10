@@ -93,6 +93,7 @@ final class MainPanel: NSPanel {
     /// capture window. Distinct from `pickerOpen`, which drives the capture-mode
     /// takeover and its frame animation.
     private var pickerOverEditor = false
+    private var hotKeyObserver: NSObjectProtocol?
     private var vimObserver: NSObjectProtocol?
     private var refileTargetsObserver: NSObjectProtocol?
     private var tagHuesObserver: NSObjectProtocol?
@@ -112,6 +113,7 @@ final class MainPanel: NSPanel {
 
     deinit {
         stopWatching()
+        if let hotKeyObserver { NotificationCenter.default.removeObserver(hotKeyObserver) }
         if let vimObserver { NotificationCenter.default.removeObserver(vimObserver) }
         if let refileTargetsObserver { NotificationCenter.default.removeObserver(refileTargetsObserver) }
         if let tagHuesObserver { NotificationCenter.default.removeObserver(tagHuesObserver) }
@@ -155,6 +157,10 @@ final class MainPanel: NSPanel {
         bridge.panel = self
         config.userContentController.add(bridge, name: "editorBridge")
         loadEditor()
+
+        hotKeyObserver = NotificationCenter.default.addObserver(forName: .hotKeyDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.pushEditorKeymap()
+        }
 
         // Live-toggle vim in the editor when the setting changes.
         vimObserver = NotificationCenter.default.addObserver(
@@ -915,7 +921,7 @@ final class MainPanel: NSPanel {
             // Deliberate no-op: ⌘R must never reach WebKit in editor mode or
             // it reloads the page, destroying the warm editor's state.
             break
-        case .refile, .readMode, .toggleTask, .save, .reorg, .nextSection, .prevSection:
+        case .refile, .readMode, .toggleTask, .save, .reorg, .archive, .nextSection, .prevSection:
             invokeEditorAction(action)
         }
     }
@@ -1013,6 +1019,11 @@ final class MainPanel: NSPanel {
     /// its own baked-in defaults (which the browser harness relies on).
     private func pushEditorKeymap() {
         guard webViewReady, let json = ShortcutRegistry.editorKeymapJSON else { return }
+        var hints = Dictionary(uniqueKeysWithValues: ShortcutAction.allCases.map { ($0.rawValue, $0.chord.displayGlyphs) })
+        hints["capture"] = appState.hotKey.displayString
+        if let data = try? JSONEncoder().encode(hints), let hintJSON = String(data: data, encoding: .utf8) {
+            webView.evaluateJavaScript("window.qcEditor?.setShortcutHints(\(hintJSON))", completionHandler: nil)
+        }
         webView.evaluateJavaScript(
             "window.qcEditor && window.qcEditor.setKeymap && window.qcEditor.setKeymap(\(json))",
             completionHandler: nil

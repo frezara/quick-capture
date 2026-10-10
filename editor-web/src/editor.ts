@@ -287,33 +287,85 @@ const attachmentCache = new Map<string, string | null>();
 const attachmentStateChanged = StateEffect.define<null>();
 
 class ImageWidget extends WidgetType {
-    constructor(readonly path: string, readonly label: string) { super(); }
+    constructor(readonly path: string, readonly label: string, readonly canEditSource: boolean) { super(); }
 
-    toDOM(): HTMLElement {
+    toDOM(editor: EditorView): HTMLElement {
         const wrap = document.createElement("span");
         wrap.className = "cm-attachment";
         wrap.dataset.path = this.path;
         wrap.dataset.label = this.label;
-        // Pull the bytes the moment the widget mounts so the preview shows
-        // without any interaction (#43).
+        wrap.tabIndex = 0;
+        wrap.setAttribute("aria-label", `Image: ${this.label}`);
+        const preview = document.createElement("span");
+        preview.className = "cm-attachment-preview";
+        wrap.append(preview);
         requestAttachmentIfNeeded(this.path);
         renderAttachment(wrap, this.path, this.label);
-        // Keep CodeMirror from treating a click on the image as a cursor
-        // placement — a cursor on the line would reveal the raw markdown and
-        // replace the widget mid-click.
-        wrap.addEventListener("mousedown", (e) => {
-            e.preventDefault();
+        const edit = document.createElement("button");
+        edit.type = "button";
+        edit.className = "cm-image-edit";
+        edit.textContent = "Edit Markdown";
+        edit.disabled = editor.state.readOnly;
+        wrap.append(edit);
+        wrap.addEventListener("mousedown", e => {
             e.stopPropagation();
+            if (!(e.target as HTMLElement).closest("button, textarea")) {
+                e.preventDefault();
+                editor.dispatch({ selection: { anchor: editor.posAtDOM(wrap) } });
+                wrap.focus();
+            }
         });
+        wrap.addEventListener("keydown", e => e.stopPropagation());
+        edit.onclick = () => {
+            if (editor.state.readOnly || wrap.querySelector(".cm-image-source")) return;
+            const original = editor.state.doc.lineAt(editor.posAtDOM(wrap));
+            const indent = /^\s*/.exec(original.text)![0];
+            const form = document.createElement("span");
+            form.className = "cm-image-source";
+            const input = document.createElement("textarea");
+            input.setAttribute("aria-label", "Image Markdown");
+            input.value = original.text.slice(indent.length);
+            input.rows = 3;
+            const error = document.createElement("span");
+            error.setAttribute("role", "alert");
+            const done = document.createElement("button");
+            done.type = "button"; done.textContent = "Done";
+            const cancel = document.createElement("button");
+            cancel.type = "button"; cancel.textContent = "Cancel";
+            const close = () => { form.remove(); edit.hidden = false; edit.focus(); editor.requestMeasure(); };
+            cancel.onclick = close;
+            done.onclick = () => {
+                if (editor.state.readOnly) return;
+                const markdown = input.value.trim();
+                if (!/^!\[[^\]]*\]\((\S+?)\)$/.test(markdown)) {
+                    error.textContent = "Use ![description](image-path) on one line.";
+                    editor.requestMeasure(); return;
+                }
+                // Resolve from the live DOM, not a stale offset: typing elsewhere
+                // can move this attachment while its source editor is open.
+                const current = editor.state.doc.lineAt(editor.posAtDOM(wrap));
+                if (current.text !== original.text) {
+                    error.textContent = "This image changed. Cancel and reopen its Markdown.";
+                    editor.requestMeasure(); return;
+                }
+                form.remove(); edit.hidden = false;
+                editor.dispatch({ changes: { from: current.from, to: current.to, insert: indent + markdown } });
+                editor.focus(); editor.requestMeasure();
+            };
+            input.addEventListener("keydown", e => {
+                if (e.key === "Escape") { e.preventDefault(); close(); }
+                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); done.click(); }
+            });
+            form.append(input, error, done, cancel);
+            wrap.append(form); edit.hidden = true;
+            input.focus(); editor.requestMeasure();
+        };
         return wrap;
     }
 
     eq(other: WidgetType): boolean {
-        return other instanceof ImageWidget
-            && other.path === this.path
-            && other.label === this.label;
+        return other instanceof ImageWidget && other.path === this.path && other.label === this.label && other.canEditSource === this.canEditSource;
     }
-
     ignoreEvent(): boolean { return true; }
 }
 
@@ -328,19 +380,20 @@ function requestAttachmentIfNeeded(path: string) {
 }
 
 function renderAttachment(el: HTMLElement, path: string, label: string) {
-    el.innerHTML = "";
+    const preview = el.querySelector(".cm-attachment-preview") as HTMLElement;
+    preview.replaceChildren();
     const data = attachmentCache.get(path);
     if (data === undefined) {
-        el.appendChild(makeAttachmentPill("Loading…", "loading"));
+        preview.appendChild(makeAttachmentPill("Loading…", "loading"));
     } else if (data === null) {
-        el.appendChild(makeAttachmentPill("Attachment not found", "missing"));
+        preview.appendChild(makeAttachmentPill("Attachment not found", "missing"));
     } else {
         const img = document.createElement("img");
         img.className = "cm-attachment-img";
         img.src = data;
         img.alt = label;
         img.addEventListener("load", () => view?.requestMeasure());
-        el.appendChild(img);
+        preview.appendChild(img);
     }
 }
 
@@ -520,12 +573,11 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 });
             }
 
-            // Attachment image child line — fold to a pill (or the expanded
-            // preview) unless the cursor is on the line, which reveals the
-            // raw markdown like every other live-preview element.
+            // Images keep their height across selection changes. Source is
+            // edited explicitly within the widget, never revealed by the caret.
             const imageMatch = line.text.match(/^( {2,}|\t)!\[[^\]]*\]\((\S+?)\)\s*$/);
             if (imageMatch) {
-                if (readMode || !selectionOverlaps(view.state, line.from, line.to)) {
+                {
                     const path = imageMatch[2];
                     const rawName = path.split("/").pop() ?? "screenshot";
                     let label: string;
@@ -533,7 +585,7 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     catch { label = rawName; }   // malformed %-sequences (e.g. 100%done.png) must not throw inside a ViewPlugin update
                     ranges.push({
                         from: line.from + imageMatch[1].length, to: line.to,
-                        deco: Decoration.replace({ widget: new ImageWidget(path, label) }),
+                        deco: Decoration.replace({ widget: new ImageWidget(path, label, !readMode) }),
                     });
                 }
                 continue;
@@ -641,6 +693,10 @@ const livePreview = ViewPlugin.fromClass(class {
     }
 }, {
     decorations: (v) => v.decorations,
+    provide: plugin => EditorView.atomicRanges.of(editor =>
+        editor.plugin(plugin)?.decorations.update({
+            filter: (_from, _to, value) => value.spec.widget instanceof ImageWidget,
+        }) ?? Decoration.none),
 });
 
 function makeTheme() {
@@ -676,6 +732,8 @@ function makeTheme() {
     ".qc-property": { display: "flex", justifyContent: "space-between", gap: "10px", padding: "10px 0", borderTop: `1px solid ${palette.borderSoft}`, fontSize: "12px", overflowWrap: "anywhere" },
     ".qc-property span:first-child": { color: palette.soft },
     ".qc-inspector button": { display: "block", width: "100%", border: `1px solid ${palette.borderSoft}`, marginTop: "16px", background: palette.surface },
+    ".qc-inspector button[data-shortcut-action], .qc-workspace-header button": { display: "flex", alignItems: "center", gap: "6px", justifyContent: "space-between" },
+    ".qc-shortcut": { fontFamily: monoFamily, fontSize: "11px", fontWeight: "500", whiteSpace: "nowrap", color: palette.soft, marginLeft: "auto" },
     ".qc-inspector button:disabled": { opacity: "0.5", cursor: "default" },
     ".qc-save-error": { position: "absolute", top: "56px", left: "180px", right: "22px", zIndex: "100", background: palette.warningFill, color: palette.text, border: `1px solid ${palette.priMed}`, borderRadius: "8px", padding: "16px", font: `13px ${sansFamily}` },
     "@media(max-width: 850px)": { ".qc-navigation": { width: "130px" }, ".qc-inspector": { width: "190px", padding: "16px 10px" }, ".cm-scroller": { marginLeft: "130px", marginRight: "190px", width: "calc(100% - 320px)" } },
@@ -959,7 +1017,7 @@ function makeTheme() {
     ".cm-searchMatch.cm-searchMatch-selected": {
         backgroundColor: `${palette.accent}66`,
     },
-    // Persistent actions sit below section navigation.
+    // Persistent actions sit at the bottom of the item inspector.
     ".cm-sidebar": { display: "flex", flexDirection: "column", gap: "0", marginTop: "0" },
     ".cm-sidebar-btn": {
         width: "100%",
@@ -975,7 +1033,7 @@ function makeTheme() {
         padding: "0",
         transition: "background-color 0.12s ease, color 0.12s ease",
     },
-    ".qc-inspector-actions .cm-sidebar-btn": { display: "grid", gridTemplateColumns: "18px minmax(0, 1fr)", alignItems: "center", justifyContent: "start", gap: "10px", height: "34px", marginTop: "0", padding: "6px 10px", marginBottom: "6px", textAlign: "left", boxSizing: "border-box" },
+    ".qc-inspector-actions .cm-sidebar-btn": { display: "grid", gridTemplateColumns: "18px minmax(0, 1fr) auto", alignItems: "center", justifyContent: "start", gap: "10px", height: "34px", marginTop: "0", padding: "6px 10px", marginBottom: "6px", textAlign: "left", boxSizing: "border-box" },
     ".qc-inspector-actions .cm-sidebar-btn svg": { width: "18px", height: "18px" },
     ".cm-sidebar-btn:hover": {
         backgroundColor: palette.accentSoft,
@@ -1051,7 +1109,15 @@ function makeTheme() {
         margin: "0 1px",
     },
     // Attachment image line — folded pill / expanded inline preview.
+    ".cm-image-edit, .cm-image-source button": { fontFamily: sansFamily, fontSize: "11px", color: palette.accentInk, background: palette.surfaceField, border: `1px solid ${palette.borderSoft}`, borderRadius: "6px", padding: "6px 10px", cursor: "pointer" },
+    ".cm-image-edit[hidden]": { display: "none" },
+    ".cm-image-source": { display: "block", maxWidth: "360px", padding: "10px 0" },
+    ".cm-image-source textarea": { display: "block", boxSizing: "border-box", width: "100%", font: `12px ${monoFamily}`, color: palette.text, background: palette.surfaceField, border: `1px solid ${palette.borderSoft}`, borderRadius: "8px", padding: "10px", marginBottom: "6px", resize: "vertical" },
+    ".cm-image-source [role=alert]": { display: "block", color: palette.priHigh, fontSize: "11px" },
+    ".cm-image-source button": { marginRight: "6px" },
+    ".cm-attachment:focus, .cm-attachment:focus-within": { outline: `2px solid ${palette.accent}`, outlineOffset: "3px", borderRadius: "8px" },
     ".cm-attachment": {
+        display: "inline-block", maxWidth: "100%",
         cursor: "default",
     },
     ".cm-attachment-pill": {
@@ -1256,6 +1322,7 @@ declare global {
             refileDidComplete: (targetName: string) => void;
             startRefile: () => void;
             setKeymap: (map: Record<string, string>) => void;
+            setShortcutHints: (map: Record<string, string>) => void;
             invoke: (actionId: string) => void;
             revealLine: (line: number) => void;
             revealSection: (name: string) => void;
@@ -1366,7 +1433,8 @@ const defaultAppKeymap: Record<string, string> = {
     readMode: "Mod-e",
     toggleTask: "Mod-l",
     save: "Mod-s",
-    reorg: "Mod-'",
+    reorg: "Alt-Mod-j",
+    archive: "Alt-Mod-k",
     nextSection: "Alt-Mod-ArrowDown",
     prevSection: "Alt-Mod-ArrowUp",
 };
@@ -1377,10 +1445,35 @@ const appCommands: Record<string, (v: EditorView) => boolean> = {
     toggleTask: (v) => toggleTaskCommand(v),
     save: (v) => { saveNow(v); return true; },
     reorg: (v) => { moveCompletedToBottom(v); return true; },
+    archive: () => { void archiveCompleted(); return true; },
     refile: (v) => startRefile(v),
     nextSection: (v) => jumpToSection(v, 1),
     prevSection: (v) => jumpToSection(v, -1),
 };
+
+let archivePending = false;
+async function archiveCompleted() {
+    if (archivePending) return;
+    archivePending = true;
+    try { if (await saveDocument()) sendToSwift({ type: "archive" }); }
+    finally { archivePending = false; }
+}
+
+let shortcutHints: Record<string, string> = {};
+function labelAction(button: HTMLButtonElement, label: string, action: string) {
+    button.dataset.shortcutAction = action;
+    const text = document.createElement("span");
+    text.className = "qc-action-label"; text.textContent = label;
+    const hint = document.createElement("kbd");
+    hint.className = "qc-shortcut"; hint.textContent = shortcutHints[action] ?? "";
+    button.append(text, hint);
+}
+function refreshShortcutHints() {
+    document.querySelectorAll<HTMLButtonElement>("[data-shortcut-action]").forEach(button => {
+        const hint = button.querySelector(".qc-shortcut");
+        if (hint) hint.textContent = shortcutHints[button.dataset.shortcutAction!] ?? "";
+    });
+}
 
 /// ⌥⌘↓ / ⌥⌘↑ — move the cursor to the next/previous `##` section heading
 /// (column 0, so a follow-up refile acts on the heading's subtree) and pin
@@ -1628,10 +1721,10 @@ function moveCompletedToBottom(view: EditorView): void {
 // The navigation and inspector read the live document. Navigation moves the
 // cursor without filtering/replacing text, so markdown editing and undo stay intact.
 function ensureWorkspace(v: EditorView) {
-    const makeButton = (label: string, action: () => void) => {
+    const makeButton = (label: string, actionId: string, action: () => void) => {
         const button = document.createElement("button");
         button.type = "button";
-        button.textContent = label;
+        labelAction(button, label, actionId);
         button.addEventListener("mousedown", e => e.preventDefault());
         button.onclick = action;
         return button;
@@ -1640,7 +1733,7 @@ function ensureWorkspace(v: EditorView) {
     header.className = "qc-workspace-header";
     const title = document.createElement("strong");
     title.textContent = "Quick Capture";
-    header.append(title, makeButton("Capture  ⌥⌘P", () => sendToSwift({ type: "capture" })));
+    header.append(title, makeButton("Capture", "capture", () => sendToSwift({ type: "capture" })));
     const nav = document.createElement("nav");
     nav.className = "qc-navigation";
     nav.setAttribute("aria-label", "Inbox sections");
@@ -1658,9 +1751,9 @@ function ensureWorkspace(v: EditorView) {
     inspector.setAttribute("aria-label", "Selected item");
     const detail = document.createElement("div");
     detail.className = "qc-item-detail";
-    const refile = makeButton("Refile item  ⌥⌘U", () => startRefile(v));
-    const attach = makeButton("Attach image  ⌥⌘O", () => sendToSwift({ type: "screenshots" }));
-    attach.title = "Choose a recent screenshot (⌥⌘O)";
+    const refile = makeButton("Refile item", "refile", () => startRefile(v));
+    const attach = makeButton("Attach image", "attachScreenshot", () => sendToSwift({ type: "screenshots" }));
+    attach.title = "Choose a recent screenshot";
     refile.dataset.itemAction = attach.dataset.itemAction = "true";
     const inspectorContent = document.createElement("div");
     inspectorContent.className = "qc-inspector-content";
@@ -1759,8 +1852,8 @@ function ensureSidebar(view: EditorView) {
     sidebar.className = "cm-sidebar";
 
     sidebar.appendChild(makeSidebarButton(view, {
-        title: "Move completed items to the bottom of each section (⌘')",
-        label: "Re-org ⌘'",
+        title: "Re-organise each section",
+        label: "Re-org", actionId: "reorg",
         svg: `
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2"
@@ -1774,7 +1867,7 @@ function ensureSidebar(view: EditorView) {
 
     sidebar.appendChild(makeSidebarButton(view, {
         title: "Archive completed items to <name>_archive.md",
-        label: "Archive",
+        label: "Archive", actionId: "archive",
         svg: `
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2"
@@ -1783,7 +1876,7 @@ function ensureSidebar(view: EditorView) {
                 <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/>
                 <line x1="10" y1="13" x2="14" y2="13"/>
             </svg>`,
-        action: () => { void saveDocument().then(ok => { if (ok) sendToSwift({ type: "archive" }); }); },
+        action: () => { void archiveCompleted(); },
     }));
 
     view.dom.appendChild(sidebar);
@@ -1832,20 +1925,14 @@ function ensureSidebar(view: EditorView) {
 
 function makeSidebarButton(
     view: EditorView,
-    opts: { title: string; label: string; svg: string; action: (v: EditorView) => void },
+    opts: { title: string; label: string; actionId: string; svg: string; action: (v: EditorView) => void },
 ): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "cm-sidebar-btn";
     btn.style.position = "relative";
     btn.innerHTML = opts.svg;
-    // CSS tooltip — faster and theme-matched vs the native title tooltip.
-    const tooltip = document.createElement("span");
-    tooltip.className = "cm-btn-tooltip";
-    tooltip.textContent = opts.label;
-    const text = document.createElement("span");
-    text.textContent = opts.label;
-    btn.appendChild(text);
+    labelAction(btn, opts.label, opts.actionId);
     btn.setAttribute("aria-label", opts.title);
     // Stop mousedown from bubbling to CodeMirror, which would otherwise treat
     // the button press as the start of a drag-select — and complete the
@@ -2540,6 +2627,9 @@ window.qcEditor = {
     // Editor-local bindings pushed from Swift's ShortcutRegistry — the single
     // source of truth for shortcuts. Before mount this just records the map;
     // mount() builds the keymap from it.
+    setShortcutHints: (map: Record<string, string>) => {
+        shortcutHints = map ?? {}; refreshShortcutHints();
+    },
     setKeymap: (map: Record<string, string>) => {
         appKeymap = { ...defaultAppKeymap, ...(map ?? {}) };
         view?.dispatch({ effects: appKeymapComp.reconfigure(buildAppKeymap()) });

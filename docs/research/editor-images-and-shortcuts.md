@@ -1,6 +1,6 @@
 # Stable image previews and editor shortcuts
 
-Research date: 2026-10-10. Proposal only; this note does not change application behaviour.
+Research date: 2026-10-10. The recommendations below were subsequently implemented on `codex/unified-design`: stable attachment widgets, explicit undoable source edits, image-only atomic cursor ranges, registry-derived hints, and editor-local ⌥⌘J / ⌥⌘K shortcuts.
 
 ## What causes the image change
 
@@ -33,4 +33,4 @@ This follows the spatial choice already documented in [ShortcutRegistry.swift](.
 
 Apple recommends Command as the principal modifier, reserving custom shortcuts for frequent actions, using Option sparingly for power features, preferring alphabetic keys when extra modifiers are needed, and displaying modifiers in Control–Option–Shift–Command order. Maintaining this app's existing small power-action family is a deliberate compromise with that guidance, rather than a claim that Apple recommends ⌥⌘ for everything. [Apple: Keyboards, custom keyboard shortcuts](https://developer.apple.com/design/human-interface-guidelines/keyboards?changes=_7).
 
-Visually separate each action name from a right-aligned shortcut hint; use consistent key typography and column alignment. Derive both hints and bindings from the registry so buttons and the Editor menu cannot drift. Expose **Archive completed** in the Editor menu as well as the bottom inspector button. Route keyboard and button invocation through the same save-before-archive path; a failed save must prevent archiving. These are application-specific recommendations based on the current registry and archive button implementation.
+Visually separate each action name from a right-aligned shortcut hint; use consistent key typography and column alignment. Current inspector/sidebar hints are hardcoded, while the registry pushes key bindings. Derive both hints and bindings from the registry so buttons and the Editor menu cannot drift. Expose **Archive completed** and **Attach image** in the Editor menu as well as the inspector (the attachment registry action currently has no menu title). Route keyboard and button invocation through the same save-before-archive path; a failed save must prevent archiving. These are application-specific recommendations based on the current registry and archive button implementation.

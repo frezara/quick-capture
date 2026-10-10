@@ -19,6 +19,7 @@ final class EditorPersistenceTests: XCTestCase {
         }
         let config = WKWebViewConfiguration()
         config.userContentController.add(bridge, name: "editorBridge")
+        config.userContentController.addUserScript(WKUserScript(source: "window.testErrors=[]; console.error=(...args)=>window.testErrors.push(args.map(a=>a?.stack || String(a)).join(' '));", injectionTime: .atDocumentStart, forMainFrameOnly: true))
         let web = WKWebView(frame: NSRect(x: 0, y: 0, width: 900, height: 700), configuration: config)
         let html = try XCTUnwrap(Bundle.main.url(forResource: "editor", withExtension: "html", subdirectory: "dist"))
         web.loadFileURL(html, allowingReadAccessTo: html.deletingLastPathComponent())
@@ -88,6 +89,55 @@ final class EditorPersistenceTests: XCTestCase {
             })()
             """) as? Bool
         XCTAssertEqual(aligned, true)
+    }
+
+    func testImagesStayVisibleAndExplicitSourceEditingIsUndoable() async throws {
+        let (web, _) = try await loadEditor()
+        let content = "# Inbox\n## Work\n- [ ] Task\n  ![first](attachments/test.png)\n  ![second](attachments/test.png)\n"
+        let json = String(data: try JSONEncoder().encode(content), encoding: .utf8)!
+        _ = try await web.evaluateJavaScript("qcEditor.setContent(\(json)); qcEditor.revealLine(3); true")
+        let count = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment').length") as? Int
+        let html = try await web.evaluateJavaScript("JSON.stringify(window.testErrors)") as? String
+        XCTAssertEqual(count, 2, "Selecting an image line must not collapse its preview: \(html ?? "nil")")
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-edit').click(); true")
+        // A delayed image response must not destroy a source edit in progress.
+        _ = try await web.evaluateJavaScript("qcEditor.attachmentLoaded('attachments/test.png', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'); true")
+        let sourceExists = try await web.evaluateJavaScript("!!document.querySelector('.cm-image-source textarea')") as? Bool
+        XCTAssertEqual(sourceExists, true)
+        let images = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment-img').length") as? Int
+        XCTAssertEqual(images, 2)
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-source textarea').value = '![updated](attachments/other.png)'; document.querySelector('.cm-image-source button').click(); true")
+        let changed = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
+        XCTAssertTrue(changed?.contains("  ![updated](attachments/other.png)") == true)
+        XCTAssertTrue(changed?.contains("  ![second](attachments/test.png)") == true)
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-content').dispatchEvent(new KeyboardEvent('keydown', {key:'z', code:'KeyZ', metaKey:true, bubbles:true, cancelable:true})); true")
+        let undone = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
+        XCTAssertEqual(undone, content)
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-edit').click(); document.querySelector('.cm-image-source textarea').value='invalid draft'; document.querySelector('.cm-image-source button:last-child').click(); true")
+        let cancelled = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
+        XCTAssertEqual(cancelled, content)
+    }
+
+    func testArchiveWaitsForSaveAndShortcutHintsUseRegistryValues() async throws {
+        let (web, bridge) = try await loadEditor()
+        let save = expectation(description: "Archive first requests save")
+        let archive = expectation(description: "Archive follows save acknowledgement")
+        var saveID: Int?
+        var archived = false
+        bridge.receive = { message in
+            if message["type"] as? String == "save" { saveID = message["id"] as? Int; save.fulfill() }
+            if message["type"] as? String == "archive" { archived = true; archive.fulfill() }
+        }
+        _ = try await web.evaluateJavaScript("qcEditor.focus(); document.execCommand('insertText', false, 'changed '); true")
+        _ = try await web.evaluateJavaScript("qcEditor.invoke('archive'); true")
+        await fulfillment(of: [save], timeout: 5)
+        XCTAssertFalse(archived)
+        let id = try XCTUnwrap(saveID)
+        _ = try await web.evaluateJavaScript("qcEditor.saveResult(\(id), null, null); true")
+        await fulfillment(of: [archive], timeout: 5)
+        _ = try await web.evaluateJavaScript("qcEditor.setShortcutHints({archive:'⌥⌘K', reorg:'⌥⌘J'}); true")
+        let hints = try await web.evaluateJavaScript("Array.from(document.querySelectorAll('.qc-inspector-actions kbd')).map(k => k.textContent)") as? [String]
+        XCTAssertEqual(hints, ["⌥⌘J", "⌥⌘K"])
     }
 
     func testFirstEditAutosavesAndFailureKeepsBufferWithPersistentError() async throws {

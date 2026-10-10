@@ -46,7 +46,9 @@ Press **⌥⌘P** (or whatever you've configured) to summon the capture panel an
 - `#cal` turns the input into a calendar event instead of a todo — open `.ics` in Calendar, BusyCal, etc.
 - Press **⌥⌘I** to switch between capture and editor modes; **⌘F** searches in the editor.
 - Press **⌥⌘O** to pick screenshots, or **⌥⌘U** in the editor to refile an item.
-- Press **⌘S** to save immediately or **⌘'** to reorganise items by priority and completion.
+- Press **⌘S** to save immediately or **⌥⌘J** to reorganise items by priority and completion.
+- Press **⌥⌘K** to archive completed items after saving.
+- Images stay visible while editing; choose **Edit Markdown** beneath an image to change its source, then **Done** or **Cancel**.
 - Click the menu bar icon for **Settings** — file path, hotkey, timestamp, and input font are all configurable.
 
 ## Saving and external edits

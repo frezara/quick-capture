@@ -117,6 +117,7 @@ enum ShortcutAction: String, CaseIterable {
     case toggleTask
     case save
     case reorg
+    case archive
     case nextSection
     case prevSection
 
@@ -130,7 +131,8 @@ enum ShortcutAction: String, CaseIterable {
         case .readMode:         return KeyChord(key: "e", modifiers: .command)
         case .toggleTask:       return KeyChord(key: "l", modifiers: .command)
         case .save:             return KeyChord(key: "s", modifiers: .command)
-        case .reorg:            return KeyChord(key: "'", modifiers: .command)
+        case .reorg:            return KeyChord(key: "j", modifiers: [.command, .option])
+        case .archive:          return KeyChord(key: "k", modifiers: [.command, .option])
         case .nextSection:      return KeyChord(key: "ArrowDown", modifiers: [.command, .option])
         case .prevSection:      return KeyChord(key: "ArrowUp", modifiers: [.command, .option])
         }
@@ -145,7 +147,7 @@ enum ShortcutAction: String, CaseIterable {
             // editor it attaches to the item under the cursor. Same gesture,
             // different target.
             return .anyMode
-        case .refile, .swallowReload, .readMode, .toggleTask, .save, .reorg,
+        case .refile, .swallowReload, .readMode, .toggleTask, .save, .reorg, .archive,
              .nextSection, .prevSection:
             return .editorMode
         }
@@ -155,7 +157,7 @@ enum ShortcutAction: String, CaseIterable {
         switch self {
         case .toggleEditor, .dismissPanel, .attachScreenshot, .refile, .swallowReload:
             return true
-        case .readMode, .toggleTask, .save, .reorg, .nextSection, .prevSection:
+        case .readMode, .toggleTask, .save, .reorg, .archive, .nextSection, .prevSection:
             return false
         }
     }
@@ -168,13 +170,14 @@ enum ShortcutAction: String, CaseIterable {
         switch self {
         case .toggleEditor:     return "Toggle Editor"
         case .dismissPanel:     return nil
-        case .attachScreenshot: return nil
+        case .attachScreenshot: return "Attach Image…"
         case .refile:           return "Refile…"
         case .swallowReload:    return nil
         case .readMode:         return "Toggle Read Mode"
         case .toggleTask:       return "Toggle Checkbox"
         case .save:             return "Save Now"
         case .reorg:            return "Re-organize"
+        case .archive:          return "Archive Completed"
         case .nextSection:      return "Next Section"
         case .prevSection:      return "Previous Section"
         }
