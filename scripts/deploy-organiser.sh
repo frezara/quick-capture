@@ -36,11 +36,11 @@ else
   cd "$destination"
   [[ "$(git branch --show-current)" == "$branch" ]]
   [[ -z "$(git status --porcelain)" ]]
-  bash organiser/backup.sh
+  bash organiser/backup.sh < /dev/null
   git fetch "$bundle" "refs/heads/$branch"
   git merge --ff-only FETCH_HEAD
 fi
 cd "$destination"
-bash organiser/setup.sh
+bash organiser/setup.sh < /dev/null
 git rev-parse HEAD
 REMOTE
