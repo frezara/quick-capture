@@ -422,7 +422,7 @@ struct CaptureView: View {
 
     /// Tags that are always present in the suggestions and Tab autocomplete,
     /// even before the user has used them. `cal` is the calendar-routing tag —
-    /// captures with `#cal` get parsed into a .ics event instead of a todo.
+    /// captures with `#cal` are delivered as internal organiser events.
     private static let pinnedTags = ["cal"]
 
     /// Full searchable tag list: pinned tags first, then anything discovered
@@ -1048,8 +1048,7 @@ struct CaptureView: View {
         // same scope yields the stale value.
         let trimmedTag = tagToCommit.trimmingCharacters(in: .whitespacesAndNewlines)
         let tag: String? = trimmedTag.isEmpty ? nil : trimmedTag
-        // Calendar captures never write markdown, so attachments have nowhere
-        // to go — the chips are visibly disabled in that mode (R21).
+        // Calendar attachments remain visibly disabled in this first event workflow.
         let attachments = isCalendarMode ? [] : appState.pendingAttachments
         let originalText = todoText
         let originalTag = tagText

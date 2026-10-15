@@ -124,12 +124,11 @@ crossfades between them.
   to it on refile but never opens it.
 
 - **`#cal`** — a capture prefix that re-interprets the input as a
-  natural-language calendar event and opens a generated `.ics`.
+  natural-language calendar event retained locally and delivered to the organiser.
 
 ## Organiser handoff language
 
-The snapshot handoff is implemented. The next product phase adds automatic
-capture delivery (ADR-0009); that behaviour is not implemented yet.
+Automatic capture delivery and explicit snapshot handoff are distinct workflows.
 
 **Organiser**:
 The personal system for managing captured information, notes, tasks, reminders,
@@ -138,7 +137,7 @@ services that retain and manage its records.
 _Avoid_: Backend (when referring to the whole product)
 
 **Automatic capture delivery**:
-The intended default whereby a newly saved Quick Capture entry reaches the
+The default whereby a newly saved capture-box entry reaches the
 organiser without a separate Send action. An unavailable organiser delays delivery
 without preventing local capture.
 

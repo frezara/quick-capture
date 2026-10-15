@@ -7,7 +7,7 @@ Branch: `feat/home-organiser`, based on the completed snapshot-handoff branch.
    revision conflicts and tombstones, browser CRUD, Docker health checks,
    deployment and backup scripts. Browser date fields support user-entered
    calendar events and reminders; no notifications or external integrations.
-2. **Automatic native capture delivery.** A saved capture must have a stable
+2. **Automatic native capture delivery (implemented).** A saved capture must have a stable
    identity and recoverable local intent before network delivery. Persist a
    frozen operation before sending; reconcile interrupted saves on launch.
    Credentials belong in Keychain. Bind pending operations to their destination.
@@ -26,7 +26,7 @@ Branch: `feat/home-organiser`, based on the completed snapshot-handoff branch.
 6. **iPhone rollout.** Mobile capture and organiser UX, secure access, offline
    policy, and notification capability appropriate to the chosen client.
 
-The PostgreSQL service alone does not complete steps 2–6. The old explicit spool
+Steps 1–2 are implemented; steps 3–6 remain. The old explicit spool
 receiver remains a development fixture and has not become the production API.
 
 ## Verified infrastructure

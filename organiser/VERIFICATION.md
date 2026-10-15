@@ -17,6 +17,14 @@
 One non-failing test warning: the installed Starlette test client deprecates its
 httpx adapter in favour of httpx2. This affects the test harness, not API runtime.
 
-Native Swift and editor-web sources are unchanged in this milestone; their prior
-regression suite has not been rerun. Automatic capture delivery and native sync
-remain unimplemented. Reminder dates do not trigger notifications yet.
+Native automatic-delivery milestone: **239 Swift tests passed, one opt-in latency
+test skipped**. The 13 new outbox tests cover crash recovery, duplicate source
+markers, frozen attachments, immutable retries, bound destinations, pause and
+missing credentials, rejected authentication, bad receipts, integrity failures,
+input limits, old-history exclusion and internal calendar events. A live test
+against the Linux PostgreSQL service delivered an attachment and retried after a
+simulated lost acknowledgement, receiving the same original receipt. Its test
+item was deleted afterward.
+
+Native record edits/deletions and incoming synchronisation remain unimplemented.
+Reminder dates do not trigger notifications yet. Editor-web sources are unchanged.

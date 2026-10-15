@@ -5,10 +5,13 @@ bookmarks, manually entered calendar events, and reminder dates. The browser can
 create, edit, complete, delete, search and filter records. Attachments are stored
 in PostgreSQL alongside their item, in the same transaction.
 
-**Not yet connected to the native Quick Capture app.** Its existing explicit
-spool handoff remains unchanged. Automatic native capture delivery, bidirectional
-sync, historical import, reminder notifications and a full calendar layout are
-subsequent work. The category tabs and date fields are a foundation, not a claim
+**Connected to new native capture-box entries.** Configure the API URL and
+access key in Quick Capture Settings → Automatic organiser delivery. New entries
+are retained in a durable local queue and delivered automatically; `#cal` creates
+an internal event rather than opening an external calendar app. Existing explicit
+spool handoff remains available under Legacy development spool. Bidirectional
+sync, editor-created entries, historical import, reminder notifications and a full
+calendar layout are subsequent work. The category tabs and date fields are a foundation, not a claim
 that those features are finished.
 
 ## Local setup
@@ -138,3 +141,43 @@ bash organiser/verify-backup.sh backups/organiser-YYYYMMDDTHHMMSSZ.dump
 
 The verifier restores into a uniquely named temporary database, checks all three
 record tables, and removes only that temporary database on exit.
+
+
+## Native Mac connection and offline delivery
+
+In Settings → Automatic organiser delivery, use `http://127.0.0.1:8788` with the
+home server SSH tunnel. Import the server access-key file or paste its contents
+and choose Save Access Key. Credentials are stored in macOS Keychain per endpoint,
+not UserDefaults. The URL and pause toggle are ordinary preferences.
+
+For scripted first setup, launch a stopped app with:
+
+```sh
+open "/path/to/Quick Capture.app" --args \
+  --organiser-url http://127.0.0.1:8788 \
+  --organiser-key-file /path/to/server_token
+```
+
+The key itself never appears in process arguments. HTTPS is required except for
+loopback HTTP. Redirects are rejected so credentials cannot follow a redirect.
+The SSH tunnel currently needs to remain open; reconnect it after a Mac restart.
+An always-on connection will be addressed in the home-Mac workflow milestone.
+
+New capture-box entries are queued even while delivery is paused or unconfigured.
+Their immutable request and attachment bytes live under
+`~/Library/Application Support/QuickCapture/OrganiserOutbox`. The request is saved
+before the Markdown entry; a source marker repairs an interrupted confirmation
+on launch. A prepared record without a saved source marker is retained, but never
+automatically sent. After the first delivery attempt binds a server, changing the
+Settings URL cannot retarget that operation. Each server requires its own saved key.
+
+A lost response retries the same operation, so the backend returns the original
+receipt. Authentication/validation/conflict failures require attention in Settings;
+network failures retry with backoff. Pause stops new attempts after an in-flight
+attempt finishes. The queue currently retains delivered snapshots and receipts.
+
+Limits for native capture are 1 MiB UTF-8 text, 16 attachments and 18 MiB combined
+attachment bytes (to fit the API's base64 request limit). Exceeding these limits
+keeps the draft available and does not silently omit files. Existing history and
+new lines typed directly into the editor are not automatically imported yet.
+Edits, completion and deletion in the native app are the next sync milestone.

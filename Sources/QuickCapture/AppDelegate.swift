@@ -37,6 +37,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         setupMainMenu()
         setupHotKey()
         HandoffController.shared.start()
+        OrganiserController.shared.configureFromArguments(ProcessInfo.processInfo.arguments)
+        OrganiserController.shared.start()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -296,9 +298,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard !trimmed.isEmpty else { return false }
 
         if tag?.lowercased() == "cal" {
-            // Calendar captures never touch the markdown file; the capture UI
-            // disables the chips in #cal mode, so any attachments are dropped
-            // here with the user already informed.
+            // Calendar capture is saved locally and delivered as an internal event.
             return handleCalendarCapture(trimmed)
         }
 
@@ -333,13 +333,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         do {
-            try FileWriter.appendTodo(
-                trimmed,
-                tag: tag,
-                to: appState.captureFileURL,
-                includeTimestamp: appState.includeTimestamp,
-                attachmentLinks: attachmentLinks
-            )
+            _ = try OrganiserCapture.save(trimmed, tag: tag, file: appState.captureFileURL,
+                timestamp: appState.includeTimestamp, attachments: attachmentLinks,
+                outbox: OrganiserController.shared.outbox, endpoint: nil)
             if let draft = importDraft { try? CaptureRecovery.remove(draft.id) }
             appState.captureImportRecoveryID = nil
             hideCapture()
@@ -366,17 +362,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    /// `#cal` branch: parse the text as a calendar event, hand the resulting
-    /// `.ics` to the default handler (Calendar.app shows its own confirmation
-    /// sheet). The markdown todo file is NOT touched for these captures.
-    /// Returns true when the .ics was opened and the panel dismissed.
+    /// `#cal` parses the input into an internal organiser event.
+    /// The event is retained in the capture file and the durable organiser queue.
     @discardableResult
     private func handleCalendarCapture(_ text: String) -> Bool {
         switch EventParser.parse(text) {
         case .success(let event):
             do {
-                let url = try ICSWriter.writeTempFile(for: event)
-                NSWorkspace.shared.open(url)
+                _ = try OrganiserCapture.save(text, tag: "cal", file: appState.captureFileURL,
+                    timestamp: appState.includeTimestamp, attachments: [], event: event,
+                    outbox: OrganiserController.shared.outbox, endpoint: nil)
                 hideCapture()
                 return true
             } catch {

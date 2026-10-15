@@ -21,7 +21,8 @@ struct SettingsView: View {
                 captureBoxCard
                 editorCard
                 refileTargetsSection
-                HandoffSettingsView()
+                OrganiserSettingsView()
+                DisclosureGroup("Legacy development spool") { HandoffSettingsView() }
             }
             .padding(Metrics.s4)
             .frame(width: 680)

@@ -9,7 +9,7 @@ Built for the moment when a thought hits you mid-task and you don't want to cont
 - Configurable global hotkey (default `⌥⌘P`)
 - Appends to any markdown file — works great with Obsidian vaults
 - `#tags` route entries under `## tag` headings; untagged items go under `## Quick capture`
-- `#cal` interprets the input as a natural-language calendar event ("call Seb tomorrow at 2pm for 30 min") and opens an `.ics` in your default calendar app
+- `#cal` interprets the input as a natural-language calendar event ("call Seb tomorrow at 2pm for 30 min") and saves it as an internal organiser event
 - Optional Obsidian-Tasks-compatible timestamp on each capture
 - Pick your input font (System / Rounded / Serif / Monospaced)
 - Built-in markdown editor with live preview, optional Vim bindings, search, and autosave
@@ -43,7 +43,7 @@ macOS remembers the choice; subsequent launches are silent.
 Press **⌥⌘P** (or whatever you've configured) to summon the capture panel anywhere in macOS. Type your thought and press Enter — it's appended to your file and the panel disappears.
 
 - Add `#tag` after the text (Tab to focus the tag field) to route the entry under a `## tag` heading.
-- `#cal` turns the input into a calendar event instead of a todo — open `.ics` in Calendar, BusyCal, etc.
+- `#cal` saves an internal calendar event locally and queues it for the organiser.
 - Press **⌥⌘I** to switch between capture and editor modes; **⌘F** searches in the editor.
 - Press **⌥⌘O** to pick screenshots, or **⌥⌘U** in the editor to refile an item.
 - Press **⌘S** to save immediately or **⌥⌘J** to reorganise items by priority and completion.
@@ -57,14 +57,23 @@ The editor autosaves after a short pause. Explicit saves show “Saved” only a
 
 If another app changes the file while you have unsaved edits, Quick Capture keeps your text in the editor and shows a choice: **Keep my edits** replaces the disk version, while **Use disk version** replaces the editor buffer. Failed writes show a persistent error with a retry button.
 
-## Organiser handoff
+## Automatic organiser delivery
+
+New capture-box entries, including `#cal` events, are saved locally and queued
+for the PostgreSQL organiser automatically. Configure the API URL and access key
+in Settings → Automatic organiser delivery. Offline delivery retries safely;
+credentials live in Keychain. Existing history and editor-created lines are not
+imported automatically, and native edits/deletions are not synchronised yet.
+See [organiser setup](organiser/README.md) and [verification](organiser/VERIFICATION.md).
+
+### Legacy development handoff
 
 The editor's **Send to organiser** action creates an immutable copy of the selected
 item subtree. Configure the local spool in Settings; delivery history shows pending
 work, receipts, recovery and Retry. Existing capture and refile remain independent.
 See [integration setup and contract](integration/README.md) and
 [verification results](integration/verification.md). This includes a development
-receiver; production organiser/device sync is a later integration.
+receiver, separate from the production PostgreSQL API above.
 
 ## Roadmap
 

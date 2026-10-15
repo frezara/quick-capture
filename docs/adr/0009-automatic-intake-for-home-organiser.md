@@ -7,8 +7,9 @@ for the next product phase, while retaining durable local capture during outages
 and independent append-to-file refiling. It changes the product from an optional
 destination into the normal destination for new captures.
 
-Accepted product direction on 15 October 2026; automatic intake is not yet
-implemented. The existing feature branch still uses explicit one-way snapshots.
+Accepted product direction on 15 October 2026. Automatic capture-box intake is
+now implemented on `feat/home-organiser`; explicit snapshots remain a separate
+legacy development workflow. Native record updates are the next milestone.
 The user subsequently confirmed that edits, completion and deletion should update
 the same organiser record. Each accepted change advances a revision. A change
 based on an older revision must surface a conflict instead of overwriting either
