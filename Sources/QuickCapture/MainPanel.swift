@@ -43,6 +43,8 @@ final class MainPanel: NSPanel {
     private let appState: AppState
     private let onSubmit: (String, String?, [URL]) -> Bool
     private let onDismiss: () -> Void
+    var onSettings: (() -> Void)?
+    private var suspendedForSettings = false
 
     private(set) var editorOpen = false
     private(set) var workspaceOpen = false
@@ -242,6 +244,8 @@ final class MainPanel: NSPanel {
     /// since the web view is never torn down and its queued save can land after
     /// a capture has been written.
     func show() {
+        let resumingSettings = suspendedForSettings
+        suspendedForSettings = false
         recordPreviousApp()   // before NSApp.activate steals frontmost from it
 
         if workspaceOpen { closeWorkspace(); return }
@@ -271,7 +275,7 @@ final class MainPanel: NSPanel {
 
         // Fresh summon from hidden — the one path that starts clean (R20).
         collapseStateReset()
-        resetCaptureAttachments()
+        if !resumingSettings { resetCaptureAttachments() }
         if let screen = currentScreenVisibleFrame() {
             anchorCenterY = screen.midY
             var f = frame
@@ -709,6 +713,27 @@ final class MainPanel: NSPanel {
         }
     }
 
+    /// Settings is an internal handoff, not a dismissal: retain the draft and
+    /// attachments and do not restore focus to the previously active app.
+    func prepareForSettings(_ completion: @escaping () -> Void) {
+        guard !exitPending else { return }
+        exitPending = true
+        canDismissOnBlur = false
+        flushEditorSave { [weak self] saved in
+            guard let self else { return }
+            self.exitPending = false
+            guard saved else { self.canDismissOnBlur = true; return }
+            self.suspendForSettings()
+            completion()
+        }
+    }
+
+    private func suspendForSettings() {
+        suspendedForSettings = true
+        canDismissOnBlur = false
+        super.orderOut(nil)
+    }
+
     /// Esc in the editor with vim off (posted from editor.ts via the bridge).
     fileprivate func dismissFromEditor() { dismiss() }
 
@@ -986,6 +1011,12 @@ final class MainPanel: NSPanel {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.charactersIgnoringModifiers == ",",
+           event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+           let onSettings {
+            onSettings()
+            return true
+        }
         if handleCalendarViewKey(event) { return true }
         // Also handle the summon chord locally while the workspace owns focus.
         // Carbon remains responsible for summoning from other applications.

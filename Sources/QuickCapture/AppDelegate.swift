@@ -284,11 +284,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             },
             onDismiss: { [weak self] in self?.hideCapture() }
         )
+        panel.onSettings = { [weak self] in self?.showSettings() }
         mainPanel = panel
         return panel
     }
 
     @objc func showCapture() {
+        hideSettingsWindows()
         appState.refreshRecentTags()
         ensurePanel().show()
     }
@@ -417,8 +419,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // MARK: - Settings
 
+    private func hideSettingsWindows() {
+        settingsController.hide()
+        // Retire the former SwiftUI Settings scene if macOS restored it.
+        for window in NSApp.windows where window.identifier?.rawValue == "com_apple_SwiftUI_Settings_window" {
+            window.isRestorable = false
+            window.orderOut(nil)
+        }
+    }
+
     @objc func showSettings() {
-        settingsController.show()
+        let present = { [weak self] in
+            guard let self else { return }
+            self.hideSettingsWindows()
+            self.settingsController.show()
+        }
+        if let panel = mainPanel, panel.isVisible { panel.prepareForSettings(present) }
+        else { present() }
     }
 
     // MARK: - Default capture file scaffolding

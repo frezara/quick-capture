@@ -1,6 +1,7 @@
 import AppKit
 import SwiftUI
 
+@MainActor
 final class SettingsWindowController {
     private let appState: AppState
     private var window: NSWindow?
@@ -8,6 +9,8 @@ final class SettingsWindowController {
     init(appState: AppState) {
         self.appState = appState
     }
+
+    func hide() { window?.orderOut(nil) }
 
     func show() {
         if window == nil {
@@ -26,6 +29,7 @@ final class SettingsWindowController {
             w.contentMinSize = NSSize(width: width, height: 320)
             w.contentMaxSize = NSSize(width: width, height: .greatestFiniteMagnitude)
             w.isReleasedWhenClosed = false
+            w.isRestorable = false
             w.center()
             window = w
         }
