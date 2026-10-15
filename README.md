@@ -65,8 +65,11 @@ The capture panel expands into native SwiftUI views in the same window:
 | ⌥⌘P | Return to capture |
 | ⌥⌘I | Markdown editor |
 
-Calendar uses ⌘1 / ⌘2 / ⌘3 for day / week / month, ⌘← / ⌘→ for
-previous / next period, and ⌘T for today. It reads locally saved event metadata;
+Calendar uses D / W / M for day / week / month (⌘1 / ⌘2 / ⌘3 also work),
+⌘← / ⌘→ for previous / next period, and ⌘T for today. The month view has
+a continuous calendar grid; day/week views have hourly timelines, an all-day
+row, a current-time indicator and separate columns for overlapping events.
+Click an event for its details, or a month date to open that day. It reads locally saved event metadata;
 `#cal` remains the event capture route. These are browsing views for this milestone;
 edit existing content in the Markdown editor. Capture drafts survive switching
 views. The expanded workspace stays open when you switch to another app.

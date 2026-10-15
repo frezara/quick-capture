@@ -166,7 +166,10 @@ final class WorkspaceModel: ObservableObject {
         case .week: start = calendar.dateInterval(of: .weekOfYear, for: date)!.start; count = 7
         case .month:
             let month = calendar.dateInterval(of: .month, for: date)!.start
-            start = calendar.dateInterval(of: .weekOfYear, for: month)!.start; count = 42
+            start = calendar.dateInterval(of: .weekOfYear, for: month)!.start
+            let end = calendar.date(byAdding: .month, value: 1, to: month)!
+            let days = calendar.dateComponents([.day], from: start, to: end).day!
+            count = ((days + 6) / 7) * 7
         }
         return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
     }

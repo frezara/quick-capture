@@ -35,18 +35,22 @@ struct WorkspaceView: View {
             .padding(20).frame(width: 220).frame(maxHeight: .infinity)
             .background(.regularMaterial)
             Divider()
-            VStack(alignment: .leading, spacing: 16) {
-                HStack {
-                    Text(model.destination.title).font(.largeTitle.weight(.semibold))
-                    Spacer()
-                    Button("Capture", action: onCapture)
-                }
-                if let problem = model.problem {
-                    Label(problem, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
-                }
-                if model.destination == .calendar { calendar }
-                else { library }
-            }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            if model.destination == .calendar {
+                NativeCalendarView(model: model, onCapture: onCapture)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else {
+                VStack(alignment: .leading, spacing: 16) {
+                    HStack {
+                        Text(model.destination.title).font(.largeTitle.weight(.semibold))
+                        Spacer()
+                        Button("Capture", action: onCapture)
+                    }
+                    if let problem = model.problem {
+                        Label(problem, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange)
+                    }
+                    library
+                }.padding(24).frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
+            }
         }
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 16))
@@ -110,46 +114,4 @@ struct WorkspaceView: View {
     }
     private var modelCaptureFile: URL { model.captureFile }
 
-    private var calendar: some View {
-        VStack(spacing: 12) {
-            HStack {
-                Button { model.shiftDate(-1) } label: { Image(systemName: "chevron.left") }.help("Previous period · ⌘←")
-                Button("Today") { model.date = Date() }.help("Today · ⌘T")
-                Button { model.shiftDate(1) } label: { Image(systemName: "chevron.right") }.help("Next period · ⌘→")
-                Text(model.date.formatted(.dateTime.month(.wide).year())).font(.headline)
-                Spacer()
-                Picker("View", selection: $model.calendarMode) {
-                    ForEach(WorkspaceCalendarMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
-                }.pickerStyle(.segmented).frame(width: 210)
-            }
-            Text("Day ⌘1   Week ⌘2   Month ⌘3 · \(TimeZone.current.identifier)")
-                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-            ScrollView {
-                LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: 6), count: model.calendarMode == .day ? 1 : 7), spacing: 6) {
-                    ForEach(model.days, id: \.self) { day in
-                        VStack(alignment: .leading, spacing: 6) {
-                            Text(day.formatted(.dateTime.weekday(.abbreviated).day()))
-                                .font(.caption.weight(Calendar.current.isDateInToday(day) ? .bold : .regular))
-                                .foregroundStyle(Calendar.current.isDateInToday(day) ? Color.accentColor : .secondary)
-                            ForEach(model.visible.filter { $0.occurs(on: day) }.sorted { $0.starts! < $1.starts! }) { item in
-                                Button { model.selectedID = item.id } label: {
-                                    Text(item.title).font(.caption).lineLimit(model.calendarMode == .month ? 2 : 4)
-                                        .frame(maxWidth: .infinity, alignment: .leading).padding(5)
-                                        .background(Color.accentColor.opacity(0.12)).clipShape(RoundedRectangle(cornerRadius: 5))
-                                }.buttonStyle(.plain).help(item.title)
-                            }
-                            Spacer(minLength: 0)
-                        }.padding(8).frame(maxWidth: .infinity, minHeight: model.calendarMode == .month ? 86 : 220, alignment: .topLeading)
-                            .background(.quaternary.opacity(0.4)).clipShape(RoundedRectangle(cornerRadius: 8))
-                    }
-                }
-            }
-            if let item = model.visible.first(where: { $0.id == model.selectedID }) {
-                HStack { Text(item.text).textSelection(.enabled); Spacer(); Button("Close") { model.selectedID = nil } }
-                    .padding(12).background(.regularMaterial).clipShape(RoundedRectangle(cornerRadius: 8))
-            }
-            Text("Capture an event with #cal. Calendar changes arrive through sync.")
-                .font(.caption).foregroundStyle(.secondary).frame(maxWidth: .infinity, alignment: .leading)
-        }
-    }
 }

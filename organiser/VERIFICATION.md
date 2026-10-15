@@ -133,3 +133,17 @@ two opt-in tests skipped. Signed build succeeded and was installed. Native UI
 verification selected Cal using arrows from an empty tag field: first Enter
 showed the event preview with no disk write; second Enter produced exactly one
 delivered event with the previewed start/end. The test event was tombstoned afterward.
+
+
+## Native calendar layout — 15 October 2026
+
+Added a compact toolbar, continuous month grid, current-day marker, hourly day
+and week timelines, all-day row, current-time line, event details and overlap
+columns. Bare D/W/M switch calendar views only while Calendar is open and no
+visible editable text view owns focus. Existing command-number shortcuts remain.
+
+Swift tests: 265 executed, 263 passed, two opt-in tests skipped. New tests cover
+overlap-column allocation/reuse, midnight clipping, all-day separation and
+single-letter shortcut scope. Signed build succeeded. Installed-app visual and
+keyboard checks remain pending because Computer Use cannot attach until a panel
+or Settings window is opened; the existing installed app has not been replaced.

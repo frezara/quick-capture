@@ -965,7 +965,24 @@ final class MainPanel: NSPanel {
     /// attach, refile) before CodeMirror/WebKit or the standard menu items can
     /// claim them. Which keys those are — and in which mode — lives in
     /// `ShortcutRegistry`, the single source of truth for bindings.
+    private func handleCalendarViewKey(_ event: NSEvent) -> Bool {
+        guard workspaceOpen, workspaceModel.destination == .calendar else { return false }
+        let textView = firstResponder as? NSTextView
+        let editingText = textView?.isEditable == true && textView?.isHiddenOrHasHiddenAncestor == false
+        guard let mode = CalendarLayout.mode(for: event.charactersIgnoringModifiers ?? "",
+            hasModifiers: !event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+            editingText: editingText) else { return false }
+        workspaceModel.calendarMode = mode
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if handleCalendarViewKey(event) { return }
+        super.keyDown(with: event)
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if handleCalendarViewKey(event) { return true }
         // Also handle the summon chord locally while the workspace owns focus.
         // Carbon remains responsible for summoning from other applications.
         if workspaceOpen, UInt32(event.keyCode) == appState.hotKey.keyCode,
