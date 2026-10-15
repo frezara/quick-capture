@@ -1117,6 +1117,8 @@ final class MainPanel: NSPanel {
             guard let target = appState.effectiveRefileTargets.first(where: { $0.id == targetID }) else {
                 throw FileWriter.RefileError.targetUnavailable
             }
+            try OrganiserController.shared.outbox.prepareMove(ids: SourceIdentity.ids(in: subtree),
+                to: target.folderURL.appendingPathComponent("inbox.md"))
             try RefileService.refile(
                 subtree: subtree,
                 range: fromLine..<toLine,
@@ -1131,6 +1133,7 @@ final class MainPanel: NSPanel {
                 completionHandler: nil
             )
         } catch {
+            OrganiserController.shared.outbox.cancelMove(ids: SourceIdentity.ids(in: subtree))
             let alert = NSAlert()
             alert.messageText = "Couldn’t refile"
             alert.informativeText = error.localizedDescription

@@ -44,6 +44,79 @@ final class OrganiserController: ObservableObject {
     @Published var records: [OrganiserDelivery] = []
     let outbox: OrganiserOutbox
     private var worker: Task<Void, Never>?
+    private var pollIndex = 0
+    private var importProblem: String?
+    private var importFile: URL {
+        let path = UserDefaults.standard.string(forKey: "captureFilePath")
+            ?? (NSHomeDirectory() as NSString).appendingPathComponent("QuickCapture/inbox.md")
+        return URL(fileURLWithPath: (path as NSString).expandingTildeInPath)
+    }
+    private func pullChanges() async {
+        do {
+            let destination = try OrganiserOutbox.endpoint(endpoint)
+            guard let token = try OrganiserCredentials.read(destination) else { return }
+            let cursor = try outbox.cursor(for: destination)
+            let http = OrganiserHTTP()
+            let (bytes, code) = try await http.request(endpoint: destination, token: token,
+                path: "/api/changes?after=\(cursor)&limit=20")
+            guard code == 200 else { throw HandoffError.invalid("Incoming sync returned HTTP \(code). Check the organiser connection and server version.") }
+            let page = try JSONDecoder().decode(OrganiserChanges.self, from: bytes)
+            var previous = cursor
+            for change in page.changes {
+                guard enabled, try OrganiserOutbox.endpoint(endpoint) == destination else { return }
+                guard change.sequence > previous, UUID(uuidString: change.item_id) != nil else {
+                    throw HandoffError.invalid("Invalid organiser change cursor.")
+                }
+                let remote = try await http.fetch(endpoint: destination, token: token, id: change.item_id)
+                guard enabled, try OrganiserOutbox.endpoint(endpoint) == destination else { return }
+                guard remote.revision >= change.revision else { throw HandoffError.invalid("The organiser returned an older item version. Sync will retry.") }
+                try outbox.importItem(remote, id: change.item_id, file: importFile, endpoint: destination, candidates: syncCandidates)
+                try outbox.advanceCursor(change.sequence, endpoint: destination)
+                previous = change.sequence
+            }
+            importProblem = nil
+        } catch { importProblem = error.localizedDescription }
+    }
+    private var syncCandidates: [URL] {
+        guard let data = UserDefaults.standard.data(forKey: "refileTargets"),
+              let targets = try? JSONDecoder().decode([RefileTarget].self, from: data) else { return [] }
+        return targets.map { $0.folderURL.appendingPathComponent("inbox.md") }
+    }
+    private func synchroniseLocal() {
+        for record in (try? outbox.records()) ?? [] {
+            do {
+                if let incoming = record.incoming {
+                    try outbox.receive(incoming, id: record.id, candidates: syncCandidates)
+                } else { try outbox.reconcileLocal(record.id, candidates: syncCandidates) }
+            } catch { outbox.syncProblem(record.id, error.localizedDescription) }
+        }
+    }
+    private func pullOne() async {
+        let linked = ((try? outbox.records()) ?? []).filter {
+            ($0.receipt != nil || $0.baseline != nil) && $0.conflict == nil && $0.incoming == nil && $0.endpoint != nil
+                && $0.baseline?.item.deleted != true
+        }
+        guard !linked.isEmpty else { return }
+        let record = linked[pollIndex % linked.count]; pollIndex = (pollIndex + 1) % linked.count
+        do {
+            guard let token = try OrganiserCredentials.read(record.endpoint!) else { return }
+            let remote = try await OrganiserHTTP().fetch(endpoint: record.endpoint!, token: token, id: record.id, known: try outbox.baseline(record))
+            // All local file reconciliation runs on the main actor, between
+            // native saves/moves. The editor's existing disk-conflict path
+            // preserves any unsaved buffer when this changes the file.
+            guard enabled else { return }
+            try outbox.receive(remote, id: record.id, candidates: syncCandidates)
+        } catch { outbox.syncProblem(record.id, error.localizedDescription) }
+    }
+    func resolve(_ id: String, useOrganiser: Bool) {
+        do {
+            if useOrganiser, let remote = try outbox.records().first(where: { $0.id == id })?.conflict {
+                try outbox.receive(remote, id: id, candidates: syncCandidates, force: true)
+            } else { try outbox.keepLocal(id, candidates: syncCandidates) }
+            records = try outbox.records()
+            status = "Conflict resolved. Synchronisation will continue."
+        } catch { status = error.localizedDescription }
+    }
     private init() {
         let defaults = UserDefaults.standard
         endpoint = defaults.string(forKey: "organiser.api.endpoint") ?? "http://127.0.0.1:8788"
@@ -56,11 +129,18 @@ final class OrganiserController: ObservableObject {
         worker = Task { [weak self] in
             while !Task.isCancelled {
                 guard let self else { return }
+                if self.enabled { self.synchroniseLocal() }
                 let outbox = self.outbox, endpoint = self.endpoint, enabled = self.enabled
                 let result = await Task.detached(priority: .utility) {
                     await Self.deliver(outbox: outbox, endpoint: endpoint, enabled: enabled)
                 }.value
-                records = result.0; status = result.1
+                if self.enabled { await self.pullChanges(); await self.pullOne() }
+                records = (try? outbox.records()) ?? result.0; status = result.1
+                if records.contains(where: { $0.conflict != nil || $0.syncProblem != nil }) {
+                    status = "Synchronisation needs attention. See the records below."
+                }
+                await OrganiserReminders.shared.reconcile(outbox: outbox, records: records)
+                if self.enabled, let importProblem { status = importProblem }
                 try? await Task.sleep(nanoseconds: 3_000_000_000)
             }
         }
@@ -155,7 +235,7 @@ struct OrganiserSettingsView: View {
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("AUTOMATIC ORGANISER DELIVERY").font(.headline)
-            Toggle("Deliver new captures automatically", isOn: $controller.enabled)
+            Toggle("Deliver captures and synchronise changes", isOn: $controller.enabled)
             TextField("Organiser URL", text: $controller.endpoint)
             SecureField("Access key", text: $key)
             HStack {
@@ -166,13 +246,26 @@ struct OrganiserSettingsView: View {
                 }
             }
             Text(controller.status).font(.caption)
-            Text("New capture-box entries and #cal events are queued automatically. Existing history is not imported. Edits and deletions are not synchronised yet. Pending deliveries keep their original server once bound.").font(.caption).foregroundStyle(.secondary)
+            Text("New capture-box entries and #cal events are queued automatically. Existing unmarked Markdown history is not imported. Organiser items arrive automatically. Edits, completion and deletion synchronise both ways for linked items. Archive and refile preserve identity. Conflicts retain both versions. Pending deliveries keep their original server once bound.").font(.caption).foregroundStyle(.secondary)
+            OrganiserReminderSettings()
             DisclosureGroup("Delivery records (\(controller.records.count))") {
                 ForEach(controller.records) { record in
                     VStack(alignment: .leading, spacing: 4) {
                         Text(record.summary).lineLimit(2)
                         Text(record.state == "prepared" ? "Local save not yet confirmed; retained for recovery" : record.state.capitalized).font(.caption)
                         if let problem = record.problem { Text(problem).font(.caption) }
+                        if let problem = record.syncProblem { Text(problem).font(.caption) }
+                        if let conflict = record.conflict {
+                            Text("Organiser version (revision \(conflict.revision))").font(.caption.bold())
+                            Text(conflict.item.deleted ? "Deleted" : conflict.item.body_markdown).font(.caption).textSelection(.enabled)
+                            Text("Your local version remains in the Markdown file; the queued version is retained in the outbox.").font(.caption)
+                            HStack {
+                                Button("Use organiser version") { controller.resolve(record.id, useOrganiser: true) }
+                                if !conflict.item.deleted {
+                                    Button("Keep local version") { controller.resolve(record.id, useOrganiser: false) }
+                                }
+                            }
+                        }
                         if let endpoint = record.endpoint { Text(endpoint).font(.caption).foregroundStyle(.secondary) }
                         if record.state == "attention" || record.state == "pending" { Button("Retry") { controller.retry(record.id) } }
                     }.padding(.vertical, 4)

@@ -8,8 +8,10 @@ struct OrganiserItem: Codable, Equatable {
     var deleted = false
     var starts_at: String?
     var ends_at: String?
+    var reminder_at: String?
+    var source_url: String?
 }
-struct OrganiserFile: Codable {
+struct OrganiserFile: Codable, Equatable {
     let path: String
     let media_type: String
     let data_base64: String
@@ -28,36 +30,43 @@ struct OrganiserAcknowledgement: Codable {
 }
 struct OrganiserDelivery: Codable, Identifiable {
     let id: String
-    let operationID: String
-    let sourceFile: String
-    let summary: String
-    let digest: String
+    var operationID: String
+    var sourceFile: String
+    var summary: String
+    var digest: String
     var endpoint: String?
     var state: String
     var attempts = 0
     var nextAttempt = Date.distantPast
     var problem: String?
     var receipt: OrganiserAcknowledgement?
+    var requestFile: String?
+    var baseline: OrganiserSnapshot?
+    var incoming: OrganiserSnapshot?
+    var incomingSourceDigest: String?
+    var moveTarget: String?
+    var conflict: OrganiserSnapshot?
+    var syncProblem: String?
 }
 
-/// The request is immutable. Only its small delivery record changes on retry.
+/// Requests are immutable; the delivery record also retains the accepted sync baseline.
 /// Shared by the capture callback and background worker; no lock spans network I/O.
 final class OrganiserOutbox: @unchecked Sendable {
     let root: URL
     private let lock = NSLock()
     init(root: URL) { self.root = root }
-    private func locked<T>(_ body: () throws -> T) rethrows -> T {
+    func locked<T>(_ body: () throws -> T) rethrows -> T {
         lock.lock(); defer { lock.unlock() }; return try body()
     }
-    private func directory(_ id: String) throws -> URL {
+    func directory(_ id: String) throws -> URL {
         guard UUID(uuidString: id) != nil else { throw HandoffError.invalid("invalid_item_id") }
         return root.appendingPathComponent(id)
     }
-    private func save(_ record: OrganiserDelivery) throws {
+    func save(_ record: OrganiserDelivery) throws {
         try HandoffFiles.write(HandoffJSON.encode(record), to: directory(record.id).appendingPathComponent("record.json"))
     }
-    private func read(_ id: String) throws -> OrganiserDelivery {
-        let record = try JSONDecoder().decode(OrganiserDelivery.self, from: HandoffFiles.read("record.json", in: directory(id), limit: 16384))
+    func read(_ id: String) throws -> OrganiserDelivery {
+        let record = try JSONDecoder().decode(OrganiserDelivery.self, from: HandoffFiles.read("record.json", in: directory(id), limit: 80 * 1024 * 1024))
         guard record.id == id, UUID(uuidString: record.operationID) != nil else { throw HandoffError.invalid("Invalid delivery identity.") }
         return record
     }
@@ -127,7 +136,7 @@ final class OrganiserOutbox: @unchecked Sendable {
             var record = try read(id)
             guard record.state == "pending" else { throw HandoffError.invalid("delivery_not_pending") }
             if record.endpoint == nil { record.endpoint = try Self.endpoint(endpoint); try save(record) }
-            let data = try HandoffFiles.read("request.json", in: directory(id), limit: 26 * 1024 * 1024)
+            let data = try HandoffFiles.read(record.requestFile ?? "request.json", in: directory(id), limit: 26 * 1024 * 1024)
             guard HandoffJSON.digest(data) == record.digest else { throw HandoffError.invalid("The retained request failed its integrity check.") }
             return (record, data)
         }
@@ -135,10 +144,15 @@ final class OrganiserOutbox: @unchecked Sendable {
     func acknowledge(_ id: String, receipt: OrganiserAcknowledgement) throws {
         try locked {
             var record = try read(id)
-            guard receipt.item_id == record.id, receipt.operation_id == record.operationID, receipt.revision == 1 else {
+            let operation = try operation(record)
+            guard receipt.item_id == record.id, receipt.operation_id == record.operationID,
+                  receipt.revision == operation.expected_revision + 1 else {
                 throw HandoffError.invalid("The server acknowledgement did not match this capture.")
             }
+            try HandoffFiles.write(HandoffJSON.encode(receipt),
+                to: directory(id).appendingPathComponent(record.operationID + ".receipt.json"))
             record.receipt = receipt; record.state = "delivered"; record.problem = nil
+            record.baseline = OrganiserSnapshot(revision: receipt.revision, item: operation.item, files: operation.attachments)
             try save(record)
         }
     }
@@ -167,13 +181,16 @@ final class OrganiserHTTP: NSObject, URLSessionTaskDelegate, @unchecked Sendable
     func urlSession(_ session: URLSession, task: URLSessionTask, willPerformHTTPRedirection response: HTTPURLResponse,
                     newRequest request: URLRequest, completionHandler: @escaping (URLRequest?) -> Void) { completionHandler(nil) }
     func send(endpoint: String, token: String, data: Data) async throws -> (Data, Int) {
+        try await request(endpoint: endpoint, token: token, path: "/api/operations", data: data)
+    }
+    func request(endpoint: String, token: String, path: String, data: Data? = nil) async throws -> (Data, Int) {
         let configuration = URLSessionConfiguration.ephemeral
         configuration.timeoutIntervalForRequest = 20
         configuration.timeoutIntervalForResource = 30
         let session = URLSession(configuration: configuration, delegate: self, delegateQueue: nil)
         defer { session.finishTasksAndInvalidate() }
-        var request = URLRequest(url: URL(string: try OrganiserOutbox.endpoint(endpoint) + "/api/operations")!)
-        request.httpMethod = "POST"; request.httpBody = data
+        var request = URLRequest(url: URL(string: try OrganiserOutbox.endpoint(endpoint) + path)!)
+        request.httpMethod = data == nil ? "GET" : "POST"; request.httpBody = data
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer " + token, forHTTPHeaderField: "Authorization")
         let (body, response) = try await session.data(for: request)

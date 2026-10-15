@@ -63,7 +63,12 @@ New capture-box entries, including `#cal` events, are saved locally and queued
 for the PostgreSQL organiser automatically. Configure the API URL and access key
 in Settings → Automatic organiser delivery. Offline delivery retries safely;
 credentials live in Keychain. Existing history and editor-created lines are not
-imported automatically, and native edits/deletions are not synchronised yet.
+imported automatically. Linked items synchronise edits, completion and deletion
+in both directions; Settings shows conflicts and lets you choose which version
+to keep. Archive and refile preserve item identity. Missing files pause sync
+instead of deleting organiser records. Organiser-created items arrive in the active
+inbox automatically. The organiser has a month calendar; enable native reminder
+notifications in Quick Capture Settings for reminders while offline.
 See [organiser setup](organiser/README.md) and [verification](organiser/VERIFICATION.md).
 
 ### Legacy development handoff

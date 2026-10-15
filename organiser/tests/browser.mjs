@@ -10,7 +10,7 @@ const page = await browser.newPage({viewport:{width:1280,height:900}});
 const errors=[];page.on('pageerror',e=>errors.push(e.message));
 const marker=`Browser verification ${randomUUID()}`;
 async function api(path,options={}) {const r=await fetch(base+path,{...options,headers:{Authorization:`Bearer ${token}`,'Content-Type':'application/json'}});assert.ok(r.ok,`HTTP ${r.status}`);return r.json();}
-let row;
+let row, eventRow;
 try {
  await page.goto(base); await page.locator('#token').fill(token); await page.getByRole('button',{name:'Unlock organiser'}).click();
  await page.locator('#workspace').waitFor({state:'visible'});
@@ -29,11 +29,30 @@ try {
  assert.equal(await page.locator('#body').inputValue(),marker+' server edit');
  await page.locator('#completed').check();await page.getByRole('button',{name:'Save item'}).click();await page.locator('#edit').waitFor({state:'hidden'});
  row=await api(`/api/items/${row.id}`);assert.equal(row.document.completed,true);
+ await page.locator('#search').fill('');
+ await page.getByRole('button',{name:'Calendar',exact:true}).click();
+ await page.locator('#calendar').waitFor({state:'visible'});
+ assert.equal(await page.locator('.calendar-day').count(),42);
+ await page.locator('.calendar-day.today .day-number').click();
+ assert.equal(await page.locator('#kind').inputValue(),'event');
+ assert.ok(await page.locator('#starts').inputValue());
+ await page.locator('#body').fill(marker+' calendar event');
+ await page.getByRole('button',{name:'Save item'}).click();
+ await page.locator('#edit').waitFor({state:'hidden'});
+ await page.locator('.calendar-event').filter({hasText:marker}).waitFor({state:'visible'});
+ eventRow=(await api('/api/items?limit=1000')).find(r=>r.document.body_markdown===marker+' calendar event');
+ assert.ok(eventRow);
+ const month=await page.locator('#calendar-month').textContent();
+ await page.getByRole('button',{name:'Next month',exact:true}).click();
+ assert.notEqual(await page.locator('#calendar-month').textContent(),month);
+ await page.getByRole('button',{name:'Today',exact:true}).click();
+ assert.equal(await page.locator('#calendar-month').textContent(),month);
  await page.screenshot({path:'/tmp/organiser-desktop.png',fullPage:true});
  await page.setViewportSize({width:390,height:844});await page.waitForTimeout(300);await page.screenshot({path:'/tmp/organiser-mobile.png',fullPage:true});
  assert.ok(await page.evaluate(()=>document.documentElement.scrollWidth<=window.innerWidth));
- assert.deepEqual(errors,[]);console.log('Browser checks passed: login, create, edit, conflict preservation, completion, safe text, mobile width.');
+ assert.deepEqual(errors,[]);console.log('Browser checks passed: login, create, edit, conflict preservation, completion, safe text, calendar creation and navigation, mobile width.');
 } finally {
+ if(eventRow){const current=await api(`/api/items/${eventRow.id}`);await api('/api/operations',{method:'POST',body:JSON.stringify({operation_id:randomUUID(),item_id:eventRow.id,expected_revision:current.revision,item:{...current.document,deleted:true}})});}
  if(row){const current=await api(`/api/items/${row.id}`);if(!current.document.deleted)await api('/api/operations',{method:'POST',body:JSON.stringify({operation_id:randomUUID(),item_id:row.id,expected_revision:current.revision,item:{...current.document,deleted:true}})});}
  await browser.close();
 }

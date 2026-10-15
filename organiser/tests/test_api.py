@@ -14,7 +14,7 @@ TOKEN = 'test-only-token-that-is-at-least-32-characters'
 def client():
     url = os.environ['TEST_DATABASE_URL']
     with psycopg.connect(url) as conn:
-        conn.execute('DROP TABLE IF EXISTS attachments, operations, items, organiser_schema CASCADE')
+        conn.execute('DROP TABLE IF EXISTS item_changes, attachments, operations, items, organiser_schema CASCADE')
     with TestClient(create_app(url, TOKEN)) as client:
         client.headers['Authorization'] = f'Bearer {TOKEN}'
         yield client
@@ -111,3 +111,39 @@ def test_database_failure_rolls_back_item_attachment_and_receipt(client):
         assert conn.execute('SELECT count(*) FROM attachments').fetchone()[0] == 0
         conn.execute('DROP TRIGGER reject_attachment ON attachments')
     assert client.post('/api/operations',json=change).json()['revision'] == 1
+
+
+def test_change_feed_pages_edits_retries_and_tombstones(client):
+    first, second = operation(), operation()
+    for op in (first, second):
+        assert client.post('/api/operations', json=op).status_code == 200
+    page = client.get('/api/changes?limit=1').json()
+    assert [row['item_id'] for row in page['changes']] == [first['item_id']]
+    cursor = page['cursor']
+    edit = operation(item_id=first['item_id'], expected_revision=1, item={'body_markdown':'changed'})
+    assert client.post('/api/operations', json=edit).status_code == 200
+    next_page = client.get(f'/api/changes?after={cursor}').json()
+    assert [row['item_id'] for row in next_page['changes']] == [second['item_id'], first['item_id']]
+    assert next_page['changes'][-1]['revision'] == 2
+    cursor = next_page['cursor']
+    assert client.post('/api/operations', json=edit).status_code == 200
+    assert client.get(f'/api/changes?after={cursor}').json() == {'changes': [], 'cursor': cursor}
+    deletion = operation(item_id=second['item_id'], expected_revision=1, item={'body_markdown':'', 'deleted':True})
+    assert client.post('/api/operations', json=deletion).status_code == 200
+    assert client.get(f'/api/changes?after={cursor}').json()['changes'][0]['item_id'] == second['item_id']
+    assert client.get('/api/changes?after=-1').status_code == 422
+    assert client.get('/api/changes', headers={'Authorization':''}).status_code == 401
+
+
+def test_change_feed_migrates_existing_database(client):
+    op = operation()
+    client.post('/api/operations', json=op)
+    with psycopg.connect(os.environ['TEST_DATABASE_URL']) as conn:
+        conn.execute('DROP TABLE item_changes')
+        conn.execute('UPDATE organiser_schema SET version=1')
+    with TestClient(create_app(os.environ['TEST_DATABASE_URL'], TOKEN)) as restarted:
+        restarted.headers['Authorization'] = f'Bearer {TOKEN}'
+        changes = restarted.get('/api/changes').json()['changes']
+        assert len(changes) == 1
+        assert changes[0]['item_id'] == op['item_id']
+        assert changes[0]['revision'] == 1
