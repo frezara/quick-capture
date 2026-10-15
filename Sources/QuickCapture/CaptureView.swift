@@ -34,6 +34,7 @@ struct CaptureView: View {
     /// Highlighted row in the tag dropdown (clamped to the filtered list at
     /// use sites, since the list shrinks as the user types).
     @State private var tagHighlight = 0
+    @State private var tagSelectionExplicit = false
     /// Esc closes the dropdown without leaving the tag field; typing reopens.
     @State private var tagDropdownDismissed = false
     /// Highlighted row in the ⌥⌘O screenshot picker (0 = newest). Moves with
@@ -118,6 +119,7 @@ struct CaptureView: View {
                 // Esc-dismissed dropdown and starts at the top row.
                 tagDropdownDismissed = false
                 tagHighlight = 0
+                tagSelectionExplicit = false
             } else {
                 // Close the dropdown when the tag field is no longer focused —
                 // but defer the check so the *transient* focus drop AppKit emits
@@ -164,6 +166,7 @@ struct CaptureView: View {
             // highlight — the filtered list under the cursor just changed.
             tagDropdownDismissed = false
             tagHighlight = 0
+            tagSelectionExplicit = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .capturePanelDidHide)) { _ in
             guard !appState.captureRecoveryBlocked else { return }
@@ -174,6 +177,7 @@ struct CaptureView: View {
             tagFieldActive = false
             tagDropdownDismissed = false
             tagHighlight = 0
+            tagSelectionExplicit = false
             focused = .todo
             appState.pendingAttachments = []
             appState.attachFeedback = nil
@@ -346,8 +350,9 @@ struct CaptureView: View {
                 .font(TypeScale.tag)
                 .foregroundStyle(tagActive ? tagFieldInk : theme.ink)
                 .focused($focused, equals: .tag)
-                // Enter commits the highlighted suggestion and saves in one
-                // press (#122). This used to live in an .onKeyPress(.return)
+                // Enter commits ordinary suggestions and saves. Cal first
+                // accepts the tag to reveal its preview; the next Enter saves.
+                // This used to live in an .onKeyPress(.return)
                 // that never ran: a focused TextField consumes Return to fire
                 // its submission action, so the key never reached a key-press
                 // modifier outside it, and `submit()` always saw the raw text.
@@ -361,11 +366,13 @@ struct CaptureView: View {
                 }
                 .onKeyPress(.upArrow) {
                     guard tagDropdownVisible else { return .ignored }
+                    tagSelectionExplicit = true
                     tagHighlight = max(0, tagHighlightClamped - 1)
                     return .handled
                 }
                 .onKeyPress(.downArrow) {
                     guard tagDropdownVisible else { return .ignored }
+                    tagSelectionExplicit = true
                     tagHighlight = min(filteredTags.count - 1, tagHighlightClamped + 1)
                     return .handled
                 }
@@ -419,6 +426,20 @@ struct CaptureView: View {
         let query = typed.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !query.isEmpty, let suggestion else { return typed }
         return suggestion
+    }
+
+    enum SubmissionAction: Equatable {
+        case previewCalendar
+        case save(String?)
+    }
+
+    static func submissionAction(typed: String, suggestion: String?, explicitlySelected: Bool) -> SubmissionAction {
+        let resolved = explicitlySelected ? (suggestion ?? typed) : tagToCommit(typed: typed, suggestion: suggestion)
+        let tag = resolved.trimmingCharacters(in: .whitespacesAndNewlines)
+        if tag.lowercased() == "cal", typed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "cal" {
+            return .previewCalendar
+        }
+        return .save(tag.isEmpty ? nil : tag)
     }
 
     /// Tags that are always present in the suggestions and Tab autocomplete,
@@ -514,6 +535,7 @@ struct CaptureView: View {
     /// the old first-prefix-match fill. Return commits whatever's highlighted.
     private func handleTab(shift: Bool) -> KeyPress.Result {
         if tagDropdownVisible {
+            tagSelectionExplicit = true
             if filteredTags.count > 1 {
                 tagHighlight = Self.cycledTagIndex(
                     from: tagHighlightClamped, count: filteredTags.count, forward: !shift)
@@ -1051,8 +1073,16 @@ struct CaptureView: View {
         // Reads the resolved tag, not `tagText` — and reads it rather than
         // writing it first, because assigning @State and reading it back in the
         // same scope yields the stale value.
-        let trimmedTag = tagToCommit.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tag: String? = trimmedTag.isEmpty ? nil : trimmedTag
+        let action = Self.submissionAction(typed: tagText,
+            suggestion: tagDropdownVisible ? filteredTags[tagHighlightClamped] : nil,
+            explicitlySelected: tagSelectionExplicit)
+        let tag: String?
+        switch action {
+        case .previewCalendar:
+            acceptTag("cal")
+            return
+        case .save(let resolvedTag): tag = resolvedTag
+        }
         // Calendar attachments remain visibly disabled in this first event workflow.
         let attachments = isCalendarMode ? [] : appState.pendingAttachments
         let originalText = todoText

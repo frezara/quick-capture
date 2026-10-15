@@ -116,3 +116,20 @@ priority filters are deferred at the user's request.
   view has focus, and hides the capture surface from accessibility while that
   view is open. These final focus changes were compile-checked; UI automation
   could not reattach after the last restart because no panel was open.
+
+
+## Cal dropdown Enter regression — 15 October 2026
+
+Keyboard selection in an empty tag field previously lost the selected Cal row;
+a partial Cal match also submitted immediately instead of revealing the preview.
+The capture submission decision now records explicit arrow/Tab selection and
+accepts Cal for preview before invoking the save callback on the next Enter.
+Ordinary blank-tag capture still saves untagged; ordinary tag completion still
+saves in one press. Clicking Cal and typing its full name retain their preview.
+
+The regression test failed before the fix with `save(nil)` / `save(cal)` instead
+of `previewCalendar`, then passed. Full Swift suite: 262 executed, 260 passed,
+two opt-in tests skipped. Signed build succeeded and was installed. Native UI
+verification selected Cal using arrows from an empty tag field: first Enter
+showed the event preview with no disk write; second Enter produced exactly one
+delivered event with the previewed start/end. The test event was tombstoned afterward.
