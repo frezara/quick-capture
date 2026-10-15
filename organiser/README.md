@@ -123,9 +123,18 @@ validation failures. To release its resources after testing:
 docker compose -p quick-capture-organiser-test -f organiser/compose.test.yml down
 ```
 
-For browser smoke checks, run `npm ci --prefix organiser` and `npm run
- test:browser --prefix organiser` with the service running. The check uses an
+For browser smoke checks, run `npm ci --prefix organiser` and `npm run test:browser --prefix organiser` with the service running. The check uses an
 installed Chrome (`CHROME_PATH` can override its path), reads the local access
 key from disk without printing it, creates a uniquely named verification item,
 and deletes it afterward (leaving the normal deletion tombstone). Set
 `ORGANISER_URL` and `ORGANISER_TOKEN_FILE` to target a separate test deployment.
+
+
+To test a backup without overwriting the live database:
+
+```sh
+bash organiser/verify-backup.sh backups/organiser-YYYYMMDDTHHMMSSZ.dump
+```
+
+The verifier restores into a uniquely named temporary database, checks all three
+record tables, and removes only that temporary database on exit.

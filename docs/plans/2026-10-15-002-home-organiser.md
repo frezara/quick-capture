@@ -2,7 +2,7 @@
 
 Branch: `feat/home-organiser`, based on the completed snapshot-handoff branch.
 
-1. **Backend foundation (implemented; deployment verification in progress).**
+1. **Backend foundation (implemented and deployed).**
    PostgreSQL, transactional item/attachment/receipt storage, authenticated API,
    revision conflicts and tombstones, browser CRUD, Docker health checks,
    deployment and backup scripts. Browser date fields support user-entered
