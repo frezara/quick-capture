@@ -3,6 +3,7 @@ import SwiftUI
 
 struct CaptureView: View {
     @ObservedObject var appState: AppState
+    @ObservedObject private var projectStore = ProjectStore.shared
     let onSubmit: (String, String?, [URL]) -> Bool
     let onClose: () -> Void
     let onToggleEditor: () -> Void
@@ -222,6 +223,14 @@ struct CaptureView: View {
     /// taking over the window. (See CONTEXT.md: hint bar / preview band.)
     private var captureColumn: some View {
         VStack(spacing: 0) {
+            if !projectStore.projects.isEmpty {
+                Picker("Capture in", selection: $appState.captureProjectID) {
+                    Text("Main inbox").tag(String?.none)
+                    ForEach(projectStore.projects) { project in
+                        Text(project.name).tag(Optional(project.id))
+                    }
+                }.pickerStyle(.menu).padding(.bottom, 8)
+            }
             inputsRow
             if appState.captureRecoveryBlocked {
                 Button("Discard Failed Capture…") {
@@ -242,6 +251,7 @@ struct CaptureView: View {
                     Button("Restore") {
                         guard todoText.isEmpty else { return }
                         todoText = draft.text; tagText = draft.tag ?? ""
+                        appState.captureProjectID = draft.projectID
                         appState.pendingAttachments = draft.attachments.map { URL(fileURLWithPath: $0) }
                         restoredDraftID = draft.id
                     }.disabled(!todoText.isEmpty)
@@ -1097,7 +1107,7 @@ struct CaptureView: View {
             todoText = originalText; tagText = originalTag
             appState.pendingAttachments = attachments
             do {
-                let draft = try CaptureRecovery.save(text: originalText, tag: tag, attachments: attachments)
+                let draft = try CaptureRecovery.save(text: originalText, tag: tag, attachments: attachments, projectID: appState.captureProjectID)
                 if let previous = recoveryID { try? CaptureRecovery.remove(previous) }
                 if let previous = appState.captureImportRecoveryID { try? CaptureRecovery.remove(previous) }
                 appState.captureImportRecoveryID = nil

@@ -70,7 +70,11 @@ final class OrganiserController: ObservableObject {
                 let remote = try await http.fetch(endpoint: destination, token: token, id: change.item_id)
                 guard enabled, try OrganiserOutbox.endpoint(endpoint) == destination else { return }
                 guard remote.revision >= change.revision else { throw HandoffError.invalid("The organiser returned an older item version. Sync will retry.") }
-                try outbox.importItem(remote, id: change.item_id, file: importFile, endpoint: destination, candidates: syncCandidates)
+                // Whole project inbox documents are managed by ProjectStore. Never
+                // project them into the global capture inbox as an individual item.
+                if remote.item.kind != "project" {
+                    try outbox.importItem(remote, id: change.item_id, file: importFile, endpoint: destination, candidates: syncCandidates)
+                }
                 try outbox.advanceCursor(change.sequence, endpoint: destination)
                 previous = change.sequence
             }

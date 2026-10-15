@@ -5,6 +5,7 @@ struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
     let onCapture: () -> Void
     let onEditor: () -> Void
+    let onProjectCapture: (String) -> Void
     private let refresh = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -35,7 +36,10 @@ struct WorkspaceView: View {
             .padding(20).frame(width: 220).frame(maxHeight: .infinity)
             .background(.regularMaterial)
             Divider()
-            if model.destination == .calendar {
+            if model.destination == .projects {
+                ProjectsView(onCapture: onProjectCapture)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.destination == .calendar {
                 NativeCalendarView(model: model, onCapture: onCapture)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
@@ -61,12 +65,6 @@ struct WorkspaceView: View {
     private var library: some View {
         HStack(alignment: .top, spacing: 16) {
             VStack(alignment: .leading) {
-                if model.destination == .projects, !model.projects.isEmpty {
-                    Picker("Project", selection: $model.project) {
-                        Text("All projects").tag(String?.none)
-                        ForEach(model.projects, id: \.self) { Text($0).tag(Optional($0)) }
-                    }
-                }
                 if model.visible.isEmpty { emptyState }
                 else {
                     List(model.visible, selection: $model.selectedID) { item in
@@ -92,7 +90,7 @@ struct WorkspaceView: View {
     }
     private var emptyHint: String {
         switch model.destination {
-        case .projects: return "Add #project/name to an item to group it here. Dedicated project editing is coming next."
+        case .projects: return "Add a project folder to manage its inbox.md."
         case .notes: return "Capture into the Notes section, or add #note to an item. Notes have their own space here."
         case .links: return "Capture a link to find it here. Browser extension capture will come later."
         default: return "Your inbox items appear here automatically."

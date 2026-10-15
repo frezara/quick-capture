@@ -128,6 +128,38 @@ receiver, separate from the production PostgreSQL API above.
 - [ ] Homebrew cask
 - [ ] Sparkle auto-updates
 
+## Folder projects on the home Mac
+
+Open Quick Capture with **⌥⌘P**, then **⌥⌘2** for Projects. Add an existing
+folder (its existing `inbox.md` is preserved) or create a new project folder.
+If the root inbox is missing at registration, Quick Capture creates a template.
+
+- **Overview:** edit status and goal; see progress, blockers and the next action.
+- **Tasks:** list or board with Inbox, Backlog, Next, Doing, Blocked and Done.
+  Moving a task preserves its indented notes and file references.
+- **Markdown:** edit the complete root `inbox.md`. Unsaved drafts are retained
+  locally across restarts. Save checks that the on-disk version hasn't changed.
+- **Capture Here:** return to quick capture with this project selected. The
+  capture destination menu also lets you choose a project or the main inbox.
+
+The folder is the project; its root `inbox.md` is the source of truth. With sync
+enabled, the database holds that Markdown as one versioned `project` document.
+No other project file is indexed or uploaded, including attached images (their
+relative Markdown references remain in the inbox). Server edits return to the
+local inbox; simultaneous edits present both versions for an explicit choice.
+Missing local files or server deletion never automatically remove the folder.
+
+Management metadata uses a `## Project` section with `Status:` and `Goal:`.
+Top-level Markdown checkboxes under the task headings drive the task views;
+checked tasks are Done. Other sections and prose remain available in Markdown.
+There is no separate database task list for project tasks.
+
+Existing inboxes containing individually synced capture IDs currently require
+migration and are rejected rather than silently switching sync models. Project
+calendar capture is not yet supported: select Main inbox for `cal` events.
+The project registry, drafts and pending sync operations are retained in
+`~/Library/Application Support/QuickCapture/Projects/projects.json`.
+
 ## Build from source
 
 Requires Xcode 16+, Node 20+, and [XcodeGen](https://github.com/yonaskolb/XcodeGen).

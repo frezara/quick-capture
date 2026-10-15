@@ -39,7 +39,7 @@ class Attachment(BaseModel):
 class Item(BaseModel):
     model_config = ConfigDict(extra='forbid')
     body_markdown: str = Field(max_length=1024 * 1024)
-    kind: Literal['capture', 'task', 'note', 'bookmark', 'event', 'reminder'] = 'capture'
+    kind: Literal['capture', 'task', 'note', 'bookmark', 'event', 'reminder', 'project'] = 'capture'
     section: str = Field(default='Quick capture', max_length=256)
     completed: bool = False
     deleted: bool = False
@@ -73,6 +73,8 @@ class Mutation(BaseModel):
 
     @model_validator(mode='after')
     def unique_files(self):
+        if self.item.kind == 'project' and self.attachments != []:
+            raise ValueError('Project sync stores inbox.md only; attachments must be an empty list')
         paths = [a.path for a in self.attachments or []]
         if len(paths) != len(set(paths)):
             raise ValueError('Duplicate attachment path')

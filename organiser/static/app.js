@@ -74,7 +74,7 @@ async function openItem(row, eventDate) {
 }
 async function save(deleted=false) {
   const document={body_markdown:$('body').value,kind:$('kind').value,section:$('section').value,source_url:$('url').value || null,completed:$('completed').checked,deleted,starts_at:timeISO('starts'),ends_at:timeISO('ends'),reminder_at:timeISO('reminder')};
-  const draft={item_id:selected?.id || pending?.item_id || crypto.randomUUID(),expected_revision:selected?.revision || 0,item:document};
+  const draft={item_id:selected?.id || pending?.item_id || crypto.randomUUID(),expected_revision:selected?.revision || 0,item:document,...(document.kind==='project'?{attachments:[]}: {})};
   // Keep the operation identity for retry after an uncertain network response.
   if (!pending || JSON.stringify(draft)!==JSON.stringify(pending.draft)) pending={draft,item_id:draft.item_id,operation_id:crypto.randomUUID()};
   $('save').disabled=true; $('delete').disabled=true;

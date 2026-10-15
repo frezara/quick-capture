@@ -2,6 +2,7 @@ import AppKit
 import HotKey
 import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let appState = AppState()
 
@@ -39,6 +40,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         HandoffController.shared.start()
         OrganiserController.shared.configureFromArguments(ProcessInfo.processInfo.arguments)
         OrganiserController.shared.start()
+        ProjectStore.shared.start()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
@@ -293,6 +295,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     func hideCapture() {
         mainPanel?.orderOut(nil)
+        appState.captureProjectID = nil
         // Tells CaptureView to clear its input state — fresh slate next time.
         NotificationCenter.default.post(name: .capturePanelDidHide, object: nil)
     }
@@ -301,6 +304,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     private func handleCapture(_ text: String, tag: String?, attachments: [URL] = []) -> Bool {
         let trimmed = text.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmed.isEmpty else { return false }
+
+        if let id = appState.captureProjectID {
+            do {
+                guard let project = ProjectStore.shared.project(id) else { throw HandoffError.invalid("The selected project is unavailable. Choose a capture destination again.") }
+                try ProjectStore.shared.capture(trimmed, tag: tag, attachments: attachments, project: project)
+                hideCapture()
+                return true
+            } catch {
+                let alert = NSAlert(); alert.messageText = "Could not capture into project"
+                alert.informativeText = error.localizedDescription; alert.runModal()
+                return false
+            }
+        }
 
         if tag?.lowercased() == "cal" {
             // Calendar capture is saved locally and delivered as an internal event.

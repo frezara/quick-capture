@@ -147,3 +147,17 @@ def test_change_feed_migrates_existing_database(client):
         assert len(changes) == 1
         assert changes[0]['item_id'] == op['item_id']
         assert changes[0]['revision'] == 1
+
+
+def test_project_inbox_is_one_document_without_attachment_uploads(client):
+    body = '# Inbox\n\n## Project\nStatus: Active\n\n## Next\n- [ ] Ship it\n\n## Notes\n![Local only](assets/design.png)\n'
+    change = operation(item={'body_markdown': body, 'kind': 'project', 'section': 'Example'}, attachments=[])
+    receipt = client.post('/api/operations', json=change).json()
+    assert receipt['revision'] == 1
+    assert client.post('/api/operations', json=change).json() == receipt
+    snapshot = client.get(f"/api/items/{change['item_id']}").json()
+    assert snapshot['document']['body_markdown'] == body
+    assert snapshot['attachments'] == []
+    invalid = operation(item=change['item'], attachments=[{'path': 'code.txt', 'media_type': 'application/octet-stream', 'data_base64': 'aGVsbG8='}])
+    assert client.post('/api/operations', json=invalid).status_code == 422
+    assert client.post('/api/operations', json=operation(item=change['item'])).status_code == 422

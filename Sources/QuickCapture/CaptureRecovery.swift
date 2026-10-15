@@ -8,6 +8,7 @@ enum CaptureRecovery {
         let text: String
         let tag: String?
         let attachments: [String]
+        var projectID: String? = nil
     }
     static var root: URL {
         FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("QuickCapture/Recovery")
@@ -20,13 +21,13 @@ enum CaptureRecovery {
         try HandoffFiles.write(try HandoffJSON.encode(draft), to: folder.appendingPathComponent("draft.json"))
         return draft
     }
-    static func save(text: String, tag: String?, attachments: [URL], root: URL = root) throws -> Draft {
+    static func save(text: String, tag: String?, attachments: [URL], projectID: String? = nil, root: URL = root) throws -> Draft {
         let id = UUID().uuidString
         let folder = root.appendingPathComponent(id)
         try HandoffFiles.directory(folder)
         try HandoffFiles.write(Data(text.utf8), to: folder.appendingPathComponent("content.md"))
         // Publish text first. Interrupted attachment recovery still preserves it.
-        let initial = Draft(id: id, text: text, tag: tag, attachments: attachments.map(\.path))
+        let initial = Draft(id: id, text: text, tag: tag, attachments: attachments.map(\.path), projectID: projectID)
         try HandoffFiles.write(try HandoffJSON.encode(initial), to: folder.appendingPathComponent("draft.json"))
         var paths: [String] = []
         for (index, url) in attachments.enumerated() {
@@ -37,7 +38,7 @@ enum CaptureRecovery {
                 paths.append(copy.path)
             } catch { paths.append(url.path) }
         }
-        let draft = Draft(id: id, text: text, tag: tag, attachments: paths)
+        let draft = Draft(id: id, text: text, tag: tag, attachments: paths, projectID: projectID)
         try HandoffFiles.write(try HandoffJSON.encode(draft), to: folder.appendingPathComponent("draft.json"))
         return draft
     }
