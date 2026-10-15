@@ -128,8 +128,38 @@ crossfades between them.
 
 ## Organiser handoff language
 
-These terms describe the agreed organiser integration; they do not imply that
-delivery is implemented yet.
+The snapshot handoff is implemented. The next product phase adds automatic
+capture delivery (ADR-0009); that behaviour is not implemented yet.
+
+**Organiser**:
+The personal system for managing captured information, notes, tasks, reminders,
+bookmarks and calendar events. It includes the user-facing workspace and the
+services that retain and manage its records.
+_Avoid_: Backend (when referring to the whole product)
+
+**Automatic capture delivery**:
+The intended default whereby a newly saved Quick Capture entry reaches the
+organiser without a separate Send action. An unavailable organiser delays delivery
+without preventing local capture.
+
+**Calendar event**:
+A scheduled occurrence entered by the user in the organiser's calendar.
+The initial calendar is independent of external calendar services.
+
+**Synchronised item**:
+One organiser item whose identity persists across changes made in Quick Capture
+and the organiser. Completion and deletion change that same item.
+
+**Revision**:
+An accepted version of a synchronised item.
+
+**Sync conflict**:
+Two changes made from the same earlier revision. Both versions remain available
+until the user chooses how to reconcile them.
+
+**Deletion tombstone**:
+The retained identity of a deleted item, preventing a delayed device from
+recreating it unintentionally.
 
 **Capture draft**:
 Unsubmitted content in the capture box. Ordinary dismissal discards it;

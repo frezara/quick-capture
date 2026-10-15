@@ -1,0 +1,39 @@
+name: quick-capture-organiser
+services:
+  postgres:
+    image: postgres:18
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: organiser
+      POSTGRES_USER: organiser
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: [CMD-SHELL, 'pg_isready -U organiser -d organiser']
+      interval: 5s
+      timeout: 5s
+      retries: 12
+  app:
+    build: .
+    restart: unless-stopped
+    environment:
+      DATABASE_URL: postgresql://organiser:${POSTGRES_PASSWORD}@postgres/organiser
+      ORGANISER_TOKEN_FILE: /run/secrets/organiser_token
+    secrets:
+      - organiser_token
+    ports:
+      - '127.0.0.1:${ORGANISER_PORT:-8787}:8080'
+    depends_on:
+      postgres:
+        condition: service_healthy
+    healthcheck:
+      test: [CMD, python, -c, 'import urllib.request; urllib.request.urlopen("http://127.0.0.1:8080/health", timeout=3)']
+      interval: 10s
+      timeout: 5s
+      retries: 6
+secrets:
+  organiser_token:
+    file: ./secrets/organiser_token
+volumes:
+  postgres-data:
