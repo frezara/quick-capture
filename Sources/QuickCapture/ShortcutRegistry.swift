@@ -99,6 +99,7 @@ enum ShortcutAction: String, CaseIterable {
     // mnemonic is spatial (one cluster), not per-letter; don't "fix" it back to
     // E/S/R. Avoid the system-claimed combos: ⌥⌘Esc (force quit), ⌥⌘H (Hide
     // Others), ⌥⌘D (Dock), ⌥⌘Space (Finder search).
+    case showTodos, showCalendar, showProjects, showNotes, showLinks
     case toggleEditor
     case dismissPanel
     case attachScreenshot
@@ -124,6 +125,11 @@ enum ShortcutAction: String, CaseIterable {
 
     var chord: KeyChord {
         switch self {
+        case .showCalendar: return KeyChord(key: "1", modifiers: [.command, .option])
+        case .showProjects: return KeyChord(key: "2", modifiers: [.command, .option])
+        case .showTodos: return KeyChord(key: "3", modifiers: [.command, .option])
+        case .showNotes: return KeyChord(key: "4", modifiers: [.command, .option])
+        case .showLinks: return KeyChord(key: "5", modifiers: [.command, .option])
         case .toggleEditor:     return KeyChord(key: "i", modifiers: [.command, .option])
         case .dismissPanel:     return KeyChord(key: "w", modifiers: .command)
         case .attachScreenshot: return KeyChord(key: "o", modifiers: [.command, .option])
@@ -142,7 +148,7 @@ enum ShortcutAction: String, CaseIterable {
 
     var scope: ShortcutScope {
         switch self {
-        case .toggleEditor, .dismissPanel:
+        case .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor, .dismissPanel:
             return .anyMode
         case .attachScreenshot:
             // Both modes (#126): in capture it fills the box's chips, in the
@@ -157,7 +163,7 @@ enum ShortcutAction: String, CaseIterable {
 
     var isWindowIntercepted: Bool {
         switch self {
-        case .toggleEditor, .dismissPanel, .attachScreenshot, .refile, .swallowReload:
+        case .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor, .dismissPanel, .attachScreenshot, .refile, .swallowReload:
             return true
         case .readMode, .toggleTask, .save, .reorg, .archive, .imageSource, .nextSection, .prevSection:
             return false
@@ -170,6 +176,11 @@ enum ShortcutAction: String, CaseIterable {
     /// (`.accessory`).
     var menuTitle: String? {
         switch self {
+        case .showCalendar: return "Calendar"
+        case .showProjects: return "Projects"
+        case .showTodos: return "Todos"
+        case .showNotes: return "Notes"
+        case .showLinks: return "Saved Links"
         case .toggleEditor:     return "Toggle Editor"
         case .dismissPanel:     return nil
         case .attachScreenshot: return "Attach Image…"
@@ -201,6 +212,7 @@ enum ShortcutRegistry {
     /// Hints shown in the capture-mode hint bar, in display order. The two
     /// capture-reachable panel actions today; ordered so more can be appended.
     static let captureHints: [CaptureHint] = [
+        CaptureHint(action: .showCalendar, label: "Calendar"),
         CaptureHint(action: .toggleEditor,     label: "Editor"),
         CaptureHint(action: .attachScreenshot, label: "Screenshots"),
     ]

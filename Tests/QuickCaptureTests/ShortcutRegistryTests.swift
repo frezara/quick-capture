@@ -201,11 +201,11 @@ final class ShortcutRegistryTests: XCTestCase {
         XCTAssertEqual(KeyChord(key: "ArrowUp", modifiers: [.command, .option]).displayGlyphs, "⌥⌘↑")
     }
 
-    func testCaptureHintsAreEditorThenScreenshots() {
+    func testCaptureHintsIncludeNativeCalendar() {
         XCTAssertEqual(ShortcutRegistry.captureHints.map(\.action),
-                       [.toggleEditor, .attachScreenshot])
+                       [.showCalendar, .toggleEditor, .attachScreenshot])
         XCTAssertEqual(ShortcutRegistry.captureHints.map(\.label),
-                       ["Editor", "Screenshots"])
+                       ["Calendar", "Editor", "Screenshots"])
     }
 
     /// Why the bar sources chords from the registry: rename/remove an action or
@@ -216,7 +216,7 @@ final class ShortcutRegistryTests: XCTestCase {
             XCTAssertFalse(hint.glyphs.isEmpty)
         }
         // Pins today's bindings (U-I-O-P cluster, #92) so a regression is loud.
-        XCTAssertEqual(ShortcutRegistry.captureHints.map(\.glyphs), ["⌥⌘I", "⌥⌘O"])
+        XCTAssertEqual(ShortcutRegistry.captureHints.map(\.glyphs), ["⌥⌘1", "⌥⌘I", "⌥⌘O"])
     }
 }
 

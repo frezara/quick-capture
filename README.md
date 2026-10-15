@@ -51,6 +51,34 @@ Press **⌥⌘P** (or whatever you've configured) to summon the capture panel an
 - Attachments stay visible inline. Press **⌥⌘L** on an image or its parent item to reveal its Markdown path in the main editor, edit with the usual Vim keys, then press **⌥⌘L** again to hide the source. The preview remains visible while editing.
 - Click the menu bar icon for **Settings** — file path, hotkey, timestamp, and input font are all configurable.
 
+## Native workspace (first milestone)
+
+The capture panel expands into native SwiftUI views in the same window:
+
+| Shortcut | View |
+| --- | --- |
+| ⌥⌘1 | Calendar |
+| ⌥⌘2 | Projects |
+| ⌥⌘3 | Todos |
+| ⌥⌘4 | Notes |
+| ⌥⌘5 | Saved links |
+| ⌥⌘P | Return to capture |
+| ⌥⌘I | Markdown editor |
+
+Calendar uses ⌘1 / ⌘2 / ⌘3 for day / week / month, ⌘← / ⌘→ for
+previous / next period, and ⌘T for today. It reads locally saved event metadata;
+`#cal` remains the event capture route. These are browsing views for this milestone;
+edit existing content in the Markdown editor. Capture drafts survive switching
+views. The expanded workspace stays open when you switch to another app.
+
+Todos include existing inbox tasks, including older items that are not synced.
+Notes appear separately when their section is Notes, their text contains `#note`,
+or their synced type is Note. Saved links shows items containing URLs and synced
+bookmarks. Projects groups explicit `#project/name` tags in item text; dedicated
+project editing is deferred. The active inbox and configured refile inboxes are
+read locally without importing old history into sync. Work/priority filters and
+the Chrome extension are deferred.
+
 ## Saving and external edits
 
 The editor autosaves after a short pause. Explicit saves show “Saved” only after the file write succeeds. Switching back to capture mode, dismissing, and quitting wait for pending edits to save.

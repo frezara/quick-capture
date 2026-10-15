@@ -13,6 +13,7 @@ struct CaptureView: View {
     var onPickerAttach: ([URL]) -> Void = { _ in }
     /// Dismiss the picker surface without attaching.
     var onPickerCancel: () -> Void = {}
+    var onHintAction: (ShortcutAction) -> Void = { _ in }
 
     @State private var recoveryDrafts = CaptureRecovery.drafts()
     @State private var restoredDraftID: String?
@@ -663,10 +664,14 @@ struct CaptureView: View {
     private var hintBar: some View {
         HStack(spacing: Metrics.s3) {
             ForEach(ShortcutRegistry.captureHints, id: \.action) { hint in
-                HStack(spacing: Metrics.s1) {
-                    keycap(hint.glyphs)
-                    hintLabel(hint.label)
-                }
+                Button {
+                    onHintAction(hint.action)
+                } label: {
+                    HStack(spacing: Metrics.s1) {
+                        keycap(hint.glyphs)
+                        hintLabel(hint.label)
+                    }
+                }.buttonStyle(.plain)
             }
             Spacer(minLength: 0)
         }

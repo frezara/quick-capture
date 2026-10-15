@@ -90,3 +90,29 @@ Home deployment on 15 October 2026:
   now refreshes its displayed value after registration.
 - The backup restore verifier also checked schema 2 change-feed revisions against
   every restored item successfully.
+
+
+## Native workspace foundation — 15 October 2026
+
+The product direction is now native Quick Capture as the daily interface. The
+web organiser remains an optional database inspection interface. Work and
+priority filters are deferred at the user's request.
+
+- Added same-panel native Calendar, Projects, Todos, Notes and Saved Links views,
+  with visible navigation and ⌥⌘1–5 shortcuts. Calendar supports day/week/month,
+  period navigation and Today. These are read views; the existing Markdown
+  editor remains the editing surface. Projects currently groups explicit
+  `#project/name` tags; dedicated project editing and Chrome capture are deferred.
+- Swift suite executed 260 tests: 258 passed, two opt-in tests skipped. Coverage
+  includes Markdown projection, note classification, explicit project tags,
+  code-fence exclusion, calendar midnight/zero-duration boundaries and shortcut
+  routing. Signed native build and Git whitespace checks passed.
+- Installed-app Computer Use checks opened all five destinations, switched
+  calendar day/week modes, inspected the month layout, read existing todos and
+  notes, and moved from editor to calendar. A temporary unsaved capture draft
+  survived navigation and return via the Capture button, then was cleared
+  without being saved. The original app was backed up before replacement.
+- Final build also handles the configured summon chord locally while a native
+  view has focus, and hides the capture surface from accessibility while that
+  view is open. These final focus changes were compile-checked; UI automation
+  could not reattach after the last restart because no panel was open.

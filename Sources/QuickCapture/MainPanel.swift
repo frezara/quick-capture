@@ -45,6 +45,10 @@ final class MainPanel: NSPanel {
     private let onDismiss: () -> Void
 
     private(set) var editorOpen = false
+    private(set) var workspaceOpen = false
+    private lazy var workspaceModel = WorkspaceModel(appState: appState)
+    private var workspaceHost: NSHostingView<WorkspaceView>?
+
     /// True while the screenshot picker takeover surface is shown (a large
     /// centered frame, capture inputs hidden — same window, like editor mode).
     /// Guards `captureContentDidChange` from fighting the fixed picker frame.
@@ -223,7 +227,8 @@ final class MainPanel: NSPanel {
             onEscape: { [weak self] in self?.handleEscape() },
             onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
             onPickerAttach: { [weak self] urls in self?.pickerDidFinish(attaching: urls) },
-            onPickerCancel: { [weak self] in self?.pickerDidFinish(attaching: nil) }
+            onPickerCancel: { [weak self] in self?.pickerDidFinish(attaching: nil) },
+            onHintAction: { [weak self] action in self?.perform(shortcut: action) }
         )
     }
 
@@ -239,6 +244,7 @@ final class MainPanel: NSPanel {
     func show() {
         recordPreviousApp()   // before NSApp.activate steals frontmost from it
 
+        if workspaceOpen { closeWorkspace(); return }
         if editorOpen {
             closeEditor()     // handles activate, focus and the dismiss guard
             return
@@ -355,7 +361,10 @@ final class MainPanel: NSPanel {
     /// Switch to editor mode: crossfade the capture box out and the full editor
     /// in while the window grows to the editor frame.
     func openEditor() {
-        guard !editorOpen else { return }
+        guard !editorOpen, !exitPending else { return }
+        workspaceHost?.isHidden = true
+        captureHost.isHidden = false
+        workspaceOpen = false
         editorOpen = true
         // The picker is a capture-surface affordance; ⌥⌘I into the editor closes
         // it. editorOpen is set first so the capture re-measure this triggers is
@@ -451,6 +460,9 @@ final class MainPanel: NSPanel {
     }
 
     private func collapseStateReset() {
+        captureHost.isHidden = false
+        workspaceOpen = false
+        workspaceHost?.isHidden = true
         cancelPickerOverEditor()
         editorOpen = false
         pickerOpen = false
@@ -461,6 +473,73 @@ final class MainPanel: NSPanel {
         captureHost.alphaValue = 1
         isMovableByWindowBackground = true
         demoteToAccessory()
+    }
+
+    // MARK: - Native workspace
+
+    func openWorkspace(_ destination: WorkspaceDestination) {
+        guard !exitPending, !isCollapsing else { return }
+        if editorOpen {
+            exitPending = true
+            flushEditorSave { [weak self] saved in
+                guard let self else { return }
+                self.exitPending = false
+                guard saved else { return }
+                self.cancelPickerOverEditor()
+                self.editorOpen = false
+                self.openWorkspace(destination)
+            }
+            return
+        }
+        workspaceOpen = true
+        pickerOpen = false
+        attachLookupGeneration += 1
+        appState.screenshotPickerItems = nil
+        canDismissOnBlur = false
+        workspaceModel.navigate(destination)
+        if workspaceHost == nil {
+            let host = NSHostingView(rootView: WorkspaceView(model: workspaceModel,
+                onCapture: { [weak self] in self?.closeWorkspace() },
+                onEditor: { [weak self] in self?.openEditor() }))
+            host.frame = container.bounds
+            host.autoresizingMask = [.width, .height]
+            container.addSubview(host)
+            workspaceHost = host
+        }
+        container.editorActive = true
+        captureHost.alphaValue = 0
+        captureHost.isHidden = true
+        editorContainer.isHidden = true
+        workspaceHost?.isHidden = false
+        isMovableByWindowBackground = false
+        promoteToRegular()
+        if let screen = currentScreenVisibleFrame() { setFrame(splitFrame(in: screen), display: true, animate: true) }
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+        makeFirstResponder(workspaceHost)
+    }
+
+    private func closeWorkspace() {
+        guard workspaceOpen else { return }
+        canDismissOnBlur = false
+        workspaceOpen = false
+        workspaceHost?.isHidden = true
+        captureHost.isHidden = false
+        container.editorActive = false
+        captureHost.alphaValue = 1
+        isMovableByWindowBackground = true
+        if let screen = currentScreenVisibleFrame() {
+            let height = captureContentSize.height
+            setFrame(NSRect(x: screen.midX - captureWidth / 2, y: screen.midY - height / 2,
+                            width: captureWidth, height: height), display: true, animate: true)
+        }
+        demoteToAccessory()
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+        focusCapture()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.canDismissOnBlur = true
+        }
     }
 
     // MARK: - Frames
@@ -485,7 +564,7 @@ final class MainPanel: NSPanel {
         guard appState.screenshotPickerItems == nil else { return }
         captureContentSize = size
         container.captureHeight = size.height
-        guard !editorOpen else { return }
+        guard !editorOpen, !workspaceOpen else { return }
         // The picker just closed: re-center and shrink to the box's fresh height
         // (taller when a shot was attached). Owns the frame for this transition.
         if recenterCaptureAfterPicker {
@@ -568,6 +647,7 @@ final class MainPanel: NSPanel {
     private func focusCapture(retriesLeft: Int = 10) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            guard !self.editorOpen, !self.workspaceOpen else { return }
             if self.isVisible {
                 self.captureHost.layoutSubtreeIfNeeded()
                 if let tv = self.firstTextView(in: self.captureHost), self.makeFirstResponder(tv) {
@@ -583,7 +663,7 @@ final class MainPanel: NSPanel {
 
     private func focusEditor() {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.editorOpen, !self.workspaceOpen else { return }
             self.makeFirstResponder(self.webView)
             self.webView.evaluateJavaScript("window.qcEditor && window.qcEditor.focus && window.qcEditor.focus()",
                                             completionHandler: nil)
@@ -879,13 +959,33 @@ final class MainPanel: NSPanel {
     // MARK: - Window overrides
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { editorOpen }
+    override var canBecomeMain: Bool { editorOpen || workspaceOpen }
 
     /// Intercept the window-level shortcuts (mode switch, dismiss, screenshot
     /// attach, refile) before CodeMirror/WebKit or the standard menu items can
     /// claim them. Which keys those are — and in which mode — lives in
     /// `ShortcutRegistry`, the single source of truth for bindings.
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        // Also handle the summon chord locally while the workspace owns focus.
+        // Carbon remains responsible for summoning from other applications.
+        if workspaceOpen, UInt32(event.keyCode) == appState.hotKey.keyCode,
+           event.modifierFlags.intersection([.command, .option, .control, .shift]) == appState.hotKey.modifierFlags {
+            show()
+            return true
+        }
+        if workspaceOpen, workspaceModel.destination == .calendar,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            switch event.charactersIgnoringModifiers {
+            case "1": workspaceModel.calendarMode = .day; return true
+            case "2": workspaceModel.calendarMode = .week; return true
+            case "3": workspaceModel.calendarMode = .month; return true
+            case "t": workspaceModel.date = Date(); return true
+            default: break
+            }
+            if event.keyCode == 123 { workspaceModel.shiftDate(-1); return true }
+            if event.keyCode == 124 { workspaceModel.shiftDate(1); return true }
+        }
+        if workspaceOpen, event.keyCode == 53 { closeWorkspace(); return true }
         if let action = ShortcutRegistry.interceptedAction(for: event, editorOpen: editorOpen) {
             perform(shortcut: action)
             return true
@@ -910,11 +1010,17 @@ final class MainPanel: NSPanel {
     /// so this arm only runs for the Editor menu items.
     func perform(shortcut action: ShortcutAction) {
         switch action {
+        case .showCalendar: openWorkspace(.calendar)
+        case .showProjects: openWorkspace(.projects)
+        case .showTodos: openWorkspace(.todos)
+        case .showNotes: openWorkspace(.notes)
+        case .showLinks: openWorkspace(.links)
         case .toggleEditor:
             toggleEditor()
         case .dismissPanel:
             dismiss()
         case .attachScreenshot:
+            if workspaceOpen { closeWorkspace() }
             // ⌥⌘O toggles: a second press while the picker is up closes it the
             // same way Esc does (cancel, attachments untouched).
             if pickerOverEditor {
@@ -960,7 +1066,7 @@ final class MainPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
-        guard canDismissOnBlur, !appState.captureSubmissionActive else { return }
+        guard canDismissOnBlur, !editorOpen, !workspaceOpen, !appState.captureSubmissionActive else { return }
         canDismissOnBlur = false
         dismiss()
     }

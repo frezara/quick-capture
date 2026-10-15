@@ -134,6 +134,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(editorMenuItem)
         let editorMenu = NSMenu(title: "Editor")
         editorMenuItem.submenu = editorMenu
+        let navigationMenuItem = NSMenuItem()
+        let navigationMenu = NSMenu(title: "Navigate")
+        navigationMenuItem.submenu = navigationMenu
+        mainMenu.addItem(navigationMenuItem)
+        let navigationActions = Set(WorkspaceDestination.allCases.map(\.action))
         for action in ShortcutRegistry.menuActions {
             let item = NSMenuItem(title: action.menuTitle ?? "",
                                   action: #selector(performShortcutMenuItem(_:)),
@@ -141,7 +146,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.keyEquivalentModifierMask = action.chord.modifiers
             item.target = self
             item.representedObject = action.rawValue
-            editorMenu.addItem(item)
+            (navigationActions.contains(action) ? navigationMenu : editorMenu).addItem(item)
         }
 
         // Window menu
