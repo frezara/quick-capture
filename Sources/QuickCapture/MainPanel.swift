@@ -528,22 +528,31 @@ final class MainPanel: NSPanel {
     }
 
     private func closeWorkspace() {
-        guard workspaceOpen else { return }
+        guard workspaceOpen, !isCollapsing else { return }
         canDismissOnBlur = false
+        isCollapsing = true
         workspaceOpen = false
+        // Keep both surfaces concealed while capture remeasures. Revealing it
+        // in the workspace-sized frame lets its size callback shrink at the
+        // old left edge before AppKit animates the window back to the centre.
         workspaceHost?.isHidden = true
+        captureHost.alphaValue = 0
         captureHost.isHidden = false
         container.editorActive = false
-        captureHost.alphaValue = 1
         isMovableByWindowBackground = true
-        if let screen = currentScreenVisibleFrame() {
+        container.layoutSubtreeIfNeeded()
+        if let screen = self.screen?.visibleFrame ?? currentScreenVisibleFrame() {
             let height = captureContentSize.height
+            anchorCenterY = screen.midY
             setFrame(NSRect(x: screen.midX - captureWidth / 2, y: screen.midY - height / 2,
-                            width: captureWidth, height: height), display: true, animate: true)
+                            width: captureWidth, height: height), display: false, animate: false)
         }
+        container.layoutSubtreeIfNeeded()
         demoteToAccessory()
         NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
+        captureHost.alphaValue = 1
+        isCollapsing = false
         focusCapture()
         DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
             self?.canDismissOnBlur = true
