@@ -921,7 +921,7 @@ final class MainPanel: NSPanel {
             // Deliberate no-op: ⌘R must never reach WebKit in editor mode or
             // it reloads the page, destroying the warm editor's state.
             break
-        case .refile, .readMode, .toggleTask, .save, .reorg, .archive, .nextSection, .prevSection:
+        case .refile, .readMode, .toggleTask, .save, .reorg, .archive, .imageSource, .nextSection, .prevSection:
             invokeEditorAction(action)
         }
     }

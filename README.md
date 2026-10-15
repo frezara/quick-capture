@@ -48,7 +48,7 @@ Press **⌥⌘P** (or whatever you've configured) to summon the capture panel an
 - Press **⌥⌘O** to pick screenshots, or **⌥⌘U** in the editor to refile an item.
 - Press **⌘S** to save immediately or **⌥⌘J** to reorganise items by priority and completion.
 - Press **⌥⌘K** to archive completed items after saving. Re-organise and Archive require the cursor to be on an item; both are disabled on blank lines and in read mode.
-- Attachments appear as compact thumbnail rows. Click one to open a large preview; **Edit Markdown** inside the viewer changes its source with **Done** or **Cancel**.
+- Attachments stay visible inline. Press **⌥⌘L** on an image or its parent item to reveal its Markdown path in the main editor, edit with the usual Vim keys, then press **⌥⌘L** again to hide the source. The preview remains visible while editing.
 - Click the menu bar icon for **Settings** — file path, hotkey, timestamp, and input font are all configurable.
 
 ## Saving and external edits

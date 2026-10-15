@@ -1,5 +1,5 @@
 import { DocumentSession } from "./document-session";
-import { EditorState, RangeSetBuilder, Compartment, StateEffect } from "@codemirror/state";
+import { EditorState, RangeSetBuilder, Compartment, StateEffect, StateField } from "@codemirror/state";
 import {
     EditorView, keymap, drawSelection, highlightActiveLine,
     WidgetType, Decoration, DecorationSet, ViewPlugin, ViewUpdate,
@@ -286,130 +286,75 @@ const attachmentCache = new Map<string, string | null>();
 // checks for it and rebuilds decorations deterministically.
 const attachmentStateChanged = StateEffect.define<null>();
 
-const imageDialogs = new WeakMap<HTMLElement, HTMLDialogElement>();
+type ImageSource = { from: number; path: string; label: string };
+const editImageSource = StateEffect.define<ImageSource | null>();
+const imageSourceField = StateField.define<ImageSource | null>({
+    create: () => null,
+    update(source, tr) {
+        if (source && tr.docChanged) source = { ...source, from: tr.newDoc.lineAt(tr.changes.mapPos(source.from, -1)).from };
+        for (const effect of tr.effects) if (effect.is(editImageSource)) source = effect.value;
+        return source;
+    },
+});
 
 class ImageWidget extends WidgetType {
-    constructor(readonly path: string, readonly label: string, readonly canEditSource: boolean) { super(); }
-
+    constructor(readonly path: string, readonly label: string, readonly sourceVisible = false) { super(); }
     toDOM(editor: EditorView): HTMLElement {
         const wrap = document.createElement("span");
-        wrap.className = "cm-attachment";
-        wrap.dataset.path = this.path;
-        wrap.dataset.label = this.label;
-
+        wrap.className = this.sourceVisible ? "cm-attachment cm-attachment-source" : "cm-attachment";
+        wrap.dataset.path = this.path; wrap.dataset.label = this.label;
         wrap.setAttribute("aria-label", `Image: ${this.label}`);
-        const preview = document.createElement("span");
-        preview.className = "cm-attachment-preview";
-        const open = document.createElement("button");
-        open.type = "button";
-        open.className = "cm-image-open";
-        open.setAttribute("aria-label", `Preview image: ${this.label}`);
-        const name = document.createElement("span");
-        name.className = "cm-image-name"; name.textContent = this.label;
-        const hint = document.createElement("span");
-        hint.className = "cm-image-hint"; hint.textContent = "Preview ↗";
-        open.append(preview, name, hint);
-        wrap.append(open);
-        let sourceHost: HTMLElement = wrap;
-        let dialog: HTMLDialogElement | null = null;
+        const preview = document.createElement("span"); preview.className = "cm-attachment-preview";
+        wrap.append(preview);
         requestAttachmentIfNeeded(this.path);
         renderAttachment(wrap, this.path, this.label);
-        const edit = document.createElement("button");
-        edit.type = "button";
-        edit.className = "cm-image-edit";
-        edit.textContent = "Edit Markdown";
-        edit.disabled = editor.state.readOnly;
-        open.onclick = () => {
-            if (dialog?.open) return;
-            editor.dispatch({ selection: { anchor: editor.posAtDOM(wrap) } });
-            dialog = document.createElement("dialog");
-            dialog.className = "cm-image-dialog";
-            dialog.setAttribute("aria-label", `Image preview: ${this.label}`);
-            const header = document.createElement("header");
-            const title = document.createElement("span"); title.textContent = this.label;
-            const close = document.createElement("button");
-            close.type = "button"; close.textContent = "Close";
-            close.onclick = () => dialog?.close();
-            header.append(title, close);
-            const large = document.createElement("div");
-            large.className = "cm-image-large"; large.dataset.path = this.path; large.dataset.label = this.label;
-            const content = document.createElement("span"); content.className = "cm-attachment-preview";
-            large.append(content); renderAttachment(large, this.path, this.label);
-            edit.hidden = false;
-            dialog.append(header, large, edit);
-            sourceHost = dialog;
-            dialog.addEventListener("keydown", e => e.stopPropagation());
-            dialog.addEventListener("close", () => { dialog?.remove(); sourceHost = wrap; open.focus(); });
-            editor.dom.append(dialog);
-            imageDialogs.set(wrap, dialog);
-            dialog.showModal();
-        };
+        const hint = document.createElement("span");
+        hint.className = "cm-image-key-hint";
+        hint.textContent = this.sourceVisible ? "⌥⌘L · hide image source" : "⌥⌘L · edit image source";
+        wrap.append(hint);
         wrap.addEventListener("mousedown", e => {
-            e.stopPropagation();
-            if (!(e.target as HTMLElement).closest("button, textarea")) {
-                e.preventDefault();
-                editor.dispatch({ selection: { anchor: editor.posAtDOM(wrap) } });
-                wrap.focus();
-            }
+            e.preventDefault(); e.stopPropagation();
+            editor.dispatch({ selection: { anchor: editor.posAtDOM(wrap) } });
+            editor.focus();
         });
-        wrap.addEventListener("keydown", e => e.stopPropagation());
-        edit.onclick = () => {
-            if (editor.state.readOnly || sourceHost.querySelector(".cm-image-source")) return;
-            const original = editor.state.doc.lineAt(editor.posAtDOM(wrap));
-            const indent = /^\s*/.exec(original.text)![0];
-            const form = document.createElement("span");
-            form.className = "cm-image-source";
-            const input = document.createElement("textarea");
-            input.setAttribute("aria-label", "Image Markdown");
-            input.value = original.text.slice(indent.length);
-            input.rows = 3;
-            const error = document.createElement("span");
-            error.setAttribute("role", "alert");
-            const done = document.createElement("button");
-            done.type = "button"; done.textContent = "Done";
-            const cancel = document.createElement("button");
-            cancel.type = "button"; cancel.textContent = "Cancel";
-            const close = () => { form.remove(); edit.hidden = false; edit.focus(); editor.requestMeasure(); };
-            cancel.onclick = close;
-            done.onclick = () => {
-                if (editor.state.readOnly) return;
-                const markdown = input.value.trim();
-                if (!/^!\[[^\]]*\]\((\S+?)\)$/.test(markdown)) {
-                    error.textContent = "Use ![description](image-path) on one line.";
-                    editor.requestMeasure(); return;
-                }
-                // Resolve from the live DOM, not a stale offset: typing elsewhere
-                // can move this attachment while its source editor is open.
-                const current = editor.state.doc.lineAt(editor.posAtDOM(wrap));
-                if (current.text !== original.text) {
-                    error.textContent = "This image changed. Cancel and reopen its Markdown.";
-                    editor.requestMeasure(); return;
-                }
-                form.remove(); edit.hidden = false;
-                dialog?.close();
-                editor.dispatch({ changes: { from: current.from, to: current.to, insert: indent + markdown } });
-                editor.focus(); editor.requestMeasure();
-            };
-            input.addEventListener("keydown", e => {
-                if (e.key === "Escape") { e.preventDefault(); close(); }
-                if (e.key === "Enter" && (e.metaKey || e.ctrlKey)) { e.preventDefault(); done.click(); }
-            });
-            form.append(input, error, done, cancel);
-            sourceHost.append(form); edit.hidden = true;
-            input.focus(); editor.requestMeasure();
-        };
         return wrap;
     }
-
     eq(other: WidgetType): boolean {
-        return other instanceof ImageWidget && other.path === this.path && other.label === this.label && other.canEditSource === this.canEditSource;
+        return other instanceof ImageWidget && other.path === this.path && other.label === this.label && other.sourceVisible === this.sourceVisible;
     }
-    destroy(dom: HTMLElement) { imageDialogs.get(dom)?.close(); }
     ignoreEvent(): boolean { return true; }
 }
 
+function toggleImageSource(editor: EditorView): boolean {
+    if (editor.state.readOnly) return true;
+    const active = editor.state.field(imageSourceField);
+    if (active) {
+        const line = editor.state.doc.lineAt(active.from);
+        if (!/^( {2,}|\t)!\[[^\]]*\]\((\S+?)\)\s*$/.test(line.text)) {
+            showRefileToast(editor, "Keep valid image Markdown before hiding its source (or undo the edit).");
+            return true;
+        }
+        editor.dispatch({ effects: editImageSource.of(null), selection: { anchor: line.from } });
+        editor.focus(); return true;
+    }
+    const current = editor.state.doc.lineAt(editor.state.selection.main.head);
+    const span = resolveSubtreeSpan(editor.state, editor.state.selection.main.head);
+    const candidates = [current.number];
+    if (span) for (let n = span.from + 1; n <= span.to; n++) if (n !== current.number) candidates.push(n);
+    for (const n of candidates) {
+        const line = editor.state.doc.line(n);
+        const match = /^( {2,}|\t)!\[[^\]]*\]\((\S+?)\)\s*$/.exec(line.text);
+        if (!match) continue;
+        editor.dispatch({ effects: editImageSource.of({ from: line.from, path: match[2], label: match[2].split("/").pop() ?? "Image" }),
+            selection: { anchor: line.from + line.text.indexOf("](") + 2 }, scrollIntoView: true });
+        editor.focus(); return true;
+    }
+    showRefileToast(editor, "Move to an image or its parent item first.");
+    return true;
+}
+
 function attachmentElements(path: string): HTMLElement[] {
-    return Array.from(document.querySelectorAll<HTMLElement>(".cm-attachment, .cm-image-large"))
+    return Array.from(document.querySelectorAll<HTMLElement>(".cm-attachment"))
         .filter((el) => el.dataset.path === path);
 }
 
@@ -613,7 +558,12 @@ function buildLivePreview(view: EditorView): DecorationSet {
             }
 
             // Images keep their height across selection changes. Source is
-            // edited explicitly within the widget, never revealed by the caret.
+            // revealed explicitly in the main editor, never by caret movement.
+            const source = view.state.field(imageSourceField);
+            if (!readMode && source?.from === line.from) {
+                ranges.push({ from: line.to, to: line.to, deco: Decoration.widget({ widget: new ImageWidget(source.path, source.label, true), side: 1 }) });
+                continue;
+            }
             const imageMatch = line.text.match(/^( {2,}|\t)!\[[^\]]*\]\((\S+?)\)\s*$/);
             if (imageMatch) {
                 {
@@ -624,7 +574,7 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     catch { label = rawName; }   // malformed %-sequences (e.g. 100%done.png) must not throw inside a ViewPlugin update
                     ranges.push({
                         from: line.from + imageMatch[1].length, to: line.to,
-                        deco: Decoration.replace({ widget: new ImageWidget(path, label, !readMode) }),
+                        deco: Decoration.replace({ widget: new ImageWidget(path, label), imageAtomic: true }),
                     });
                 }
                 continue;
@@ -726,7 +676,7 @@ const livePreview = ViewPlugin.fromClass(class {
 
     update(update: ViewUpdate) {
         if (update.docChanged || update.viewportChanged || update.selectionSet
-            || update.transactions.some(tr => tr.effects.some(e => e.is(attachmentStateChanged)))) {
+            || update.transactions.some(tr => tr.effects.some(e => e.is(attachmentStateChanged) || e.is(editImageSource)))) {
             this.decorations = buildLivePreview(update.view);
         }
     }
@@ -734,7 +684,7 @@ const livePreview = ViewPlugin.fromClass(class {
     decorations: (v) => v.decorations,
     provide: plugin => EditorView.atomicRanges.of(editor =>
         editor.plugin(plugin)?.decorations.update({
-            filter: (_from, _to, value) => value.spec.widget instanceof ImageWidget,
+            filter: (_from, _to, value) => value.spec.imageAtomic === true,
         }) ?? Decoration.none),
 });
 
@@ -1149,28 +1099,9 @@ function makeTheme() {
         margin: "0 1px",
     },
     // Attachment image line — folded pill / expanded inline preview.
-    ".cm-image-open": { display: "flex", alignItems: "center", gap: "10px", width: "100%", maxWidth: "360px", height: "48px", padding: "6px 10px", boxSizing: "border-box", background: palette.surfaceField, color: palette.text, border: `1px solid ${palette.borderSoft}`, borderRadius: "8px", cursor: "pointer", textAlign: "left" },
-    ".cm-image-open .cm-attachment-preview": { display: "flex", alignItems: "center", width: "48px", height: "34px", overflow: "hidden", flexShrink: "0" },
-    ".cm-image-open .cm-attachment-img": { width: "48px", height: "34px", maxHeight: "34px", maxWidth: "48px", objectFit: "cover", margin: "0", boxShadow: "none" },
-    ".cm-image-name": { font: `12px ${sansFamily}`, whiteSpace: "nowrap", overflow: "hidden", textOverflow: "ellipsis", flex: "1" },
-    ".cm-image-hint": { font: `11px ${sansFamily}`, color: palette.soft, whiteSpace: "nowrap" },
-    ".cm-image-dialog": { width: "min(760px, 85vw)", maxHeight: "85vh", padding: "16px", background: palette.surface, color: palette.text, border: `1px solid ${palette.borderSoft}`, borderRadius: "12px", boxShadow: "0 22px 60px #0004", fontFamily: sansFamily },
-    ".cm-image-dialog::backdrop": { background: "#0006" },
-    ".cm-image-dialog header": { display: "flex", alignItems: "center", justifyContent: "space-between", gap: "16px", marginBottom: "16px", overflowWrap: "anywhere" },
-    ".cm-image-dialog header button": { padding: "6px 10px", background: palette.surfaceField, color: palette.text, border: `1px solid ${palette.borderSoft}`, borderRadius: "6px", cursor: "pointer" },
-    ".cm-image-large": { display: "flex", justifyContent: "center", marginBottom: "16px" },
-    ".cm-image-large .cm-attachment-img": { maxWidth: "100%", maxHeight: "55vh", width: "auto", height: "auto", objectFit: "contain", boxShadow: "none" },
-    ".cm-image-edit, .cm-image-source button": { fontFamily: sansFamily, fontSize: "11px", color: palette.accentInk, background: palette.surfaceField, border: `1px solid ${palette.borderSoft}`, borderRadius: "6px", padding: "6px 10px", cursor: "pointer" },
-    ".cm-image-edit[hidden]": { display: "none" },
-    ".cm-image-source": { display: "block", maxWidth: "360px", padding: "10px 0" },
-    ".cm-image-source textarea": { display: "block", boxSizing: "border-box", width: "100%", font: `12px ${monoFamily}`, color: palette.text, background: palette.surfaceField, border: `1px solid ${palette.borderSoft}`, borderRadius: "8px", padding: "10px", marginBottom: "6px", resize: "vertical" },
-    ".cm-image-source [role=alert]": { display: "block", color: palette.priHigh, fontSize: "11px" },
-    ".cm-image-source button": { marginRight: "6px" },
-    ".cm-attachment:focus, .cm-attachment:focus-within": { outline: `2px solid ${palette.accent}`, outlineOffset: "3px", borderRadius: "8px" },
-    ".cm-attachment": {
-        display: "inline-block", width: "360px", maxWidth: "100%", verticalAlign: "middle",
-        cursor: "default",
-    },
+    ".cm-attachment.cm-attachment-source": { display: "block" },
+    ".cm-image-key-hint": { display: "block", font: `11px ${sansFamily}`, color: palette.soft, marginTop: "6px" },
+    ".cm-attachment": { display: "inline-block", width: "360px", maxWidth: "100%", verticalAlign: "top", cursor: "default" },
     ".cm-attachment-pill": {
         display: "inline-flex",
         alignItems: "center",
@@ -1486,6 +1417,7 @@ const defaultAppKeymap: Record<string, string> = {
     save: "Mod-s",
     reorg: "Alt-Mod-j",
     archive: "Alt-Mod-k",
+    imageSource: "Alt-Mod-l",
     nextSection: "Alt-Mod-ArrowDown",
     prevSection: "Alt-Mod-ArrowUp",
 };
@@ -1497,6 +1429,7 @@ const appCommands: Record<string, (v: EditorView) => boolean> = {
     save: (v) => { saveNow(v); return true; },
     reorg: (v) => { moveCompletedToBottom(v); return true; },
     archive: () => { void archiveCompleted(); return true; },
+    imageSource: toggleImageSource,
     refile: (v) => startRefile(v),
     nextSection: (v) => jumpToSection(v, 1),
     prevSection: (v) => jumpToSection(v, -1),
@@ -2519,6 +2452,7 @@ function mount(content: string) {
             markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
             indentUnit.of("    "),   // 4-space indent matches Obsidian's defaults
             themeComp.of(themeExtensions()),
+            imageSourceField,
             livePreview,
             readModeComp.of([]),
             // Editor-local app shortcuts (read mode, toggle task, save,

@@ -118,6 +118,7 @@ enum ShortcutAction: String, CaseIterable {
     case save
     case reorg
     case archive
+    case imageSource
     case nextSection
     case prevSection
 
@@ -132,6 +133,7 @@ enum ShortcutAction: String, CaseIterable {
         case .toggleTask:       return KeyChord(key: "l", modifiers: .command)
         case .save:             return KeyChord(key: "s", modifiers: .command)
         case .reorg:            return KeyChord(key: "j", modifiers: [.command, .option])
+        case .imageSource:      return KeyChord(key: "l", modifiers: [.command, .option])
         case .archive:          return KeyChord(key: "k", modifiers: [.command, .option])
         case .nextSection:      return KeyChord(key: "ArrowDown", modifiers: [.command, .option])
         case .prevSection:      return KeyChord(key: "ArrowUp", modifiers: [.command, .option])
@@ -147,7 +149,7 @@ enum ShortcutAction: String, CaseIterable {
             // editor it attaches to the item under the cursor. Same gesture,
             // different target.
             return .anyMode
-        case .refile, .swallowReload, .readMode, .toggleTask, .save, .reorg, .archive,
+        case .refile, .swallowReload, .readMode, .toggleTask, .save, .reorg, .archive, .imageSource,
              .nextSection, .prevSection:
             return .editorMode
         }
@@ -157,7 +159,7 @@ enum ShortcutAction: String, CaseIterable {
         switch self {
         case .toggleEditor, .dismissPanel, .attachScreenshot, .refile, .swallowReload:
             return true
-        case .readMode, .toggleTask, .save, .reorg, .archive, .nextSection, .prevSection:
+        case .readMode, .toggleTask, .save, .reorg, .archive, .imageSource, .nextSection, .prevSection:
             return false
         }
     }
@@ -178,6 +180,7 @@ enum ShortcutAction: String, CaseIterable {
         case .save:             return "Save Now"
         case .reorg:            return "Re-organize"
         case .archive:          return "Archive Completed"
+        case .imageSource:      return "Toggle Image Source"
         case .nextSection:      return "Next Section"
         case .prevSection:      return "Previous Section"
         }

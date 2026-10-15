@@ -129,6 +129,7 @@ final class ShortcutRegistryTests: XCTestCase {
             "save": "Mod-s",
             "reorg": "Alt-Mod-j",
             "archive": "Alt-Mod-k",
+            "imageSource": "Alt-Mod-l",
             "nextSection": "Alt-Mod-ArrowDown",
             "prevSection": "Alt-Mod-ArrowUp",
         ])

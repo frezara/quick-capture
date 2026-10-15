@@ -91,33 +91,29 @@ final class EditorPersistenceTests: XCTestCase {
         XCTAssertEqual(aligned, true)
     }
 
-    func testImagesStayVisibleAndExplicitSourceEditingIsUndoable() async throws {
+    func testImageSourceUsesVimWithoutHidingPreview() async throws {
         let (web, _) = try await loadEditor()
         let content = "# Inbox\n## Work\n- [ ] Task\n  ![first](attachments/test.png)\n  ![second](attachments/test.png)\n"
         let json = String(data: try JSONEncoder().encode(content), encoding: .utf8)!
-        _ = try await web.evaluateJavaScript("qcEditor.setContent(\(json)); qcEditor.revealLine(3); true")
-        let count = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment').length") as? Int
-        let html = try await web.evaluateJavaScript("JSON.stringify(window.testErrors)") as? String
-        let compact = try await web.evaluateJavaScript("document.querySelector('.cm-image-open').getBoundingClientRect().height <= 48") as? Bool
-        XCTAssertEqual(compact, true)
-        XCTAssertEqual(count, 2, "Selecting an image line must not collapse its preview: \(html ?? "nil")")
-        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-open').click(); document.querySelector('.cm-image-edit').click(); true")
-        // A delayed image response must not destroy a source edit in progress.
+        _ = try await web.evaluateJavaScript("qcEditor.setContent(\(json)); qcEditor.setVimEnabled(true); qcEditor.revealLine(3); qcEditor.focus(); true")
         _ = try await web.evaluateJavaScript("qcEditor.attachmentLoaded('attachments/test.png', 'data:image/gif;base64,R0lGODlhAQABAIAAAAAAAP///yH5BAEAAAAALAAAAAABAAEAAAIBRAA7'); true")
-        let sourceExists = try await web.evaluateJavaScript("!!document.querySelector('.cm-image-source textarea')") as? Bool
-        XCTAssertEqual(sourceExists, true)
-        let images = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment .cm-attachment-img').length") as? Int
-        XCTAssertEqual(images, 2)
-        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-source textarea').value = '![updated](attachments/other.png)'; document.querySelector('.cm-image-source button').click(); true")
+        let count = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment-img').length") as? Int
+        XCTAssertEqual(count, 2)
+        _ = try await web.evaluateJavaScript("qcEditor.invoke('imageSource'); true")
+        let source = try await web.evaluateJavaScript("!!document.querySelector('.cm-attachment-source') && !document.querySelector('textarea, dialog, .cm-image-open')") as? Bool
+        XCTAssertEqual(source, true, "Image source stays in the main Vim editor")
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-content').dispatchEvent(new KeyboardEvent('keydown', {key:'i',code:'KeyI',bubbles:true,cancelable:true})); document.execCommand('insertText', false, 'new-'); true")
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-content').dispatchEvent(new KeyboardEvent('keydown', {key:'Escape',code:'Escape',bubbles:true,cancelable:true})); true")
         let changed = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
-        XCTAssertTrue(changed?.contains("  ![updated](attachments/other.png)") == true)
-        XCTAssertTrue(changed?.contains("  ![second](attachments/test.png)") == true)
-        _ = try await web.evaluateJavaScript("document.querySelector('.cm-content').dispatchEvent(new KeyboardEvent('keydown', {key:'z', code:'KeyZ', metaKey:true, bubbles:true, cancelable:true})); true")
+        XCTAssertTrue(changed?.contains("![first](new-attachments/test.png)") == true)
+        let visible = try await web.evaluateJavaScript("document.querySelectorAll('.cm-attachment-img').length") as? Int
+        XCTAssertEqual(visible, 2, "Preview remains while editing its source")
+        _ = try await web.evaluateJavaScript("document.querySelector('.cm-content').dispatchEvent(new KeyboardEvent('keydown', {key:'u',code:'KeyU',bubbles:true,cancelable:true})); true")
         let undone = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
         XCTAssertEqual(undone, content)
-        _ = try await web.evaluateJavaScript("document.querySelector('.cm-image-open').click(); document.querySelector('.cm-image-edit').click(); document.querySelector('.cm-image-source textarea').value='invalid draft'; document.querySelector('.cm-image-source button:last-child').click(); true")
-        let cancelled = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
-        XCTAssertEqual(cancelled, content)
+        _ = try await web.evaluateJavaScript("qcEditor.invoke('imageSource'); true")
+        let hidden = try await web.evaluateJavaScript("!document.querySelector('.cm-attachment-source') && document.querySelectorAll('.cm-attachment').length === 2") as? Bool
+        XCTAssertEqual(hidden, true)
     }
 
     func testArchiveWaitsForSaveAndShortcutHintsUseRegistryValues() async throws {
