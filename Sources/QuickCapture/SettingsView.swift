@@ -5,6 +5,7 @@ import UniformTypeIdentifiers
 struct SettingsView: View {
     @EnvironmentObject var appState: AppState
     @Environment(\.colorScheme) private var scheme
+    @State private var loginEnabled = SMAppService.mainApp.status == .enabled
     private var t: Theme { scheme == .dark ? .dark : .light }
 
     var body: some View {
@@ -49,7 +50,7 @@ struct SettingsView: View {
             rowDivider
             settingsRow(
                 label: "Launch at Login",
-                note: "App must be in /Applications for this to take effect.",
+                note: "Open Quick Capture automatically when you log in.",
                 symbol: "power"
             ) {
                 settingsToggle(launchAtLoginBinding)
@@ -337,11 +338,12 @@ struct SettingsView: View {
 
     private var launchAtLoginBinding: Binding<Bool> {
         Binding(
-            get: { SMAppService.mainApp.status == .enabled },
+            get: { loginEnabled },
             set: { enabled in
                 do {
                     if enabled { try SMAppService.mainApp.register() }
                     else        { try SMAppService.mainApp.unregister() }
+                    loginEnabled = SMAppService.mainApp.status == .enabled
                 } catch {
                     let alert = NSAlert()
                     alert.messageText = "Couldn't update launch-at-login"

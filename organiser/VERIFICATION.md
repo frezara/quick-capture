@@ -62,8 +62,31 @@ UI automation was performed for the new Settings conflict controls.
 - Home-Mac launch agent installed and health checked. Terminating its SSH child
   was followed by an automatic reconnect and a successful health response.
 - Reminder date parsing and completed/deleted-item exclusion are covered by Swift
-  tests. Actual macOS notification permission and visible delivery still require
-  the installed-app check.
+  tests. macOS permission was enabled in the installed app, and the user
+  confirmed seeing the scheduled “Home Mac notification verification” banner.
 
 The work Mac and iPhone are explicitly deferred. Browser-created organiser items
 now import into the active Mac inbox. The editor bundle is unchanged.
+
+Home deployment on 15 October 2026:
+
+- Server code and schema 2 deployed successfully, with a database backup before
+  migration; app and PostgreSQL health checks passed.
+- A deployment-script bug was found by checking the actual container age: the
+  backup process consumed the remote shell's remaining input. Redirecting backup
+  stdin from `/dev/null` fixed it; the rebuilt server's `/api/changes` was checked.
+- The signed native build replaced `~/Applications/Quick Capture.app`, using the
+  existing Apple Development identity. The previous app, inbox, and outbox were
+  backed up before replacement.
+- The running installed app imported a live verification calendar event exactly
+  once and retained its reminder instant. With the managed tunnel stopped, an
+  edit to that test item queued locally; after reconnect, the same operation was
+  acknowledged at revision 2 and the server contained the edited text.
+- A post-migration production backup restored into a separate temporary database.
+- Native notification permission was enabled and confirmed in System Settings.
+  The user confirmed the test reminder appeared. The verification item was then
+  tombstoned at revision 4; the installed app removed its inbox marker.
+- System Settings lists Quick Capture under Open at Login. The Settings toggle
+  now refreshes its displayed value after registration.
+- The backup restore verifier also checked schema 2 change-feed revisions against
+  every restored item successfully.
