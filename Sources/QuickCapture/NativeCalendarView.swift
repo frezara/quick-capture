@@ -122,7 +122,7 @@ struct NativeCalendarView: View {
         .frame(maxWidth: .infinity)
         .background(inMonth ? Color.clear : Color.secondary.opacity(0.035))
         .overlay(alignment: .top) { Divider() }
-        .overlay(alignment: .trailing) { Divider() }
+        .overlay(alignment: .trailing) { Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5) }
     }
 
     private func dateNumber(_ day: Date) -> some View {
@@ -136,14 +136,14 @@ struct NativeCalendarView: View {
     private var timeline: some View {
         VStack(spacing: 0) {
             HStack(spacing: 0) {
-                Color.clear.frame(width: timeWidth)
+                Color.clear.frame(width: timeWidth, height: 41)
                 ForEach(model.days, id: \.self) { day in
                     HStack(spacing: 6) {
                         Text(day.formatted(.dateTime.weekday(.abbreviated))).font(.caption).foregroundStyle(.secondary)
                         dateNumber(day)
                     }.frame(maxWidth: .infinity).padding(.vertical, 8)
                 }
-            }
+            }.fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: 0) {
                 Text("all-day").font(.system(size: 10)).foregroundStyle(.secondary)
                     .frame(width: timeWidth, alignment: .trailing).padding(.top, 6)
@@ -157,7 +157,7 @@ struct NativeCalendarView: View {
                         }
                     }.padding(4).frame(maxWidth: .infinity, minHeight: 30)
                 }
-            }
+            }.fixedSize(horizontal: false, vertical: true)
             Divider()
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
@@ -216,6 +216,6 @@ struct NativeCalendarView: View {
                 }
             }
         }.frame(maxWidth: .infinity).frame(height: hourHeight * 24)
-            .overlay(alignment: .leading) { Divider() }
+            .overlay(alignment: .leading) { Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5) }
     }
 }

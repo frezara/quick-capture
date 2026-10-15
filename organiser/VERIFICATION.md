@@ -144,6 +144,9 @@ visible editable text view owns focus. Existing command-number shortcuts remain.
 
 Swift tests: 265 executed, 263 passed, two opt-in tests skipped. New tests cover
 overlap-column allocation/reuse, midnight clipping, all-day separation and
-single-letter shortcut scope. Signed build succeeded. Installed-app visual and
-keyboard checks remain pending because Computer Use cannot attach until a panel
-or Settings window is opened; the existing installed app has not been replaced.
+single-letter shortcut scope. Signed build succeeded and the update was installed. Installed-app checks showed
+existing events in the month grid and confirmed bare W switches to the hourly
+week view. Visual inspection identified an oversized week header and a month
+separator orientation issue; both were corrected, rebuilt and installed. The
+final spacing check and live D/M check await reopening the capture panel after
+that last restart. D/W/M routing is covered by the passing unit tests.
