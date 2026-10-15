@@ -138,6 +138,44 @@ final class EditorPersistenceTests: XCTestCase {
         XCTAssertEqual(hints, ["⌥⌘J", "⌥⌘K"])
     }
 
+    func testOrganiserSendWaitsForMarkerSaveAndPreservesSubtree() async throws {
+        let (web, bridge) = try await loadEditor()
+        let save = expectation(description: "Identity is saved first")
+        let sent = expectation(description: "Snapshot follows save acknowledgement")
+        var saveID: Int?
+        var outgoing: [String: Any]?
+        bridge.receive = { message in
+            if message["type"] as? String == "save" { saveID = message["id"] as? Int; save.fulfill() }
+            if message["type"] as? String == "sendOrganiser" { outgoing = message; sent.fulfill() }
+        }
+        _ = try await web.evaluateJavaScript("qcEditor.setContent('# Inbox\\n- [ ] Parent\\n  - [ ] Child'); qcEditor.revealLine(1); Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Send to organiser').click(); true")
+        await fulfillment(of: [save], timeout: 5)
+        XCTAssertNil(outgoing)
+        let id = try XCTUnwrap(saveID)
+        _ = try await web.evaluateJavaScript("qcEditor.saveResult(\(id), null, null); true")
+        await fulfillment(of: [sent], timeout: 5)
+        let subtree = try XCTUnwrap(outgoing?["subtree"] as? String)
+        XCTAssertTrue(subtree.contains("  - [ ] Child"))
+        XCTAssertEqual(SourceIdentity.ids(in: subtree).count, 1)
+        let content = try await web.evaluateJavaScript("qcEditor.getContent()") as? String
+        XCTAssertTrue(content?.contains(subtree) == true, "Sending must retain the source")
+    }
+
+    func testDuplicateIdentityOpensHistoryWithoutSending() async throws {
+        let (web, bridge) = try await loadEditor()
+        let history = expectation(description: "Ambiguous identity opens history")
+        var sent = false
+        bridge.receive = { message in
+            if message["type"] as? String == "organiserHistory" { history.fulfill() }
+            if message["type"] as? String == "sendOrganiser" { sent = true }
+        }
+        let content = "# Inbox\n- [ ] One <!--qc-source:33333333-3333-4333-8333-333333333333-->\n- [ ] Copy <!--qc-source:33333333-3333-4333-8333-333333333333-->"
+        let json = String(data: try JSONEncoder().encode(content), encoding: .utf8)!
+        _ = try await web.evaluateJavaScript("qcEditor.setContent(\(json)); qcEditor.revealLine(1); Array.from(document.querySelectorAll('button')).find(b => b.textContent === 'Send to organiser').click(); true")
+        await fulfillment(of: [history], timeout: 5)
+        XCTAssertFalse(sent)
+    }
+
     func testBlankLineCannotReorganiseOrArchive() async throws {
         let (web, bridge) = try await loadEditor()
         let content = "# Inbox\n## Work\n\n- [x] Completed\n- [ ] Open\n"

@@ -14,6 +14,8 @@ struct CaptureView: View {
     /// Dismiss the picker surface without attaching.
     var onPickerCancel: () -> Void = {}
 
+    @State private var recoveryDrafts = CaptureRecovery.drafts()
+    @State private var restoredDraftID: String?
     @State private var todoText = ""
     @State private var tagText = ""
     @State private var shakeTrigger = 0
@@ -163,6 +165,9 @@ struct CaptureView: View {
             tagHighlight = 0
         }
         .onReceive(NotificationCenter.default.publisher(for: .capturePanelDidHide)) { _ in
+            guard !appState.captureRecoveryBlocked else { return }
+            recoveryDrafts = CaptureRecovery.drafts()
+            restoredDraftID = nil
             todoText = ""
             tagText = ""
             tagFieldActive = false
@@ -213,6 +218,34 @@ struct CaptureView: View {
     private var captureColumn: some View {
         VStack(spacing: 0) {
             inputsRow
+            if appState.captureRecoveryBlocked {
+                Button("Discard Failed Capture…") {
+                    let alert = NSAlert()
+                    alert.messageText = "Discard the unsaved capture?"
+                    alert.informativeText = "A recovery copy could not be saved."
+                    alert.addButton(withTitle: "Keep Editing")
+                    alert.addButton(withTitle: "Discard")
+                    if alert.runModal() == .alertSecondButtonReturn {
+                        appState.captureRecoveryBlocked = false
+                        onClose()
+                    }
+                }
+            }
+            if let draft = recoveryDrafts.first {
+                HStack {
+                    Text("A failed capture is recoverable.").font(.caption)
+                    Button("Restore") {
+                        guard todoText.isEmpty else { return }
+                        todoText = draft.text; tagText = draft.tag ?? ""
+                        appState.pendingAttachments = draft.attachments.map { URL(fileURLWithPath: $0) }
+                        restoredDraftID = draft.id
+                    }.disabled(!todoText.isEmpty)
+                    Button("Discard") {
+                        try? CaptureRecovery.remove(draft.id)
+                        recoveryDrafts = CaptureRecovery.drafts()
+                    }
+                }.padding(.top, 8)
+            }
             if showPreviewBand {
                 previewBand
                     .padding(.top, Metrics.s3)
@@ -1018,10 +1051,34 @@ struct CaptureView: View {
         // Calendar captures never write markdown, so attachments have nowhere
         // to go — the chips are visibly disabled in that mode (R21).
         let attachments = isCalendarMode ? [] : appState.pendingAttachments
+        let originalText = todoText
+        let originalTag = tagText
+        let recoveryID = restoredDraftID
+        appState.captureSubmissionActive = true
         let saved = onSubmit(trimmedText, tag, attachments)
+        appState.captureSubmissionActive = false
         // On a failed or user-declined save, leave the typed text and chips
         // intact so the user can retry without retyping.
-        guard saved else { return }
+        guard saved else {
+            todoText = originalText; tagText = originalTag
+            appState.pendingAttachments = attachments
+            do {
+                let draft = try CaptureRecovery.save(text: originalText, tag: tag, attachments: attachments)
+                if let previous = recoveryID { try? CaptureRecovery.remove(previous) }
+                if let previous = appState.captureImportRecoveryID { try? CaptureRecovery.remove(previous) }
+                appState.captureImportRecoveryID = nil
+                restoredDraftID = draft.id
+                appState.captureRecoveryBlocked = false
+                recoveryDrafts = CaptureRecovery.drafts()
+            } catch {
+                appState.captureRecoveryBlocked = true
+            }
+            return
+        }
+        appState.captureRecoveryBlocked = false
+        if let id = recoveryID { try? CaptureRecovery.remove(id) }
+        restoredDraftID = nil
+        recoveryDrafts = CaptureRecovery.drafts()
         todoText = ""
         tagText = ""
         appState.pendingAttachments = []

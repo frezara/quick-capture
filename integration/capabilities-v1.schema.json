@@ -1,0 +1,22 @@
+{
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "workspace_id": {
+      "type": "string",
+      "format": "uuid"
+    },
+    "durable_receipts": {
+      "const": true
+    }
+  },
+  "required": [
+    "schema_version",
+    "workspace_id",
+    "durable_receipts"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

@@ -609,6 +609,13 @@ final class MainPanel: NSPanel {
     /// is current, then hands off to the dismiss closure (which hides the panel
     /// and clears any preserved capture text).
     func dismiss() {
+        if appState.captureRecoveryBlocked {
+            let alert = NSAlert()
+            alert.messageText = "The failed capture could not be backed up"
+            alert.informativeText = "Keep this panel open and copy or save the text before dismissing it."
+            alert.runModal()
+            return
+        }
         guard !exitPending else { return }
         exitPending = true
         flushEditorSave { [weak self] saved in
@@ -953,7 +960,7 @@ final class MainPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
-        guard canDismissOnBlur else { return }
+        guard canDismissOnBlur, !appState.captureSubmissionActive else { return }
         canDismissOnBlur = false
         dismiss()
     }
@@ -1084,6 +1091,23 @@ final class MainPanel: NSPanel {
     /// watcher reloads the editor afterwards (same pattern as archive). On
     /// success the editor flashes a toast; on any failure the source is left
     /// intact and an `NSAlert` explains why (the failure contract, R29).
+    fileprivate func sendToOrganiser(sourceID: String, fromLine: Int, toLine: Int, subtree: String, asNew: Bool) {
+        do {
+            let content = try FileWriter.read(loadedFileURL)
+            _ = try FileWriter.verifyAndRemove(subtree: subtree, at: fromLine..<toLine, in: content)
+            guard SourceIdentity.ids(in: subtree.components(separatedBy: "\n").first ?? "") == [sourceID],
+                  SourceIdentity.ids(in: content).filter({ $0 == sourceID }).count == 1 else {
+                throw HandoffError.invalid("ambiguous_source_identity")
+            }
+            HandoffController.shared.send(sourceID: sourceID, body: subtree, sourceFile: loadedFileURL, asNew: asNew)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Could not send to organiser"
+            alert.informativeText = "The source changed or its identity is ambiguous. Save and select the item again."
+            alert.runModal()
+        }
+    }
+
     fileprivate func refile(targetID: String, fromLine: Int, toLine: Int, subtree: String) {
         do {
             // Resolved by identity, not position: the effective list is
@@ -1448,6 +1472,14 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
         case "attachment":
             // The editor wants an image's bytes for the expanded preview.
             if let path = dict["path"] as? String { panel?.sendAttachment(relativePath: path) }
+        case "organiserHistory":
+            HandoffController.shared.showHistory()
+        case "sendOrganiser":
+            if let id = dict["sourceID"] as? String,
+               let from = dict["fromLine"] as? Int, let to = dict["toLine"] as? Int,
+               let subtree = dict["subtree"] as? String {
+                panel?.sendToOrganiser(sourceID: id, fromLine: from, toLine: to, subtree: subtree, asNew: dict["asNew"] as? Bool ?? false)
+            }
         case "refile":
             // Move the subtree at [fromLine, toLine) into the chosen target.
             if let target = dict["target"] as? String,

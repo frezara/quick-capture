@@ -36,9 +36,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         setupStatusItem()
         setupMainMenu()
         setupHotKey()
+        HandoffController.shared.start()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !appState.captureRecoveryBlocked else { return .terminateCancel }
         guard let panel = mainPanel else { return .terminateNow }
         DispatchQueue.main.async {
             panel.flushEditorSave { saved in sender.reply(toApplicationShouldTerminate: saved) }
@@ -305,6 +307,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // and relative links resolve against the capture file path as it is
         // right now, not as it was at attach time (R18). Links are gathered in
         // selection order so the child lines match the chip order.
+        var importDraft: CaptureRecovery.Draft?
+        if !attachments.isEmpty {
+            do {
+                importDraft = try CaptureRecovery.beginImport(text: text, tag: tag, attachments: attachments)
+                appState.captureImportRecoveryID = importDraft?.id
+            }
+            catch {
+                let alert = NSAlert()
+                alert.messageText = "Could not prepare recoverable screenshot import"
+                alert.informativeText = "The draft is retained. Free disk space or check storage permissions, then retry."
+                alert.runModal()
+                return false
+            }
+        }
         var attachmentLinks: [String] = []
         for attachment in attachments {
             do {
@@ -324,6 +340,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
                 includeTimestamp: appState.includeTimestamp,
                 attachmentLinks: attachmentLinks
             )
+            if let draft = importDraft { try? CaptureRecovery.remove(draft.id) }
+            appState.captureImportRecoveryID = nil
             hideCapture()
             return true
         } catch {

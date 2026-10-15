@@ -21,6 +21,7 @@ struct SettingsView: View {
                 captureBoxCard
                 editorCard
                 refileTargetsSection
+                HandoffSettingsView()
             }
             .padding(Metrics.s4)
             .frame(width: 680)

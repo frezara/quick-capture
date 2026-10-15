@@ -1,0 +1,165 @@
+{
+  "type": "object",
+  "properties": {
+    "payload": {
+      "type": "object",
+      "properties": {
+        "workspace_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "operation_id": {
+          "type": "string",
+          "format": "uuid"
+        },
+        "capture": {
+          "type": "object",
+          "properties": {
+            "schema_version": {
+              "const": 1
+            },
+            "capture_id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "source": {
+              "type": "object",
+              "properties": {
+                "app": {
+                  "const": "Quick Capture"
+                },
+                "version": {
+                  "type": "string",
+                  "maxLength": 128
+                },
+                "installation_id": {
+                  "type": "string",
+                  "format": "uuid"
+                }
+              },
+              "required": [
+                "app",
+                "version",
+                "installation_id"
+              ],
+              "additionalProperties": false
+            },
+            "body_markdown": {
+              "type": "string",
+              "maxLength": 1048576
+            },
+            "attachments": {
+              "type": "array",
+              "maxItems": 16,
+              "items": {
+                "type": "object",
+                "properties": {
+                  "attachment_id": {
+                    "type": "string",
+                    "format": "uuid"
+                  },
+                  "relative_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*//).+$"
+                  },
+                  "source_path": {
+                    "type": "string",
+                    "minLength": 1,
+                    "maxLength": 4096,
+                    "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*//).+$"
+                  },
+                  "original_name": {
+                    "type": "string",
+                    "maxLength": 1024
+                  },
+                  "media_type": {
+                    "type": "string",
+                    "maxLength": 128
+                  },
+                  "byte_count": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 67108864
+                  },
+                  "sha256": {
+                    "type": "string",
+                    "pattern": "^[0-9a-f]{64}$"
+                  }
+                },
+                "required": [
+                  "attachment_id",
+                  "relative_path",
+                  "source_path",
+                  "original_name",
+                  "media_type",
+                  "byte_count",
+                  "sha256"
+                ],
+                "additionalProperties": false
+              }
+            },
+            "omitted_attachments": {
+              "type": "array",
+              "maxItems": 16,
+              "uniqueItems": true,
+              "items": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 4096,
+                "pattern": "^(?!/)(?!.*(?:^|/)\\.{1,2}(?:/|$))(?!.*\\\\)(?!.*//).+$"
+              }
+            },
+            "title": {
+              "type": "string",
+              "maxLength": 4096
+            },
+            "source_url": {
+              "type": "string",
+              "maxLength": 8192
+            },
+            "kind_hint": {
+              "enum": [
+                "note",
+                "task",
+                "link",
+                "document"
+              ]
+            }
+          },
+          "required": [
+            "schema_version",
+            "capture_id",
+            "created_at",
+            "source",
+            "body_markdown",
+            "attachments",
+            "omitted_attachments"
+          ],
+          "additionalProperties": false
+        }
+      },
+      "required": [
+        "workspace_id",
+        "operation_id",
+        "capture"
+      ],
+      "additionalProperties": false
+    },
+    "payload_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "payload",
+    "payload_sha256"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

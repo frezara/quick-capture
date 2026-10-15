@@ -77,3 +77,7 @@ NOTES.md
 inbox.md
 inbox_archive.md
 attachments/
+
+# Python development receiver bytecode
+__pycache__/
+*.pyc

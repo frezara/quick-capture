@@ -126,6 +126,52 @@ crossfades between them.
 - **`#cal`** — a capture prefix that re-interprets the input as a
   natural-language calendar event and opens a generated `.ics`.
 
+## Organiser handoff language
+
+These terms describe the agreed organiser integration; they do not imply that
+delivery is implemented yet.
+
+**Capture draft**:
+Unsubmitted content in the capture box. Ordinary dismissal discards it;
+content retained after a failed save or interrupted import/send is recovery content.
+
+**Item subtree**:
+A saved item together with its attachment lines and nested child items.
+It is the initial selection unit for Send to organiser, as it is for refile.
+
+**Source item identity**:
+The identity of a local item across edits and moves, distinct from its wording
+or position. One source item can have several intentionally created handoffs.
+_Avoid_: Filename identity, content identity
+
+**Handoff snapshot**:
+An immutable copy of an explicitly selected item subtree and its included
+attachments for delivery to one organiser destination. Later source edits do
+not change it, and retries retain the same handoff identity.
+_Avoid_: Live sync, refile
+
+**Organiser inbox item**:
+A record accepted by the organiser for later organisation; it need not be a
+task. It is independent of the source item and any refile target inbox.
+_Avoid_: Target inbox
+
+**Delivery receipt**:
+The organiser's durable acknowledgement of a particular handoff snapshot.
+It proves acceptance by that organiser, not availability on other devices.
+
+**Send as new item**:
+An explicit request to create a new handoff snapshot, even when its source
+item has already been sent. It does not replace an earlier organiser inbox item.
+
+**Send this copy as new**:
+An explicit resolution for an item whose source identity was duplicated by
+copying: the selected copy becomes a distinct source item with a new handoff.
+
+**Missing attachment**:
+A locally referenced attachment whose bytes cannot be read for a handoff.
+It blocks sending unless the user explicitly approves its omission; a remote
+image URL remains a link and is not an attachment to fetch.
+
 ## Language to avoid
 
 - Don't say "window" for the panel — it's the **MainPanel** / **the panel**.

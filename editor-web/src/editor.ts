@@ -594,7 +594,7 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 // priority suffix-hide below stops before it so the two replace
                 // ranges never overlap. `contentEnd` is the line length minus the
                 // token, so priority/label logic ignores the token entirely.
-                const tokenMatch = line.text.match(/\s*<!--qc:[^>]*-->\s*$/);
+                const tokenMatch = line.text.match(/(?:\s*<!--(?:qc:|qc-source:)[^>]*-->)+\s*$/);
                 const contentEnd = tokenMatch && tokenMatch.index !== undefined
                     ? line.from + tokenMatch.index
                     : line.from + line.text.length;
@@ -1595,7 +1595,7 @@ function moveCompletedToBottom(view: EditorView): void {
                 // Split off the hidden `<!--qc:…-->` creation token first so it
                 // survives the priority-marker strip, then re-append it. Strip
                 // priority (and the `➕` group, preserved as $1) from the body.
-                const tokenSplit = groupLines[0].match(/^(.*?)(\s*<!--qc:[^>]*-->)?\s*$/s);
+                const tokenSplit = groupLines[0].match(/^(.*?)((?:\s*<!--(?:qc:|qc-source:)[^>]*-->)*)\s*$/s);
                 const body = tokenSplit ? tokenSplit[1] : groupLines[0];
                 const token = tokenSplit && tokenSplit[2] ? tokenSplit[2] : "";
                 groupLines[0] = body
@@ -1607,7 +1607,7 @@ function moveCompletedToBottom(view: EditorView): void {
                 // Optional ` ➕ DATE TIME` timestamp tail and the hidden
                 // `<!--qc:…-->` token are tolerated, so a captured
                 // `task !!! ➕ … <!--qc:…-->` still classifies as priority 3.
-                const priority = line.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?(?:\s*<!--qc:[^>]*-->)?\s*$/);
+                const priority = line.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?(?:\s*<!--(?:qc:|qc-source:)[^>]*-->)*\s*$/);
                 const level = priority ? priority[1].length : 0;
                 const bucket = level === 0 ? 3 : 3 - level;
                 groups.push({ bucket, lines: groupLines });
@@ -1746,7 +1746,11 @@ function ensureWorkspace(v: EditorView) {
     refile.dataset.itemAction = attach.dataset.itemAction = "true";
     const inspectorContent = document.createElement("div");
     inspectorContent.className = "qc-inspector-content";
-    inspectorContent.append(detail, refile, attach);
+    const send = makeButton("Send to organiser", "sendOrganiser", () => { void sendOrganiser(v, false); });
+    const sendNew = makeButton("Send as new item", "sendOrganiserNew", () => { void sendOrganiser(v, true); });
+    send.dataset.itemAction = sendNew.dataset.itemAction = "true";
+    const history = makeButton("Delivery history", "organiserHistory", () => sendToSwift({ type: "organiserHistory" }));
+    inspectorContent.append(detail, refile, attach, send, sendNew, history);
     inspector.append(inspectorContent, actions);
     v.dom.append(header, nav, inspector);
     updateWorkspace(v);
@@ -1834,6 +1838,10 @@ function updateWorkspace(v: EditorView) {
         row.append(key, text); detail.append(row);
     }
     v.dom.querySelectorAll<HTMLButtonElement>("[data-item-action]").forEach(button => { button.disabled = !span; });
+    const sourceIDs = [...(span?.text.split("\n")[0] ?? "").matchAll(/<!--qc-source:([0-9a-fA-F-]{36})-->/g)].map(m => m[1].toLowerCase());
+    const duplicated = sourceIDs.length > 1 || (sourceIDs.length === 1 && [...doc.toString().matchAll(/<!--qc-source:([0-9a-fA-F-]{36})-->/g)].filter(m => m[1].toLowerCase() === sourceIDs[0]).length > 1);
+    const newLabel = v.dom.querySelector('[data-shortcut-action="sendOrganiserNew"] .qc-action-label');
+    if (newLabel) newLabel.textContent = duplicated ? "Send this copy as new" : "Send as new item";
 }
 
 function ensureSidebar(view: EditorView) {
@@ -2130,6 +2138,44 @@ function sendToSwift(message: Record<string, unknown>) {
 // message with the exact subtree text + its 0-based line range. The byte-for-
 // byte verification on the Swift side doubles as a check that both sides agree
 // on the span (issue #32).
+
+let organiserSending = false;
+async function sendOrganiser(v: EditorView, asNew: boolean) {
+    if (organiserSending) return;
+    organiserSending = true;
+    try {
+        let span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
+        if (!span) { showRefileToast(v, "Put the cursor on an item to send."); return; }
+        const line = v.state.doc.line(span.from + 1);
+        const marker = /<!--qc-source:([0-9a-fA-F-]{36})-->/g;
+        const matches = [...line.text.matchAll(marker)];
+        let id = matches[0]?.[1]?.toLowerCase();
+        if (matches.length > 1 || (id && [...v.state.doc.toString().matchAll(marker)].filter(m => m[1].toLowerCase() === id).length > 1)) {
+            // WKWebView does not install a JavaScript dialog delegate. Use native
+            // history for inspection and explicit Send as new item for resolution.
+            if (!asNew) {
+                showRefileToast(v, "Copied identity: view delivery history or choose Send this copy as new.");
+                sendToSwift({ type: "organiserHistory" });
+                return;
+            }
+            const cleaned = line.text.replace(/\s*<!--qc-source:[0-9a-fA-F-]{36}-->/g, "");
+            id = crypto.randomUUID();
+            v.dispatch({ changes: { from: line.from, to: line.to, insert: cleaned + ` <!--qc-source:${id}-->` } });
+        } else if (!id) {
+            id = crypto.randomUUID();
+            v.dispatch({ changes: { from: line.to, insert: ` <!--qc-source:${id}-->` } });
+        }
+        if (!await saveDocument()) return;
+        // Recompute after the asynchronous save; native code verifies this exact
+        // slice against disk. Never send the pre-save stale selection.
+        span = resolveSubtreeSpan(v.state, v.state.doc.line(span.from + 1).from);
+        if (!span || !span.text.split("\n")[0].includes(`<!--qc-source:${id}-->`)) {
+            showRefileToast(v, "The item moved while saving. Select it again."); return;
+        }
+        sendToSwift({ type: "sendOrganiser", sourceID: id, fromLine: span.from, toLine: span.to, subtree: span.text, asNew });
+        showRefileToast(v, "Preparing organiser handoff; the source stays editable.");
+    } finally { organiserSending = false; }
+}
 
 function refileIndentWidth(text: string): number {
     let w = 0;

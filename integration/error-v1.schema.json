@@ -1,0 +1,19 @@
+{
+  "type": "object",
+  "properties": {
+    "code": {
+      "type": "string",
+      "maxLength": 64
+    },
+    "payload_sha256": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  },
+  "required": [
+    "code",
+    "payload_sha256"
+  ],
+  "additionalProperties": false,
+  "$schema": "https://json-schema.org/draft/2020-12/schema"
+}

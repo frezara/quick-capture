@@ -39,6 +39,7 @@ enum AttachmentStore {
         }
 
         try fm.copyItem(at: source, to: dir.appendingPathComponent(candidate))
+        try LocalFileDurability.sync(dir.appendingPathComponent(candidate))
         return "\(folderName)/\(candidate)"
     }
 
@@ -56,7 +57,7 @@ enum AttachmentStore {
         let fm = FileManager.default
         let sourceURL = sourceFile.deletingLastPathComponent().appendingPathComponent(relativePath)
         guard fm.fileExists(atPath: sourceURL.path) else {
-            NSLog("Refile: attachment missing at \(sourceURL.path); carrying link text verbatim")
+            NSLog("Refile: attachment_missing; carrying link text verbatim")
             return nil
         }
 
@@ -75,6 +76,7 @@ enum AttachmentStore {
         }
 
         try fm.copyItem(at: sourceURL, to: dir.appendingPathComponent(candidate))
+        try LocalFileDurability.sync(dir.appendingPathComponent(candidate))
         return "\(folderName)/\(candidate)"
     }
 
@@ -90,7 +92,7 @@ enum AttachmentStore {
         do {
             try FileManager.default.removeItem(at: url)
         } catch {
-            NSLog("Refile: could not remove moved original \(url.path): \(error)")
+            NSLog("Refile: original_cleanup_failed")
         }
     }
 

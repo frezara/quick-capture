@@ -57,6 +57,15 @@ The editor autosaves after a short pause. Explicit saves show “Saved” only a
 
 If another app changes the file while you have unsaved edits, Quick Capture keeps your text in the editor and shows a choice: **Keep my edits** replaces the disk version, while **Use disk version** replaces the editor buffer. Failed writes show a persistent error with a retry button.
 
+## Organiser handoff
+
+The editor's **Send to organiser** action creates an immutable copy of the selected
+item subtree. Configure the local spool in Settings; delivery history shows pending
+work, receipts, recovery and Retry. Existing capture and refile remain independent.
+See [integration setup and contract](integration/README.md) and
+[verification results](integration/verification.md). This includes a development
+receiver; production organiser/device sync is a later integration.
+
 ## Roadmap
 
 ### Pre-1.0 polish
