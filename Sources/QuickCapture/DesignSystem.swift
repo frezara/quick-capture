@@ -172,3 +172,110 @@ enum Tracking {
     static let status: CGFloat  =  0.5
     static let caption: CGFloat =  0.8
 }
+
+// MARK: - Shared components
+
+extension View {
+    /// The grouped card: opaque group fill, field radius, hairline border.
+    func groupedSurface(_ t: Theme) -> some View {
+        background(t.group)
+            .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous))
+            .overlay(
+                RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
+                    .strokeBorder(t.borderStrong, lineWidth: 0.5)
+            )
+    }
+}
+
+/// Secondary action: neutral control fill, hairline border.
+struct GhostButtonStyle: ButtonStyle {
+    let t: Theme
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typeface.ui(12))
+            .foregroundStyle(t.ink)
+            .padding(.horizontal, 10)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                    .fill(configuration.isPressed ? t.chipHover : t.control)
+            )
+            .overlay(
+                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                    .strokeBorder(t.borderStrong, lineWidth: 0.5)
+            )
+            .shadow(color: .black.opacity(0.06), radius: 0.5, y: 0.5)
+    }
+}
+
+/// The one primary action on a surface: solid accent.
+struct AccentButtonStyle: ButtonStyle {
+    let t: Theme
+    func makeBody(configuration: Configuration) -> some View {
+        configuration.label
+            .font(Typeface.ui(12, .medium))
+            .foregroundStyle(t.onAccent)
+            .padding(.horizontal, Metrics.s2)
+            .padding(.vertical, 4)
+            .background(
+                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
+                    .fill(t.accent.opacity(configuration.isPressed ? 0.85 : 1))
+            )
+    }
+}
+
+/// Key notation chip (SF Mono, per the typography rule).
+struct Keycap: View {
+    let text: String
+    let t: Theme
+    var body: some View {
+        Text(text)
+            .font(Typeface.mono(11, .medium))
+            .foregroundStyle(t.inkSecondary)
+            .padding(.horizontal, 5)
+            .padding(.vertical, 2)
+            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(t.chip))
+            .fixedSize()
+    }
+}
+
+/// A status message that needs attention. Status colour is always paired with
+/// a symbol (design-system-overview.md).
+struct WarningBanner: View {
+    let text: String
+    let t: Theme
+    var body: some View {
+        Label(text, systemImage: "exclamationmark.triangle")
+            .font(Typeface.ui(12))
+            .foregroundStyle(t.priMed)
+            .padding(.horizontal, Metrics.s2)
+            .padding(.vertical, Metrics.s1)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .background(t.warningFill, in: RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous))
+    }
+}
+
+/// A text input in a field well — the capture field's recipe, so it reads as
+/// something you can type into.
+struct ThemedField: View {
+    let placeholder: String
+    @Binding var text: String
+    let t: Theme
+    var lines: ClosedRange<Int>? = nil
+    var body: some View {
+        Group {
+            if let lines {
+                TextField("", text: $text, prompt: prompt, axis: .vertical).lineLimit(lines)
+            } else {
+                TextField("", text: $text, prompt: prompt)
+            }
+        }
+        .textFieldStyle(.plain)
+        .font(Typeface.ui(13))
+        .foregroundStyle(t.ink)
+        .padding(.horizontal, Metrics.s2)
+        .padding(.vertical, 7)
+        .background(t.surfaceField, in: RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous))
+    }
+    private var prompt: Text { Text(placeholder).foregroundStyle(t.inkTertiary) }
+}

@@ -112,6 +112,21 @@ final class ThemeContrastTests: XCTestCase {
         }
     }
 
+    /// Pairings introduced by the Workspace, Projects and Calendar pages.
+    func testWorkspacePairingsMeetAA() {
+        for (name, theme) in [("light", Theme.light), ("dark", Theme.dark)] {
+            let checks: [(String, Double)] = [
+                ("today marker", contrast(theme.surface, on: srgb(theme.priHigh))),
+                ("warning banner", contrast(theme.priMed, on: srgb(theme.warningFill))),
+                ("sidebar selection", contrast(theme.accentInk, on: composite(theme.accentSoft, over: srgb(theme.bg)))),
+                ("event chip", contrast(theme.accentInk, on: composite(theme.accentSoft, over: srgb(theme.surface)))),
+            ]
+            for (pairing, ratio) in checks {
+                XCTAssertGreaterThanOrEqual(ratio, 4.5, "\(name) \(pairing): \(String(format: "%.2f", ratio)):1")
+            }
+        }
+    }
+
     func testPlaceholderInkStaysFaintOnPurpose() {
         // `inkTertiary` is placeholder-only and deliberately below AA — a
         // prompt you are about to type over, not text to read. Pinned so a
