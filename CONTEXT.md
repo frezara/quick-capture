@@ -37,8 +37,7 @@ crossfades between them.
   box's tag field, which is the same tag. Nothing else borrows a tag hue —
   system blue is **interaction**, neutral is the ground. A section takes the
   next unused hue the first time it is seen and keeps it, so the hue survives
-  reordering and relaunches. Decided in #101; the code still hashes the name —
-  implementation is #102 (assignment), #103 (editor), #104 (capture).
+  reordering and relaunches. Decided in #101, implemented in #102–#104.
 
 - **Quick capture** — the `## Quick capture` section: the catch-all where
   untagged items land. Use this exact phrase for the catch-all; don't call it
