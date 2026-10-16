@@ -7,19 +7,66 @@ enum OrganiserCredentials {
         [kSecClass as String: kSecClassGenericPassword, kSecAttrService as String: "com.quickcapture.organiser",
          kSecAttrAccount as String: endpoint]
     }
+    /// What the keychain last said for an endpoint. The sync workers poll every
+    /// few seconds, so an answer is kept until a save or an explicit retry
+    /// rather than asked for again — on a keychain that can't be unlocked,
+    /// each ask was another password dialog.
+    private enum Answer { case token(String), missing, refused }
+    private static let lock = NSLock()
+    private static var answers: [String: Answer] = [:]
+    private static var lookup: (String) -> (OSStatus, String?) = keychainLookup
+
     static func read(_ endpoint: String) throws -> String? {
+        lock.lock(); defer { lock.unlock() }
+        let answer: Answer
+        if let cached = answers[endpoint] {
+            answer = cached
+        } else {
+            let (status, token) = lookup(endpoint)
+            switch status {
+            case errSecSuccess where token != nil: answer = .token(token!)
+            case errSecItemNotFound: answer = .missing
+            default: answer = .refused
+            }
+            answers[endpoint] = answer
+        }
+        switch answer {
+        case .token(let token): return token
+        case .missing: return nil
+        case .refused:
+            throw HandoffError.invalid("Keychain didn't release the organiser access key (it may be locked). Unlock it in Keychain Access, then choose Retry Keychain in Settings.")
+        }
+    }
+
+    /// Forget refusals so the next read asks the keychain again.
+    static func retry() {
+        lock.lock(); defer { lock.unlock() }
+        answers = answers.filter { if case .refused = $0.value { return false } else { return true } }
+    }
+
+    static func resetForTesting(lookup: @escaping (String) -> (OSStatus, String?) = keychainLookup) {
+        lock.lock(); defer { lock.unlock() }
+        answers = [:]
+        self.lookup = lookup
+    }
+
+    private static func keychainLookup(_ endpoint: String) -> (OSStatus, String?) {
         var q = query(endpoint)
         q[kSecReturnData as String] = true
         q[kSecMatchLimit as String] = kSecMatchLimitOne
-        // Background delivery must never summon an authentication dialog.
         q[kSecUseAuthenticationUI as String] = kSecUseAuthenticationUIFail
+        // Background delivery must never summon a dialog. The flag above only
+        // covers LocalAuthentication-protected items; the login keychain still
+        // prompts to unlock, or to approve a differently-signed build, unless
+        // interaction is switched off for the read.
+        var wasAllowed: DarwinBoolean = true
+        SecKeychainGetUserInteractionAllowed(&wasAllowed)
+        SecKeychainSetUserInteractionAllowed(false)
+        defer { SecKeychainSetUserInteractionAllowed(wasAllowed.boolValue) }
         var result: CFTypeRef?
         let status = SecItemCopyMatching(q as CFDictionary, &result)
-        if status == errSecItemNotFound { return nil }
-        guard status == errSecSuccess, let data = result as? Data, let token = String(data: data, encoding: .utf8) else {
-            throw HandoffError.invalid("Unlock the organiser access key in Keychain, then retry.")
-        }
-        return token
+        let token = (result as? Data).flatMap { String(data: $0, encoding: .utf8) }
+        return (status, token)
     }
     static func save(_ token: String, endpoint: String) throws {
         guard (32...4096).contains(token.utf8.count), token.utf8.allSatisfy({ $0 >= 33 && $0 <= 126 }) else {
@@ -32,6 +79,7 @@ enum OrganiserCredentials {
             q[kSecAttrAccessible as String] = kSecAttrAccessibleAfterFirstUnlockThisDeviceOnly
             guard SecItemAdd(q as CFDictionary, nil) == errSecSuccess else { throw HandoffError.invalid("Could not save the access key to Keychain.") }
         } else if result != errSecSuccess { throw HandoffError.invalid("Could not update the access key in Keychain.") }
+        lock.lock(); answers[endpoint] = .token(token); lock.unlock()
     }
 }
 
@@ -245,6 +293,7 @@ struct OrganiserSettingsView: View {
             HStack {
                 Button("Save Access Key") { controller.saveKey(key); key = "" }.disabled(key.isEmpty)
                 Button("Import Key File…") { controller.importKey() }
+                Button("Retry Keychain") { OrganiserCredentials.retry(); controller.start() }
                 Button("Open Organiser") {
                     if let endpoint = try? OrganiserOutbox.endpoint(controller.endpoint), let url = URL(string: endpoint) { NSWorkspace.shared.open(url) }
                 }
