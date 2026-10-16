@@ -42,7 +42,7 @@ enum FileWriter {
     /// token. The recency feature that wrote these tokens has been removed, but
     /// files captured before that still carry them, so the classifiers and
     /// trimmers keep tolerating one trailing token so a legacy line still buckets
-    /// and reads cleanly. Kept in sync with `editor.ts`'s `qc:` hiding regex.
+    /// and reads cleanly. Kept in sync with `TRAILING` in `editor-web/src/source-marker.ts`.
     static let creationTokenPattern = #"(?:\s*<!--(?:qc:|qc-source:)[^>]*-->)*"#
 
     /// Append `text` as a `- [ ] …` todo to `url`, routed under a `## tag` H2

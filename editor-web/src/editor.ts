@@ -1,5 +1,6 @@
 import { DocumentSession } from "./document-session";
-import { EditorState, RangeSetBuilder, Compartment, StateEffect, StateField } from "@codemirror/state";
+import { trailingMarkerSpan, confineEdit, Change } from "./source-marker";
+import { EditorState, EditorSelection, ChangeSet, Transaction, Annotation, RangeSetBuilder, Compartment, StateEffect, StateField } from "@codemirror/state";
 import {
     EditorView, keymap, drawSelection, highlightActiveLine,
     WidgetType, Decoration, DecorationSet, ViewPlugin, ViewUpdate,
@@ -580,6 +581,21 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 continue;
             }
 
+            // Source markers (`<!--qc-source:…-->`, and legacy `<!--qc:…-->`
+            // creation tokens) are the item's organiser identity, never its
+            // content: hidden on every line, cursor or not, and atomic so the
+            // caret steps over them. `sourceMarkerGuard` keeps edits off them.
+            // `contentEnd` is the line length minus the marker run, so the
+            // priority/label logic below ignores the marker entirely.
+            const markerSpan = trailingMarkerSpan(line.text);
+            const contentEnd = markerSpan ? line.from + markerSpan.from : line.to;
+            if (markerSpan && markerSpan.to > markerSpan.from) {
+                ranges.push({
+                    from: contentEnd, to: line.to,
+                    deco: Decoration.replace({ markerAtomic: true }),
+                });
+            }
+
             const match = line.text.match(/^(\s*)([-*+]\s+)(\[[\sxX]\])/);
             if (match) {
                 const startPos = line.from + match[1].length;
@@ -587,23 +603,6 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 let endPos = taskMarkerFrom + 3;
                 if (view.state.doc.sliceString(endPos, endPos + 1) === " ") endPos += 1;
                 const onLine = !readMode && selectionOverlaps(view.state, line.from, line.to);
-
-                // Hidden creation-time token: `<!--qc:…-->` appended by capture
-                // (after any `➕` marker). Never displayed — hide it off-cursor,
-                // exactly like Obsidian reading view drops HTML comments. The
-                // priority suffix-hide below stops before it so the two replace
-                // ranges never overlap. `contentEnd` is the line length minus the
-                // token, so priority/label logic ignores the token entirely.
-                const tokenMatch = line.text.match(/(?:\s*<!--(?:qc:|qc-source:)[^>]*-->)+\s*$/);
-                const contentEnd = tokenMatch && tokenMatch.index !== undefined
-                    ? line.from + tokenMatch.index
-                    : line.from + line.text.length;
-                if (tokenMatch && tokenMatch.index !== undefined && !onLine) {
-                    ranges.push({
-                        from: contentEnd, to: line.from + line.text.length,
-                        deco: Decoration.replace({}),
-                    });
-                }
 
                 // Checkbox widget — only render when the cursor isn't in the
                 // syntax range (same condition as before).
@@ -631,8 +630,8 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 // Priority suffix: trailing ` !`/` !!`/` !!!` paints a colored
                 // dot at the far-right of the line via a ::after pseudo (line
                 // class), and hides the raw `!`s off-cursor. Matched against the
-                // line with the hidden token stripped, so a captured
-                // `task !!! <!--qc:…-->` still classifies and hides correctly.
+                // line with the hidden marker stripped, so a captured
+                // `task !!! <!--qc-source:…-->` still classifies and hides correctly.
                 const priorityText = line.text.slice(0, contentEnd - line.from);
                 const priority = priorityText.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 if (priority && priority.index !== undefined) {
@@ -662,6 +661,61 @@ function buildLivePreview(view: EditorView): DecorationSet {
     return Decoration.set(ranges.map(r => r.deco.range(r.from, r.to)), true);
 }
 
+/**
+ * A source marker lives and dies with its line (ADR-0008). Every document
+ * change is confined so typing at the end of a line lands before the marker,
+ * Enter opens the new line after it, and deletions stop at its edge; only
+ * removing the whole line removes the marker. Clicking past the end of a
+ * line puts the caret before the hidden marker rather than after it.
+ */
+const sourceMarkerGuard = EditorState.transactionFilter.of(tr => {
+    const startDoc = tr.startState.doc;
+    if (tr.docChanged) {
+        const confined: Change[] = [];
+        let cursor: number | null = null, altered = false, count = 0;
+        tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+            count += 1;
+            const change = { from: fromA, to: toA, insert: inserted.toString() };
+            const edit = confineEdit(startDoc, change);
+            if (edit.cursor !== null) { altered = true; cursor = edit.cursor; }
+            confined.push(...edit.changes);
+        });
+        if (!altered) return tr;
+        const changes = ChangeSet.of(confined, startDoc.length);
+        // Transaction exposes no annotation list, so the ones that matter to
+        // history and collaboration are carried over by name.
+        const annotations: Annotation<unknown>[] = [];
+        const userEvent = tr.annotation(Transaction.userEvent);
+        if (userEvent !== undefined) annotations.push(Transaction.userEvent.of(userEvent));
+        const addToHistory = tr.annotation(Transaction.addToHistory);
+        if (addToHistory !== undefined) annotations.push(Transaction.addToHistory.of(addToHistory));
+        const remote = tr.annotation(Transaction.remote);
+        if (remote !== undefined) annotations.push(Transaction.remote.of(remote));
+        const selection = count === 1 && cursor !== null && tr.newSelection.ranges.length === 1
+            ? EditorSelection.cursor(cursor)
+            : tr.newSelection.map(tr.changes.invertedDesc).map(changes);
+        return {
+            changes, selection,
+            effects: tr.effects,
+            scrollIntoView: tr.scrollIntoView,
+            annotations,
+        };
+    }
+    if (tr.selection && tr.isUserEvent("select.pointer")) {
+        const ranges = tr.selection.ranges.map(range => {
+            if (!range.empty) return range;
+            const line = tr.newDoc.lineAt(range.head);
+            const span = trailingMarkerSpan(line.text);
+            const s = span ? line.from + span.from : null;
+            return s !== null && range.head > s && range.head <= line.to ? EditorSelection.cursor(s) : range;
+        });
+        if (ranges.some((r, i) => r.head !== tr.selection!.ranges[i].head)) {
+            return [tr, { selection: EditorSelection.create(ranges, tr.selection.mainIndex), sequential: true }];
+        }
+    }
+    return tr;
+});
+
 function atxHeadingLevel(name: string): number | null {
     const match = /^ATXHeading([1-6])$/.exec(name);
     return match ? Number(match[1]) : null;
@@ -684,7 +738,7 @@ const livePreview = ViewPlugin.fromClass(class {
     decorations: (v) => v.decorations,
     provide: plugin => EditorView.atomicRanges.of(editor =>
         editor.plugin(plugin)?.decorations.update({
-            filter: (_from, _to, value) => value.spec.imageAtomic === true,
+            filter: (_from, _to, value) => value.spec.imageAtomic === true || value.spec.markerAtomic === true,
         }) ?? Decoration.none),
 });
 
@@ -1595,9 +1649,9 @@ function moveCompletedToBottom(view: EditorView): void {
                 // Split off the hidden `<!--qc:…-->` creation token first so it
                 // survives the priority-marker strip, then re-append it. Strip
                 // priority (and the `➕` group, preserved as $1) from the body.
-                const tokenSplit = groupLines[0].match(/^(.*?)((?:\s*<!--(?:qc:|qc-source:)[^>]*-->)*)\s*$/s);
-                const body = tokenSplit ? tokenSplit[1] : groupLines[0];
-                const token = tokenSplit && tokenSplit[2] ? tokenSplit[2] : "";
+                const span = trailingMarkerSpan(groupLines[0]);
+                const body = span ? groupLines[0].slice(0, span.from) : groupLines[0].replace(/\s+$/, "");
+                const token = span ? groupLines[0].slice(span.from) : "";
                 groupLines[0] = body
                     .replace(/^\s+/, "")
                     .replace(/\s+!{1,3}(\s+➕\s+\S+\s+\S+)?\s*$/, "$1")
@@ -1607,7 +1661,8 @@ function moveCompletedToBottom(view: EditorView): void {
                 // Optional ` ➕ DATE TIME` timestamp tail and the hidden
                 // `<!--qc:…-->` token are tolerated, so a captured
                 // `task !!! ➕ … <!--qc:…-->` still classifies as priority 3.
-                const priority = line.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?(?:\s*<!--(?:qc:|qc-source:)[^>]*-->)*\s*$/);
+                const span = trailingMarkerSpan(line);
+                const priority = (span ? line.slice(0, span.from) : line).match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 const level = priority ? priority[1].length : 0;
                 const bucket = level === 0 ? 3 : 3 - level;
                 groups.push({ bucket, lines: groupLines });
@@ -2491,6 +2546,7 @@ function mount(content: string) {
             // bindings win over defaultKeymap's Insert-mode-only assumptions.
             vimComp.of(vimEnabled ? vim() : []),
             history(),
+            sourceMarkerGuard,
             drawSelection(),
             bracketMatching(),
             indentOnInput(),

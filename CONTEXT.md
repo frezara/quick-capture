@@ -125,6 +125,10 @@ crossfades between them.
 - **`#cal`** — a capture prefix that re-interprets the input as a
   natural-language calendar event retained locally and delivered to the organiser.
 
+- **Source marker** — the trailing identifier a delivered item carries so the
+  organiser recognises it across edits and reordering (ADR-0008). Never shown
+  in the editor; it lives and dies with its line.
+
 ## Organiser handoff language
 
 Automatic capture delivery and explicit snapshot handoff are distinct workflows.
