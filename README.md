@@ -9,7 +9,7 @@ Built for the moment when a thought hits you mid-task and you don't want to cont
 - Configurable global hotkey (default `⌥⌘P`)
 - Appends to any markdown file — works great with Obsidian vaults
 - `#tags` route entries under `## tag` headings; untagged items go under `## Quick capture`
-- `#cal` interprets the input as a natural-language calendar event ("call Seb tomorrow at 2pm for 30 min") and opens an `.ics` in your default calendar app
+- `#cal` interprets the input as a natural-language calendar event ("call Seb tomorrow at 2pm for 30 min") and saves it as an internal organiser event
 - Optional Obsidian-Tasks-compatible timestamp on each capture
 - Pick your input font (System / Rounded / Serif / Monospaced)
 - Built-in markdown editor with live preview, optional Vim bindings, search, and autosave
@@ -43,17 +43,73 @@ macOS remembers the choice; subsequent launches are silent.
 Press **⌥⌘P** (or whatever you've configured) to summon the capture panel anywhere in macOS. Type your thought and press Enter — it's appended to your file and the panel disappears.
 
 - Add `#tag` after the text (Tab to focus the tag field) to route the entry under a `## tag` heading.
-- `#cal` turns the input into a calendar event instead of a todo — open `.ics` in Calendar, BusyCal, etc.
+- `#cal` saves an internal calendar event locally and queues it for the organiser.
 - Press **⌥⌘I** to switch between capture and editor modes; **⌘F** searches in the editor.
 - Press **⌥⌘O** to pick screenshots, or **⌥⌘U** in the editor to refile an item.
-- Press **⌘S** to save immediately or **⌘'** to reorganise items by priority and completion.
+- Press **⌘S** to save immediately or **⌥⌘J** to reorganise items by priority and completion.
+- Press **⌥⌘K** to archive completed items after saving. Re-organise and Archive require the cursor to be on an item; both are disabled on blank lines and in read mode.
+- Attachments stay visible inline. Press **⌥⌘L** on an image or its parent item to reveal its Markdown path in the main editor, edit with the usual Vim keys, then press **⌥⌘L** again to hide the source. The preview remains visible while editing.
 - Click the menu bar icon for **Settings** — file path, hotkey, timestamp, and input font are all configurable.
+
+## Native workspace (first milestone)
+
+The capture panel expands into native SwiftUI views in the same window:
+
+| Shortcut | View |
+| --- | --- |
+| ⌥⌘1 | Calendar |
+| ⌥⌘2 | Projects |
+| ⌥⌘3 | Todos |
+| ⌥⌘4 | Notes |
+| ⌥⌘5 | Saved links |
+| ⌥⌘P | Return to capture |
+| ⌥⌘I | Markdown editor |
+
+Calendar uses D / W / M for day / week / month (⌘1 / ⌘2 / ⌘3 also work),
+⌘← / ⌘→ for previous / next period, and ⌘T for today. The month view has
+a continuous calendar grid; day/week views have hourly timelines, an all-day
+row, a current-time indicator and separate columns for overlapping events.
+Click an event for its details, or a month date to open that day. It reads locally saved event metadata;
+`#cal` remains the event capture route. These are browsing views for this milestone;
+edit existing content in the Markdown editor. Capture drafts survive switching
+views. The expanded workspace stays open when you switch to another app.
+
+Todos include existing inbox tasks, including older items that are not synced.
+Notes appear separately when their section is Notes, their text contains `#note`,
+or their synced type is Note. Saved links shows items containing URLs and synced
+bookmarks. Projects groups explicit `#project/name` tags in item text; dedicated
+project editing is deferred. The active inbox and configured refile inboxes are
+read locally without importing old history into sync. Work/priority filters and
+the Chrome extension are deferred.
 
 ## Saving and external edits
 
 The editor autosaves after a short pause. Explicit saves show “Saved” only after the file write succeeds. Switching back to capture mode, dismissing, and quitting wait for pending edits to save.
 
 If another app changes the file while you have unsaved edits, Quick Capture keeps your text in the editor and shows a choice: **Keep my edits** replaces the disk version, while **Use disk version** replaces the editor buffer. Failed writes show a persistent error with a retry button.
+
+## Automatic organiser delivery
+
+New capture-box entries, including `#cal` events, are saved locally and queued
+for the PostgreSQL organiser automatically. Configure the API URL and access key
+in Settings → Automatic organiser delivery. Offline delivery retries safely;
+credentials live in Keychain. Existing history and editor-created lines are not
+imported automatically. Linked items synchronise edits, completion and deletion
+in both directions; Settings shows conflicts and lets you choose which version
+to keep. Archive and refile preserve item identity. Missing files pause sync
+instead of deleting organiser records. Organiser-created items arrive in the active
+inbox automatically. The organiser has a month calendar; enable native reminder
+notifications in Quick Capture Settings for reminders while offline.
+See [organiser setup](organiser/README.md) and [verification](organiser/VERIFICATION.md).
+
+### Legacy development handoff
+
+The editor's **Send to organiser** action creates an immutable copy of the selected
+item subtree. Configure the local spool in Settings; delivery history shows pending
+work, receipts, recovery and Retry. Existing capture and refile remain independent.
+See [integration setup and contract](integration/README.md) and
+[verification results](integration/verification.md). This includes a development
+receiver, separate from the production PostgreSQL API above.
 
 ## Roadmap
 
@@ -71,6 +127,39 @@ If another app changes the file while you have unsaved edits, Quick Capture keep
 - [ ] Code signing + notarization in CI
 - [ ] Homebrew cask
 - [ ] Sparkle auto-updates
+
+## Folder projects on the home Mac
+
+Open Quick Capture with **⌥⌘P**, then **⌥⌘2** for Projects. Add an existing
+folder (its existing `inbox.md` is preserved) or create a new project folder.
+If the root inbox is missing at registration, Quick Capture creates a template.
+
+- **Overview:** edit status and goal; see progress, blockers and the next action.
+- **Tasks:** list or board with Inbox, Backlog, Next, Doing, Blocked and Done.
+  Moving a task preserves its indented notes and file references.
+- **Markdown:** edit the complete root `inbox.md`. Unsaved drafts are retained
+  locally across restarts. Save checks that the on-disk version hasn't changed.
+
+Quick capture always writes to the main inbox; add project tasks from the Tasks
+tab, or refile them from the editor.
+
+The folder is the project; its root `inbox.md` is the source of truth. With sync
+enabled, the database holds that Markdown as one versioned `project` document.
+No other project file is indexed or uploaded, including attached images (their
+relative Markdown references remain in the inbox). Server edits return to the
+local inbox; simultaneous edits present both versions for an explicit choice.
+Missing local files or server deletion never automatically remove the folder.
+
+Management metadata uses a `## Project` section with `Status:` and `Goal:`.
+Top-level Markdown checkboxes under the task headings drive the task views;
+checked tasks are Done. Other sections and prose remain available in Markdown.
+There is no separate database task list for project tasks.
+
+Existing inboxes containing individually synced capture IDs currently require
+migration and are rejected rather than silently switching sync models. Project
+calendar capture is not yet supported: select Main inbox for `cal` events.
+The project registry, drafts and pending sync operations are retained in
+`~/Library/Application Support/QuickCapture/Projects/projects.json`.
 
 ## Build from source
 

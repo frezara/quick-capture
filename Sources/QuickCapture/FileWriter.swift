@@ -42,8 +42,8 @@ enum FileWriter {
     /// token. The recency feature that wrote these tokens has been removed, but
     /// files captured before that still carry them, so the classifiers and
     /// trimmers keep tolerating one trailing token so a legacy line still buckets
-    /// and reads cleanly. Kept in sync with `editor.ts`'s `qc:` hiding regex.
-    static let creationTokenPattern = #"(?:\s*<!--qc:[^>]*-->)?"#
+    /// and reads cleanly. Kept in sync with `TRAILING` in `editor-web/src/source-marker.ts`.
+    static let creationTokenPattern = #"(?:\s*<!--(?:qc:|qc-source:)[^>]*-->)*"#
 
     /// Append `text` as a `- [ ] …` todo to `url`, routed under a `## tag` H2
     /// section when `tag` is non-empty. Untagged items go under `## Quick capture`.
@@ -122,6 +122,7 @@ enum FileWriter {
 
         guard let data = updated.data(using: .utf8) else { throw WriteError.encodingFailed }
         try data.write(to: url, options: .atomic)
+        try LocalFileDurability.sync(url)
     }
 
     /// Make sure the file starts with `# Inbox`. Prepends it if missing.
@@ -294,6 +295,7 @@ enum FileWriter {
             throw WriteError.encodingFailed
         }
         try archiveData.write(to: archiveURL, options: .atomic)
+        try LocalFileDurability.sync(archiveURL)
 
         // `remaining` was computed from a read taken before the archive write
         // above, and that write is a real window — the capture file is shared
@@ -318,6 +320,7 @@ enum FileWriter {
         let current = try read(url, allowingMissing: true)
         guard current == expected else { throw ArchiveError.contentDrifted }
         try data.write(to: url, options: .atomic)
+        try LocalFileDurability.sync(url)
     }
 
     struct ArchivedItem: Equatable {

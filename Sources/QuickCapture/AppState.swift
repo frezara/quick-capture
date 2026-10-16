@@ -36,7 +36,8 @@ enum CaptureFontDesign: String, CaseIterable, Identifiable {
     }
 }
 
-final class AppState: ObservableObject {
+@Observable
+final class AppState {
     private enum Keys {
         static let captureFilePath        = "captureFilePath"
         static let hotKey                 = "hotKey"
@@ -47,13 +48,17 @@ final class AppState: ObservableObject {
         static let tagHues                = "tagHues"
     }
 
-    @Published var captureFilePath: String {
+    var captureRecoveryBlocked = false
+    @ObservationIgnored var captureSubmissionActive = false
+    @ObservationIgnored var captureImportRecoveryID: String?
+
+    var captureFilePath: String {
         didSet {
             UserDefaults.standard.set(captureFilePath, forKey: Keys.captureFilePath)
         }
     }
 
-    @Published var hotKey: HotKeyConfig {
+    var hotKey: HotKeyConfig {
         didSet {
             guard hotKey != oldValue else { return }
             if let data = try? JSONEncoder().encode(hotKey) {
@@ -63,13 +68,13 @@ final class AppState: ObservableObject {
         }
     }
 
-    @Published var includeTimestamp: Bool {
+    var includeTimestamp: Bool {
         didSet {
             UserDefaults.standard.set(includeTimestamp, forKey: Keys.includeTimestamp)
         }
     }
 
-    @Published var captureFontDesign: CaptureFontDesign {
+    var captureFontDesign: CaptureFontDesign {
         didSet {
             UserDefaults.standard.set(captureFontDesign.rawValue, forKey: Keys.captureFontDesign)
         }
@@ -78,7 +83,7 @@ final class AppState: ObservableObject {
     /// Vim keybindings in the editor. On by default. The editor reads this via
     /// the JS bridge (`MainPanel` pushes it); a change is broadcast so a live
     /// editor can toggle without a reload.
-    @Published var vimEnabled: Bool {
+    var vimEnabled: Bool {
         didSet {
             guard vimEnabled != oldValue else { return }
             UserDefaults.standard.set(vimEnabled, forKey: Keys.vimEnabled)
@@ -89,7 +94,7 @@ final class AppState: ObservableObject {
     /// Ordered list of refile destinations (issue #32). The editor can't read
     /// settings directly, so `MainPanel` pushes the effective list into the web
     /// layer on editor entry and whenever this changes — hence the broadcast.
-    @Published var refileTargets: [RefileTarget] {
+    var refileTargets: [RefileTarget] {
         didSet {
             guard refileTargets != oldValue else { return }
             if let data = try? JSONEncoder().encode(refileTargets) {
@@ -104,7 +109,7 @@ final class AppState: ObservableObject {
     /// persisted, so hues don't shuffle when the file is reordered or the app
     /// relaunches. The editor can't read settings and no longer derives the hue
     /// itself, so `MainPanel` pushes the resolved map in; hence the broadcast.
-    @Published private(set) var tagHues: TagHueAssignment {
+    private(set) var tagHues: TagHueAssignment {
         didSet {
             guard tagHues != oldValue else { return }
             if let data = try? JSONEncoder().encode(tagHues) {
@@ -156,7 +161,7 @@ final class AppState: ObservableObject {
 
     /// Tags discovered in the capture file's `## headings`, excluding the
     /// default `## Quick capture` section. Refreshed via `refreshRecentTags()`.
-    @Published var recentTags: [String] = []
+    var recentTags: [String] = []
 
     // Capture-session state (not persisted). Lives here rather than in
     // CaptureView @State so MainPanel (detection, ⌥⌘O pull-in) and the view
@@ -167,14 +172,14 @@ final class AppState: ObservableObject {
     /// (oldest-attached first). Each renders as its own chip and writes its own
     /// indented `![…]` child line under the captured todo. Deduped by path so
     /// the same screenshot can't attach twice.
-    @Published var pendingAttachments: [URL] = []
+    var pendingAttachments: [URL] = []
     /// When non-nil, the ⌥⌘O screenshot picker is open over the capture box,
     /// offering these recent screenshots (newest first). Cleared on attach,
     /// Esc, mode switch, and full dismiss.
-    @Published var screenshotPickerItems: [ScreenshotLocator.Screenshot]?
+    var screenshotPickerItems: [ScreenshotLocator.Screenshot]?
     /// Transient feedback for the pull-in keystroke (e.g. "No screenshots
     /// found"). CaptureView clears it after a beat.
-    @Published var attachFeedback: String?
+    var attachFeedback: String?
 
     func refreshRecentTags() {
         let url = captureFileURL

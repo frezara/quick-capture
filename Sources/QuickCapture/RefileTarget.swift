@@ -19,6 +19,22 @@ struct RefileTarget: Codable, Equatable, Identifiable {
         return URL(fileURLWithPath: (path as NSString).expandingTildeInPath).lastPathComponent
     }
 
+    /// The label as typed into Settings. Blank clears it, so the dropdown falls
+    /// back to the basename.
+    var labelInput: String {
+        get { label ?? "" }
+        set { label = newValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : newValue }
+    }
+
+    /// `targets` with the one identified by `id` moved `offset` places, found by
+    /// identity so its label travels with it. Out-of-range moves are no-ops.
+    static func moving(_ id: String, by offset: Int, in targets: [RefileTarget]) -> [RefileTarget] {
+        guard let from = targets.firstIndex(where: { $0.id == id }), targets.indices.contains(from + offset) else { return targets }
+        var result = targets
+        result.insert(result.remove(at: from), at: from + offset)
+        return result
+    }
+
     /// The folder URL, with `~` expanded.
     var folderURL: URL {
         URL(fileURLWithPath: (path as NSString).expandingTildeInPath)

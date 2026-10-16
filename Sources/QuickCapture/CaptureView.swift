@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct CaptureView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
     let onSubmit: (String, String?, [URL]) -> Bool
     let onClose: () -> Void
     let onToggleEditor: () -> Void
@@ -13,7 +13,10 @@ struct CaptureView: View {
     var onPickerAttach: ([URL]) -> Void = { _ in }
     /// Dismiss the picker surface without attaching.
     var onPickerCancel: () -> Void = {}
+    var onHintAction: (ShortcutAction) -> Void = { _ in }
 
+    @State private var recoveryDrafts = CaptureRecovery.drafts()
+    @State private var restoredDraftID: String?
     @State private var todoText = ""
     @State private var tagText = ""
     @State private var shakeTrigger = 0
@@ -31,6 +34,7 @@ struct CaptureView: View {
     /// Highlighted row in the tag dropdown (clamped to the filtered list at
     /// use sites, since the list shrinks as the user types).
     @State private var tagHighlight = 0
+    @State private var tagSelectionExplicit = false
     /// Esc closes the dropdown without leaving the tag field; typing reopens.
     @State private var tagDropdownDismissed = false
     /// Highlighted row in the ⌥⌘O screenshot picker (0 = newest). Moves with
@@ -115,6 +119,7 @@ struct CaptureView: View {
                 // Esc-dismissed dropdown and starts at the top row.
                 tagDropdownDismissed = false
                 tagHighlight = 0
+                tagSelectionExplicit = false
             } else {
                 // Close the dropdown when the tag field is no longer focused —
                 // but defer the check so the *transient* focus drop AppKit emits
@@ -150,24 +155,29 @@ struct CaptureView: View {
             submit()
             return .handled
         }
-        .onKeyPress(.upArrow)    { pickerOpen ? { movePicker(-1); return .handled }() : .ignored }
-        .onKeyPress(.downArrow)  { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
-        .onKeyPress(.leftArrow)  { pickerOpen ? { movePicker(-1); return .handled }() : .ignored }
-        .onKeyPress(.rightArrow) { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
+        .onKeyPress(.upArrow)    { pickerKey { movePicker(-1) } }
+        .onKeyPress(.downArrow)  { pickerKey { movePicker(1) } }
+        .onKeyPress(.leftArrow)  { pickerKey { movePicker(-1) } }
+        .onKeyPress(.rightArrow) { pickerKey { movePicker(1) } }
         // Space toggles the highlighted row's selection — multi-attach (#45).
-        .onKeyPress(.space)      { pickerOpen ? { toggleHighlighted(); return .handled }() : .ignored }
+        .onKeyPress(.space)      { pickerKey { toggleHighlighted() } }
         .onChange(of: tagText) { _, _ in
             // Typing reopens an Esc-dismissed dropdown and resets the
             // highlight — the filtered list under the cursor just changed.
             tagDropdownDismissed = false
             tagHighlight = 0
+            tagSelectionExplicit = false
         }
         .onReceive(NotificationCenter.default.publisher(for: .capturePanelDidHide)) { _ in
+            guard !appState.captureRecoveryBlocked else { return }
+            recoveryDrafts = CaptureRecovery.drafts()
+            restoredDraftID = nil
             todoText = ""
             tagText = ""
             tagFieldActive = false
             tagDropdownDismissed = false
             tagHighlight = 0
+            tagSelectionExplicit = false
             focused = .todo
             appState.pendingAttachments = []
             appState.attachFeedback = nil
@@ -176,8 +186,14 @@ struct CaptureView: View {
             pickerSelection = []
             pickerPreviews = [:]
         }
-        .onChange(of: appState.pendingAttachments) { _, newValue in
-            loadChipThumbnails(for: newValue)
+        // Keyed tasks rather than fire-and-forget dispatches: a newer set
+        // cancels in-flight decodes for the old one.
+        .task(id: appState.pendingAttachments) {
+            await loadThumbnails(for: appState.pendingAttachments, maxPixelSize: 256, into: \.chipThumbnails)
+        }
+        .task(id: pickerItemsKey) {
+            let urls = (appState.screenshotPickerItems ?? []).map(\.url)
+            await loadThumbnails(for: urls, maxPixelSize: 1000, into: \.pickerPreviews)
         }
         // The picker's item set changing (open, or ⌥⌘O re-query) resets the
         // highlight to the newest and (re)loads previews; opening also moves
@@ -193,16 +209,17 @@ struct CaptureView: View {
             // additive rather than a blank slate (#99).
             pickerSelection = Self.seededPickerSelection(
                 items: items.map(\.url), attached: appState.pendingAttachments)
-            loadPickerPreviews(items)
             // Defer focus a runloop — the focusable picker view is installed in
             // this same render pass, and focusing it synchronously can miss.
             DispatchQueue.main.async { focused = .picker }
         }
-        .onChange(of: appState.attachFeedback) { _, newValue in
-            guard newValue != nil else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                appState.attachFeedback = nil
-            }
+        // A newer notice restarts the clock instead of being cleared early by
+        // the previous notice's timer.
+        .task(id: appState.attachFeedback) {
+            guard appState.attachFeedback != nil else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            appState.attachFeedback = nil
         }
     }
 
@@ -213,6 +230,34 @@ struct CaptureView: View {
     private var captureColumn: some View {
         VStack(spacing: 0) {
             inputsRow
+            if appState.captureRecoveryBlocked {
+                Button("Discard Failed Capture…") {
+                    let alert = NSAlert()
+                    alert.messageText = "Discard the unsaved capture?"
+                    alert.informativeText = "A recovery copy could not be saved."
+                    alert.addButton(withTitle: "Keep Editing")
+                    alert.addButton(withTitle: "Discard")
+                    if alert.runModal() == .alertSecondButtonReturn {
+                        appState.captureRecoveryBlocked = false
+                        onClose()
+                    }
+                }
+            }
+            if let draft = recoveryDrafts.first {
+                HStack {
+                    Text("A failed capture is recoverable.").font(.caption)
+                    Button("Restore") {
+                        guard todoText.isEmpty else { return }
+                        todoText = draft.text; tagText = draft.tag ?? ""
+                        appState.pendingAttachments = draft.attachments.map { URL(fileURLWithPath: $0) }
+                        restoredDraftID = draft.id
+                    }.disabled(!todoText.isEmpty)
+                    Button("Discard") {
+                        try? CaptureRecovery.remove(draft.id)
+                        recoveryDrafts = CaptureRecovery.drafts()
+                    }
+                }.padding(.top, 8)
+            }
             if showPreviewBand {
                 previewBand
                     .padding(.top, Metrics.s3)
@@ -234,15 +279,6 @@ struct CaptureView: View {
     private var panelSurface: some View {
         VisualEffectBlur()
             .overlay(theme.panel)
-            .overlay(
-                LinearGradient(
-                    stops: [
-                        .init(color: theme.highlight, location: 0),
-                        .init(color: .clear, location: 0.12),
-                    ],
-                    startPoint: .top, endPoint: .bottom
-                )
-            )
             .allowsHitTesting(false)
     }
 
@@ -321,8 +357,9 @@ struct CaptureView: View {
                 .font(TypeScale.tag)
                 .foregroundStyle(tagActive ? tagFieldInk : theme.ink)
                 .focused($focused, equals: .tag)
-                // Enter commits the highlighted suggestion and saves in one
-                // press (#122). This used to live in an .onKeyPress(.return)
+                // Enter commits ordinary suggestions and saves. Cal first
+                // accepts the tag to reveal its preview; the next Enter saves.
+                // This used to live in an .onKeyPress(.return)
                 // that never ran: a focused TextField consumes Return to fire
                 // its submission action, so the key never reached a key-press
                 // modifier outside it, and `submit()` always saw the raw text.
@@ -336,11 +373,13 @@ struct CaptureView: View {
                 }
                 .onKeyPress(.upArrow) {
                     guard tagDropdownVisible else { return .ignored }
+                    tagSelectionExplicit = true
                     tagHighlight = max(0, tagHighlightClamped - 1)
                     return .handled
                 }
                 .onKeyPress(.downArrow) {
                     guard tagDropdownVisible else { return .ignored }
+                    tagSelectionExplicit = true
                     tagHighlight = min(filteredTags.count - 1, tagHighlightClamped + 1)
                     return .handled
                 }
@@ -396,9 +435,23 @@ struct CaptureView: View {
         return suggestion
     }
 
+    enum SubmissionAction: Equatable {
+        case previewCalendar
+        case save(String?)
+    }
+
+    static func submissionAction(typed: String, suggestion: String?, explicitlySelected: Bool) -> SubmissionAction {
+        let resolved = explicitlySelected ? (suggestion ?? typed) : tagToCommit(typed: typed, suggestion: suggestion)
+        let tag = resolved.trimmingCharacters(in: .whitespacesAndNewlines)
+        if tag.lowercased() == "cal", typed.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() != "cal" {
+            return .previewCalendar
+        }
+        return .save(tag.isEmpty ? nil : tag)
+    }
+
     /// Tags that are always present in the suggestions and Tab autocomplete,
     /// even before the user has used them. `cal` is the calendar-routing tag —
-    /// captures with `#cal` get parsed into a .ics event instead of a todo.
+    /// captures with `#cal` are delivered as internal organiser events.
     private static let pinnedTags = ["cal"]
 
     /// Full searchable tag list: pinned tags first, then anything discovered
@@ -489,6 +542,7 @@ struct CaptureView: View {
     /// the old first-prefix-match fill. Return commits whatever's highlighted.
     private func handleTab(shift: Bool) -> KeyPress.Result {
         if tagDropdownVisible {
+            tagSelectionExplicit = true
             if filteredTags.count > 1 {
                 tagHighlight = Self.cycledTagIndex(
                     from: tagHighlightClamped, count: filteredTags.count, forward: !shift)
@@ -639,10 +693,14 @@ struct CaptureView: View {
     private var hintBar: some View {
         HStack(spacing: Metrics.s3) {
             ForEach(ShortcutRegistry.captureHints, id: \.action) { hint in
-                HStack(spacing: Metrics.s1) {
-                    keycap(hint.glyphs)
-                    hintLabel(hint.label)
-                }
+                Button {
+                    onHintAction(hint.action)
+                } label: {
+                    HStack(spacing: Metrics.s1) {
+                        keycap(hint.glyphs)
+                        hintLabel(hint.label)
+                    }
+                }.buttonStyle(.plain)
             }
             Spacer(minLength: 0)
         }
@@ -695,11 +753,20 @@ struct CaptureView: View {
         return "\(datePart) at \(timePart) · \(formatDuration(event.duration))"
     }
 
-    private func posixFormatted(_ date: Date, _ format: String) -> String {
+    /// One formatter per pattern: picker rows and the `#cal` preview format on
+    /// every render, and a `DateFormatter` is expensive to build.
+    private static let posixFormatters: [String: DateFormatter] = Dictionary(
+        uniqueKeysWithValues: ["EEEE", "EEE, MMM d", "HH:mm", "h:mm a"].map { ($0, makePOSIXFormatter($0)) })
+
+    private static func makePOSIXFormatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = format
-        return f.string(from: date)
+        return f
+    }
+
+    private func posixFormatted(_ date: Date, _ format: String) -> String {
+        (Self.posixFormatters[format] ?? Self.makePOSIXFormatter(format)).string(from: date)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -728,17 +795,23 @@ struct CaptureView: View {
         return true
     }
 
-    private func loadChipThumbnails(for urls: [URL]) {
-        // Drop thumbnails for URLs no longer attached.
-        chipThumbnails = chipThumbnails.filter { urls.contains($0.key) }
-        for url in urls where chipThumbnails[url] == nil {
-            DispatchQueue.global(qos: .userInitiated).async {
-                // ~2× the 120pt tile so the larger preview stays crisp on Retina.
-                guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 256) else { return }
-                let image = NSImage(cgImage: cg, size: .zero)
-                DispatchQueue.main.async {
-                    if appState.pendingAttachments.contains(url) { chipThumbnails[url] = image }
-                }
+    /// Decodes thumbnails for `urls` off the main thread into the given cache,
+    /// dropping entries no longer in the set (a 6K Retina PNG decoded inline
+    /// would jank the summon). Each frame shows at once and its image fills in.
+    private func loadThumbnails(for urls: [URL], maxPixelSize: Int,
+                                into cache: ReferenceWritableKeyPath<CaptureView, [URL: NSImage]>) async {
+        let wanted = Set(urls)
+        let kept = self[keyPath: cache].filter { wanted.contains($0.key) }
+        if kept.count != self[keyPath: cache].count { self[keyPath: cache] = kept }
+        let missing = urls.filter { kept[$0] == nil }
+        guard !missing.isEmpty else { return }
+        await withTaskGroup(of: (URL, CGImage?).self) { group in
+            for url in missing {
+                group.addTask { (url, AttachmentStore.thumbnail(at: url, maxPixelSize: maxPixelSize)) }
+            }
+            for await (url, cg) in group {
+                guard !Task.isCancelled else { return }
+                if let cg { self[keyPath: cache][url] = NSImage(cgImage: cg, size: .zero) }
             }
         }
     }
@@ -746,6 +819,14 @@ struct CaptureView: View {
     // MARK: - Screenshot picker (⌥⌘O)
 
     private var pickerOpen: Bool { appState.screenshotPickerItems != nil }
+
+    /// The picker owns the arrows and Space while it's open; otherwise they
+    /// pass through to whatever has focus.
+    private func pickerKey(_ action: () -> Void) -> KeyPress.Result {
+        guard pickerOpen else { return .ignored }
+        action()
+        return .handled
+    }
 
     /// Stable identity for the current picker item set. Drives the focus /
     /// highlight / preview resets when the picker opens, closes, or is
@@ -764,7 +845,7 @@ struct CaptureView: View {
         return VStack(alignment: .leading, spacing: Metrics.s3) {
             HStack(spacing: Metrics.s2) {
                 Text("Recent screenshots")
-                    .font(Typeface.ui(15, .semibold))
+                    .font(TypeScale.h1)
                     .foregroundStyle(theme.ink)
                 if !pickerSelection.isEmpty {
                     Text("\(pickerSelection.count) selected")
@@ -814,6 +895,20 @@ struct CaptureView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity)
+            Divider().overlay(theme.border)
+            HStack(spacing: Metrics.s2) {
+                Text("\(max(1, pickerSelection.count)) selected")
+                    .font(Typeface.ui(11)).foregroundStyle(theme.inkSecondary)
+                Spacer()
+                Button("Cancel", action: onPickerCancel)
+                    .buttonStyle(.plain).foregroundStyle(theme.inkSecondary)
+                Button(action: attachPicked) {
+                    Text("Attach screenshot").font(Typeface.ui(12, .medium))
+                        .padding(.horizontal, Metrics.s2).padding(.vertical, Metrics.s1)
+                        .background(theme.accent).foregroundStyle(theme.onAccent)
+                        .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField))
+                }.buttonStyle(.plain)
+            }
         }
         .frame(maxWidth: .infinity, maxHeight: .infinity)
         // Anchors keyboard focus inside the panel while the picker is open so
@@ -829,15 +924,7 @@ struct CaptureView: View {
     /// Small bordered key chip for the picker's keyboard hints (mono, per the
     /// mockup's keycap treatment).
     private func keycap(_ label: String) -> some View {
-        Text(label)
-            .font(Typeface.mono(10, .medium))
-            .foregroundStyle(theme.inkSecondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(theme.chip)
-            )
+        Keycap(text: label, t: theme)
     }
 
     private func hintLabel(_ text: String) -> some View {
@@ -968,16 +1055,6 @@ struct CaptureView: View {
         onPickerAttach(urls)
     }
 
-    private func loadPickerPreviews(_ items: [ScreenshotLocator.Screenshot]) {
-        for url in items.map(\.url) where pickerPreviews[url] == nil {
-            DispatchQueue.global(qos: .userInitiated).async {
-                guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 1000) else { return }
-                let image = NSImage(cgImage: cg, size: .zero)
-                DispatchQueue.main.async { pickerPreviews[url] = image }
-            }
-        }
-    }
-
     private func screenshotTime(_ shot: ScreenshotLocator.Screenshot) -> String {
         posixFormatted(shot.createdAt, "h:mm a")
     }
@@ -1008,15 +1085,46 @@ struct CaptureView: View {
         // Reads the resolved tag, not `tagText` — and reads it rather than
         // writing it first, because assigning @State and reading it back in the
         // same scope yields the stale value.
-        let trimmedTag = tagToCommit.trimmingCharacters(in: .whitespacesAndNewlines)
-        let tag: String? = trimmedTag.isEmpty ? nil : trimmedTag
-        // Calendar captures never write markdown, so attachments have nowhere
-        // to go — the chips are visibly disabled in that mode (R21).
+        let action = Self.submissionAction(typed: tagText,
+            suggestion: tagDropdownVisible ? filteredTags[tagHighlightClamped] : nil,
+            explicitlySelected: tagSelectionExplicit)
+        let tag: String?
+        switch action {
+        case .previewCalendar:
+            acceptTag("cal")
+            return
+        case .save(let resolvedTag): tag = resolvedTag
+        }
+        // Calendar attachments remain visibly disabled in this first event workflow.
         let attachments = isCalendarMode ? [] : appState.pendingAttachments
+        let originalText = todoText
+        let originalTag = tagText
+        let recoveryID = restoredDraftID
+        appState.captureSubmissionActive = true
         let saved = onSubmit(trimmedText, tag, attachments)
+        appState.captureSubmissionActive = false
         // On a failed or user-declined save, leave the typed text and chips
         // intact so the user can retry without retyping.
-        guard saved else { return }
+        guard saved else {
+            todoText = originalText; tagText = originalTag
+            appState.pendingAttachments = attachments
+            do {
+                let draft = try CaptureRecovery.save(text: originalText, tag: tag, attachments: attachments)
+                if let previous = recoveryID { try? CaptureRecovery.remove(previous) }
+                if let previous = appState.captureImportRecoveryID { try? CaptureRecovery.remove(previous) }
+                appState.captureImportRecoveryID = nil
+                restoredDraftID = draft.id
+                appState.captureRecoveryBlocked = false
+                recoveryDrafts = CaptureRecovery.drafts()
+            } catch {
+                appState.captureRecoveryBlocked = true
+            }
+            return
+        }
+        appState.captureRecoveryBlocked = false
+        if let id = recoveryID { try? CaptureRecovery.remove(id) }
+        restoredDraftID = nil
+        recoveryDrafts = CaptureRecovery.drafts()
         todoText = ""
         tagText = ""
         appState.pendingAttachments = []

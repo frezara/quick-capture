@@ -4,17 +4,15 @@ import Foundation
 /// injected source/target URLs so it can be driven against temp dirs in tests,
 /// leaving only alert/toast/bridge wiring in `MainPanel`.
 ///
-/// Pipeline order is crash-safe: the source file — the one place the user's
-/// captured thought lives — is written **last** (step 5), so any failure
-/// through that point leaves it completely intact and the item never vanishes
-/// (the failure contract, mirroring capture R16). A failure between steps 5 and
-/// 6 leaves at worst a harmless copied orphan in the target.
+/// Write the target before removing the source. A failure after target append
+/// is uncertain and must not be blindly retried: independent Markdown files
+/// have no receipt protocol or cross-file transaction.
 enum RefileService {
 
     /// Refile the subtree at `range` out of `sourceURL` into `targetFolder`'s
     /// `inbox.md` (created if absent). Throws `FileWriter.RefileError.contentDrifted`
     /// if the on-disk lines no longer match `subtree`, or any filesystem error
-    /// from the copy/write — in every throwing case the source is untouched.
+    /// from the copy/write. After target append, failures are explicitly uncertain.
     static func refile(subtree: String, range: Range<Int>, from sourceURL: URL, toFolder targetFolder: URL) throws {
         let fm = FileManager.default
         let sourceContent = try FileWriter.read(sourceURL)
@@ -52,19 +50,18 @@ enum RefileService {
         }
         moved = FileWriter.dedent(moved)
 
-        // 4. Write the target inbox (atomic): scaffold # Inbox if new, append
+        // 4. Append without replacing existing bytes: scaffold # Inbox if new, append
         //    the subtree at end-of-file.
         try fm.createDirectory(at: targetFolder, withIntermediateDirectories: true)
-        let targetContent = try FileWriter.read(targetInbox, allowingMissing: true)
-        let newTarget = FileWriter.appendUnderInbox(subtree: moved, to: targetContent)
-        try newTarget.write(to: targetInbox, atomically: true, encoding: .utf8)
+        try RefileAppend.append(moved, to: targetInbox)
 
         // 5. Only now write the source without the subtree. Up to here the
         //    source on disk is byte-for-byte its original self.
         do {
             try FileWriter.write(Data(newSource.utf8), to: sourceURL, ifStillMatching: sourceContent)
-        } catch FileWriter.ArchiveError.contentDrifted {
-            throw FileWriter.RefileError.contentDrifted
+        } catch {
+            // The destination has already accepted bytes. Repeating could duplicate.
+            throw RefileAppend.AppendError.uncertain
         }
 
         // 6. Only now delete the moved originals — keeping any the post-removal

@@ -99,3 +99,16 @@ final class TagToCommitTests: XCTestCase {
         XCTAssertEqual(CaptureView.tagToCommit(typed: "fahad", suggestion: nil), "fahad")
     }
 }
+
+final class CalendarTagSubmissionTests: XCTestCase {
+    func testSelectedCalendarPreviewsBeforeSaving() {
+        XCTAssertEqual(CaptureView.submissionAction(typed: "", suggestion: "cal", explicitlySelected: true), .previewCalendar)
+        XCTAssertEqual(CaptureView.submissionAction(typed: "ca", suggestion: "cal", explicitlySelected: false), .previewCalendar)
+        XCTAssertEqual(CaptureView.submissionAction(typed: "cal", suggestion: nil, explicitlySelected: false), .save("cal"))
+    }
+    func testOrdinaryCaptureAndTagsStillSaveImmediately() {
+        XCTAssertEqual(CaptureView.submissionAction(typed: "", suggestion: "cal", explicitlySelected: false), .save(nil))
+        XCTAssertEqual(CaptureView.submissionAction(typed: "wo", suggestion: "work", explicitlySelected: true), .save("work"))
+        XCTAssertEqual(CaptureView.submissionAction(typed: "ca", suggestion: nil, explicitlySelected: false), .save("ca"))
+    }
+}

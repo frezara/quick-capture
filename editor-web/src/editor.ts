@@ -1,10 +1,11 @@
 import { DocumentSession } from "./document-session";
-import { EditorState, RangeSetBuilder, Compartment, StateEffect } from "@codemirror/state";
+import { strip, serialise, sourceIDs, mapIdentities, recoverIdentities, hasDuplicateIdentity, Identities, Mark } from "./source-marker";
+import { EditorState, Text, RangeSetBuilder, Compartment, StateEffect, StateField } from "@codemirror/state";
 import {
     EditorView, keymap, drawSelection, highlightActiveLine,
     WidgetType, Decoration, DecorationSet, ViewPlugin, ViewUpdate,
 } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertTab, invertedEffects } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -50,8 +51,7 @@ Vim.defineMotion("moveToPrevMarkdownSection", (cm: any, head: any, motionArgs: a
 Vim.mapCommand("]]", "motion", "moveToNextMarkdownSection", {}, {});
 Vim.mapCommand("[[", "motion", "moveToPrevMarkdownSection", {}, {});
 
-// Native-v2 ("Pure System + Color") palettes — mirror DesignSystem.swift
-// (Theme.light / .dark); see design/native-v2/HANDOFF.md. The active one
+// Clear & Charcoal palettes — mirror DesignSystem.swift and design-system-overview.md. The active one
 // follows the system appearance (prefers-color-scheme). Functional colour
 // only: priority orbs and the per-section tag hues.
 // NOTE: priHigh/Med/Low and accent must stay 6-digit hex — alpha is appended
@@ -59,53 +59,49 @@ Vim.mapCommand("[[", "motion", "moveToPrevMarkdownSection", {}, {});
 type Palette = typeof lightPalette;
 
 const lightPalette = {
-    surface: "#F6F6F8",                       // window
-    surfaceField: "rgba(120, 120, 128, 0.10)", // well
-    surfaceRail: "rgba(0, 0, 0, 0.025)",       // bar
-    highlight: "rgba(255, 255, 255, 0.55)",
-    text: "rgba(0, 0, 0, 0.88)",               // text-1
-    // `text` resolved over `surface`. The section caption mixes toward this
-    // rather than toward `soft`, which is what makes it both more colourful
-    // and more legible than the grey it replaced (#103).
-    textOpaque: "#1E1E1E",
-    // text-2 — every readable label: status bar, search panel, quotes,
-    // strikethrough. 0.75 rather than 0.62 so it clears 4.5:1 on the surfaces
-    // it lands on; mirrors Theme.inkSecondary (ADR-0006).
-    soft: "rgba(60, 60, 67, 0.75)",
-    muted: "rgba(60, 60, 67, 0.36)",           // text-3 — syntax marks, placeholders
-    accent: "#007AFF",
-    accentInk: "#0066D6",
-    accentSoft: "rgba(0, 122, 255, 0.12)",
+    surface: "#FAFCFB",
+    surfaceField: "#E8EEEB",
+    surfaceRail: "#F0F3F1",
+    highlight: "#FAFCFB",
+    text: "#202D29",
+    textOpaque: "#202D29",
+    soft: "#596B64",
+    muted: "rgba(89, 107, 100, 0.60)",
+    accent: "#1672DF",
+    accentInk: "#165EB8",
+    accentSoft: "rgba(22, 114, 223, 0.07)",
     onAccent: "#FFFFFF",
-    codeBg: "rgba(120, 120, 128, 0.10)",       // recessed wells
-    selection: "rgba(0, 122, 255, 0.20)",      // accent-tint-2
-    borderSoft: "rgba(0, 0, 0, 0.14)",         // hairline
-    borderStrong: "rgba(0, 0, 0, 0.28)",       // unchecked checkbox border
-    priHigh: "#FF3B30",
-    priMed: "#FF9500",
-    priLow: "#34C759",
+    codeBg: "#E8EEEB",
+    selection: "rgba(22, 114, 223, 0.07)",
+    borderSoft: "#D5DEDB",
+    borderStrong: "#D5DEDB",
+    priHigh: "#BA503C",
+    priMed: "#956018",
+    priLow: "#3D6C4B",
+    warningFill: "#FCF2DF",
 };
 
 const darkPalette: Palette = {
-    surface: "#212125",
-    surfaceField: "rgba(120, 120, 128, 0.20)",
-    surfaceRail: "rgba(255, 255, 255, 0.03)",
-    highlight: "rgba(255, 255, 255, 0.10)",
-    text: "rgba(255, 255, 255, 0.92)",
-    textOpaque: "#EDEDEE",
-    soft: "rgba(235, 235, 245, 0.60)",
-    muted: "rgba(235, 235, 245, 0.32)",
-    accent: "#0A84FF",
-    accentInk: "#409CFF",
-    accentSoft: "rgba(10, 132, 255, 0.16)",
-    onAccent: "#FFFFFF",
-    codeBg: "rgba(120, 120, 128, 0.20)",
-    selection: "rgba(10, 132, 255, 0.28)",
-    borderSoft: "rgba(255, 255, 255, 0.13)",
-    borderStrong: "rgba(255, 255, 255, 0.35)",
-    priHigh: "#FF453A",
-    priMed: "#FF9F0A",
-    priLow: "#30D158",
+    surface: "#242C2A",
+    surfaceField: "#303B37",
+    surfaceRail: "#1E2522",
+    highlight: "#242C2A",
+    text: "#F1F4F2",
+    textOpaque: "#F1F4F2",
+    soft: "#B6C5BD",
+    muted: "rgba(182, 197, 189, 0.55)",
+    accent: "#69A8FF",
+    accentInk: "#91BFFF",
+    accentSoft: "rgba(105, 168, 255, 0.09)",
+    onAccent: "#122335",
+    codeBg: "#303B37",
+    selection: "rgba(105, 168, 255, 0.09)",
+    borderSoft: "#46534D",
+    borderStrong: "#46534D",
+    priHigh: "#F09C86",
+    priMed: "#E5B95B",
+    priLow: "#A4D2B0",
+    warningFill: "#373025",
 };
 
 // Section hues for `##` headings (#102). The editor no longer derives these:
@@ -208,9 +204,9 @@ function makeHighlight() {
     { tag: tags.quote, color: palette.soft, fontStyle: "italic" },
 
     // Markdown syntax characters (#, *, `, etc.) — muted so they recede.
-    { tag: tags.processingInstruction, color: palette.muted },
-    { tag: tags.meta, color: palette.muted },
-    { tag: tags.contentSeparator, color: palette.muted },
+    { tag: tags.processingInstruction, color: palette.soft },
+    { tag: tags.meta, color: palette.soft },
+    { tag: tags.contentSeparator, color: palette.soft },
     ]);
 }
 
@@ -291,35 +287,71 @@ const attachmentCache = new Map<string, string | null>();
 // checks for it and rebuilds decorations deterministically.
 const attachmentStateChanged = StateEffect.define<null>();
 
-class ImageWidget extends WidgetType {
-    constructor(readonly path: string, readonly label: string) { super(); }
+type ImageSource = { from: number; path: string; label: string };
+const editImageSource = StateEffect.define<ImageSource | null>();
+const imageSourceField = StateField.define<ImageSource | null>({
+    create: () => null,
+    update(source, tr) {
+        if (source && tr.docChanged) source = { ...source, from: tr.newDoc.lineAt(tr.changes.mapPos(source.from, -1)).from };
+        for (const effect of tr.effects) if (effect.is(editImageSource)) source = effect.value;
+        return source;
+    },
+});
 
-    toDOM(): HTMLElement {
+class ImageWidget extends WidgetType {
+    constructor(readonly path: string, readonly label: string, readonly sourceVisible = false) { super(); }
+    toDOM(editor: EditorView): HTMLElement {
         const wrap = document.createElement("span");
-        wrap.className = "cm-attachment";
-        wrap.dataset.path = this.path;
-        wrap.dataset.label = this.label;
-        // Pull the bytes the moment the widget mounts so the preview shows
-        // without any interaction (#43).
+        wrap.className = this.sourceVisible ? "cm-attachment cm-attachment-source" : "cm-attachment";
+        wrap.dataset.path = this.path; wrap.dataset.label = this.label;
+        wrap.setAttribute("aria-label", `Image: ${this.label}`);
+        const preview = document.createElement("span"); preview.className = "cm-attachment-preview";
+        wrap.append(preview);
         requestAttachmentIfNeeded(this.path);
         renderAttachment(wrap, this.path, this.label);
-        // Keep CodeMirror from treating a click on the image as a cursor
-        // placement — a cursor on the line would reveal the raw markdown and
-        // replace the widget mid-click.
-        wrap.addEventListener("mousedown", (e) => {
-            e.preventDefault();
-            e.stopPropagation();
+        const hint = document.createElement("span");
+        hint.className = "cm-image-key-hint";
+        hint.textContent = this.sourceVisible ? "⌥⌘L · hide image source" : "⌥⌘L · edit image source";
+        wrap.append(hint);
+        wrap.addEventListener("mousedown", e => {
+            e.preventDefault(); e.stopPropagation();
+            editor.dispatch({ selection: { anchor: editor.posAtDOM(wrap) } });
+            editor.focus();
         });
         return wrap;
     }
-
     eq(other: WidgetType): boolean {
-        return other instanceof ImageWidget
-            && other.path === this.path
-            && other.label === this.label;
+        return other instanceof ImageWidget && other.path === this.path && other.label === this.label && other.sourceVisible === this.sourceVisible;
     }
-
     ignoreEvent(): boolean { return true; }
+}
+
+function toggleImageSource(editor: EditorView): boolean {
+    if (editor.state.readOnly) return true;
+    const active = editor.state.field(imageSourceField);
+    if (active) {
+        const line = editor.state.doc.lineAt(active.from);
+        if (!/^( {2,}|\t)!\[[^\]]*\]\((\S+?)\)\s*$/.test(line.text)) {
+            showRefileToast(editor, "Keep valid image Markdown before hiding its source (or undo the edit).");
+            return true;
+        }
+        editor.dispatch({ effects: editImageSource.of(null), selection: { anchor: line.from } });
+        editor.focus(); return true;
+    }
+    const current = editor.state.doc.lineAt(editor.state.selection.main.head);
+    const span = resolveSubtreeSpan(editor.state, editor.state.selection.main.head);
+    const candidates = [current.number];
+    if (span) for (let n = span.from + 1; n <= span.to; n++) if (n !== current.number) candidates.push(n);
+    for (const n of candidates) {
+        const line = editor.state.doc.line(n);
+        const match = /^( {2,}|\t)!\[[^\]]*\]\((\S+?)\)\s*$/.exec(line.text);
+        if (!match) continue;
+        editor.dispatch({ effects: editImageSource.of({ from: line.from, path: match[2], label: match[2].split("/").pop() ?? "Image" }),
+            selection: { anchor: line.from + line.text.indexOf("](") + 2 }, scrollIntoView: true });
+        editor.focus(); return true;
+    }
+    showRefileToast(editor, "Move to an image or its parent item first.");
+    return true;
 }
 
 function attachmentElements(path: string): HTMLElement[] {
@@ -333,19 +365,20 @@ function requestAttachmentIfNeeded(path: string) {
 }
 
 function renderAttachment(el: HTMLElement, path: string, label: string) {
-    el.innerHTML = "";
+    const preview = el.querySelector(".cm-attachment-preview") as HTMLElement;
+    preview.replaceChildren();
     const data = attachmentCache.get(path);
     if (data === undefined) {
-        el.appendChild(makeAttachmentPill("Loading…", "loading"));
+        preview.appendChild(makeAttachmentPill("Loading…", "loading"));
     } else if (data === null) {
-        el.appendChild(makeAttachmentPill("Attachment not found", "missing"));
+        preview.appendChild(makeAttachmentPill("Attachment not found", "missing"));
     } else {
         const img = document.createElement("img");
         img.className = "cm-attachment-img";
         img.src = data;
         img.alt = label;
         img.addEventListener("load", () => view?.requestMeasure());
-        el.appendChild(img);
+        preview.appendChild(img);
     }
 }
 
@@ -525,12 +558,16 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 });
             }
 
-            // Attachment image child line — fold to a pill (or the expanded
-            // preview) unless the cursor is on the line, which reveals the
-            // raw markdown like every other live-preview element.
+            // Images keep their height across selection changes. Source is
+            // revealed explicitly in the main editor, never by caret movement.
+            const source = view.state.field(imageSourceField);
+            if (!readMode && source?.from === line.from) {
+                ranges.push({ from: line.to, to: line.to, deco: Decoration.widget({ widget: new ImageWidget(source.path, source.label, true), side: 1 }) });
+                continue;
+            }
             const imageMatch = line.text.match(/^( {2,}|\t)!\[[^\]]*\]\((\S+?)\)\s*$/);
             if (imageMatch) {
-                if (readMode || !selectionOverlaps(view.state, line.from, line.to)) {
+                {
                     const path = imageMatch[2];
                     const rawName = path.split("/").pop() ?? "screenshot";
                     let label: string;
@@ -538,7 +575,7 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     catch { label = rawName; }   // malformed %-sequences (e.g. 100%done.png) must not throw inside a ViewPlugin update
                     ranges.push({
                         from: line.from + imageMatch[1].length, to: line.to,
-                        deco: Decoration.replace({ widget: new ImageWidget(path, label) }),
+                        deco: Decoration.replace({ widget: new ImageWidget(path, label), imageAtomic: true }),
                     });
                 }
                 continue;
@@ -552,23 +589,6 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 if (view.state.doc.sliceString(endPos, endPos + 1) === " ") endPos += 1;
                 const onLine = !readMode && selectionOverlaps(view.state, line.from, line.to);
 
-                // Hidden creation-time token: `<!--qc:…-->` appended by capture
-                // (after any `➕` marker). Never displayed — hide it off-cursor,
-                // exactly like Obsidian reading view drops HTML comments. The
-                // priority suffix-hide below stops before it so the two replace
-                // ranges never overlap. `contentEnd` is the line length minus the
-                // token, so priority/label logic ignores the token entirely.
-                const tokenMatch = line.text.match(/\s*<!--qc:[^>]*-->\s*$/);
-                const contentEnd = tokenMatch && tokenMatch.index !== undefined
-                    ? line.from + tokenMatch.index
-                    : line.from + line.text.length;
-                if (tokenMatch && tokenMatch.index !== undefined && !onLine) {
-                    ranges.push({
-                        from: contentEnd, to: line.from + line.text.length,
-                        deco: Decoration.replace({}),
-                    });
-                }
-
                 // Checkbox widget — only render when the cursor isn't in the
                 // syntax range (same condition as before).
                 if (readMode || !selectionOverlaps(view.state, startPos, endPos)) {
@@ -581,12 +601,10 @@ function buildLivePreview(view: EditorView): DecorationSet {
                             widget: new CheckboxWidget(checked, widthInChars, taskOffset),
                         }),
                     });
-                    // Strike + mute the label of a completed task. The hidden
-                    // token is excluded (contentEnd) so the strike never spans it.
-                    const labelEnd = contentEnd;
-                    if (checked && labelEnd > endPos) {
+                    // Strike + mute the label of a completed task.
+                    if (checked && line.to > endPos) {
                         ranges.push({
-                            from: endPos, to: labelEnd,
+                            from: endPos, to: line.to,
                             deco: Decoration.mark({ class: "cm-done-label" }),
                         });
                     }
@@ -594,11 +612,8 @@ function buildLivePreview(view: EditorView): DecorationSet {
 
                 // Priority suffix: trailing ` !`/` !!`/` !!!` paints a colored
                 // dot at the far-right of the line via a ::after pseudo (line
-                // class), and hides the raw `!`s off-cursor. Matched against the
-                // line with the hidden token stripped, so a captured
-                // `task !!! <!--qc:…-->` still classifies and hides correctly.
-                const priorityText = line.text.slice(0, contentEnd - line.from);
-                const priority = priorityText.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
+                // class), and hides the raw `!`s off-cursor.
+                const priority = line.text.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 if (priority && priority.index !== undefined) {
                     const level = priority[2].length;
                     const priorityLabel = level === 3 ? "High priority (!!!)"
@@ -608,13 +623,13 @@ function buildLivePreview(view: EditorView): DecorationSet {
                         from: line.from, to: line.from,
                         deco: Decoration.line({
                             class: `cm-priority-dot cm-priority-dot-${level}`,
-                            attributes: { "data-priority-label": priorityLabel },
+                            attributes: { "data-priority-label": priorityLabel, "data-priority-short": level === 3 ? "High" : level === 2 ? "Medium" : "Low" },
                         }),
                     });
                     if (!onLine) {
                         const suffixStart = line.from + priority.index;
                         ranges.push({
-                            from: suffixStart, to: contentEnd,
+                            from: suffixStart, to: line.to,
                             deco: Decoration.replace({}),
                         });
                     }
@@ -624,6 +639,81 @@ function buildLivePreview(view: EditorView): DecorationSet {
     }
 
     return Decoration.set(ranges.map(r => r.deco.range(r.from, r.to)), true);
+}
+
+/**
+ * Source markers (ADR-0008) live in the file but never in the editor's text,
+ * so vim and every other command see plain lines. This field remembers which
+ * line owns which marker and maps them through every edit (see
+ * source-marker.ts); `fileText` and `fileLines` put them back for anything
+ * that leaves the editor.
+ *
+ * `setIdentities` replaces the map outright: re-org, send-as-new, and undo or
+ * redo, which restore the exact map the history recorded rather than guessing
+ * from text. `loadIdentities` also forgets the session's deleted identities,
+ * for a fresh read from disk.
+ */
+const setIdentities = StateEffect.define<Mark[]>();
+const loadIdentities = StateEffect.define<Mark[]>();
+const identityField = StateField.define<Identities>({
+    create: () => ({ marks: [], graveyard: [] }),
+    update(ids, tr) {
+        // History merges events newest-first, so the last effect is the
+        // oldest state, which is the one an undo of the whole group restores.
+        let replaced: Identities | null = null;
+        for (const e of tr.effects) {
+            if (e.is(loadIdentities)) replaced = { marks: e.value, graveyard: [] };
+            else if (e.is(setIdentities)) replaced = { marks: e.value, graveyard: ids.graveyard };
+        }
+        if (replaced) return replaced;
+        if (!tr.docChanged) return ids;
+        // Changes are reported in start-document coordinates; replay them one
+        // at a time against the evolving document so each sees its own before.
+        let doc: Text = tr.startState.doc, offset = 0;
+        tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+            const change = { from: fromA + offset, to: toA + offset, insert: inserted.toString() };
+            ids = mapIdentities(doc, ids, change);
+            doc = doc.replace(change.from, change.to, inserted);
+            offset += inserted.length - (toA - fromA);
+        });
+        // Pastes and line moves can put a deleted item's exact line back;
+        // typing never does, so a new line can't take an old identity.
+        if (tr.isUserEvent("input.type") || tr.isUserEvent("input.complete")) return ids;
+        const lines: number[] = [];
+        tr.changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+            for (let n = doc.lineAt(fromB).number; n <= doc.lineAt(toB).number; n++) lines.push(n - 1);
+        });
+        return recoverIdentities(doc, ids, lines);
+    },
+});
+
+const sameMarks = (a: Mark[], b: Mark[]) => a.length === b.length && a.every((m, i) => m.line === b[i].line && m.run === b[i].run);
+
+/** Undo and redo restore the identity map exactly as it was. */
+const identityHistory = invertedEffects.of(tr => {
+    const before = tr.startState.field(identityField).marks;
+    return sameMarks(before, tr.state.field(identityField).marks) ? [] : [setIdentities.of(before)];
+});
+
+function fileText(state: EditorState): string {
+    return serialise(state.doc.toString(), state.field(identityField).marks);
+}
+
+/** 0-based half-open line range in file form, matching Swift's line indexing. */
+function fileLines(state: EditorState, from: number, to: number): string {
+    const marks = state.field(identityField).marks;
+    const out: string[] = [];
+    for (let i = from; i < to; i++) out.push(state.doc.line(i + 1).text + (marks.find(m => m.line === i)?.run ?? ""));
+    return out.join("\n");
+}
+
+function sourceIDOnLine(state: EditorState, line: number): string | null {
+    const mark = state.field(identityField).marks.find(m => m.line === line);
+    return mark ? sourceIDs([mark])[0] : null;
+}
+
+function isDuplicated(state: EditorState, line: number): boolean {
+    return hasDuplicateIdentity(state.field(identityField).marks, line);
 }
 
 function atxHeadingLevel(name: string): number | null {
@@ -640,12 +730,16 @@ const livePreview = ViewPlugin.fromClass(class {
 
     update(update: ViewUpdate) {
         if (update.docChanged || update.viewportChanged || update.selectionSet
-            || update.transactions.some(tr => tr.effects.some(e => e.is(attachmentStateChanged)))) {
+            || update.transactions.some(tr => tr.effects.some(e => e.is(attachmentStateChanged) || e.is(editImageSource)))) {
             this.decorations = buildLivePreview(update.view);
         }
     }
 }, {
     decorations: (v) => v.decorations,
+    provide: plugin => EditorView.atomicRanges.of(editor =>
+        editor.plugin(plugin)?.decorations.update({
+            filter: (_from, _to, value) => value.spec.imageAtomic === true,
+        }) ?? Decoration.none),
 });
 
 function makeTheme() {
@@ -654,17 +748,51 @@ function makeTheme() {
         backgroundColor: palette.surface,
         color: palette.text,
         height: "100%",
+        paddingTop: "50px",
+        paddingBottom: "33px",
+        boxSizing: "border-box",
     },
+    ".qc-workspace-header": { position: "absolute", top: "0", left: "0", right: "0", height: "50px", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: palette.surfaceRail, borderBottom: `1px solid ${palette.borderSoft}`, fontFamily: sansFamily, fontSize: "12px" },
+    ".qc-workspace-header button, .qc-navigation button, .qc-inspector button": { fontFamily: sansFamily, fontSize: "12px", color: palette.soft, background: "transparent", border: "none", borderRadius: "6px", padding: "6px 10px", cursor: "pointer", textAlign: "left" },
+    ".qc-workspace-header button:hover, .qc-navigation button:hover, .qc-inspector button:hover": { background: palette.surfaceField },
+    ".qc-workspace-header button:focus-visible, .qc-navigation button:focus-visible, .qc-inspector button:focus-visible": { outline: `2px solid ${palette.accent}`, outlineOffset: "2px" },
+    ".qc-navigation": { position: "absolute", top: "50px", bottom: "33px", left: "0", width: "170px", boxSizing: "border-box", background: palette.surfaceRail, borderRight: `1px solid ${palette.borderSoft}`, padding: "22px 10px", display: "flex", flexDirection: "column", fontFamily: sansFamily },
+    ".qc-navigation h2, .qc-inspector h2": { fontSize: "11px", fontWeight: "600", color: palette.soft, margin: "0 0 10px" },
+    ".qc-navigation h2": { padding: "0 10px" },
+    ".qc-sections": { overflowY: "auto", flex: "1" },
+    ".qc-navigation button": { display: "flex", alignItems: "center", gap: "10px", width: "100%", marginBottom: "6px" },
+    ".qc-navigation button.active": { background: palette.accentSoft, color: palette.accentInk },
+    ".qc-section-dot": { width: "6px", height: "6px", borderRadius: "50%", flexShrink: "0" },
+    ".qc-section-name": { overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" },
+    ".qc-section-count": { marginLeft: "auto", fontSize: "11px", color: palette.soft },
+    ".qc-inspector": { position: "absolute", top: "50px", right: "0", bottom: "33px", width: "215px", padding: "22px 16px", boxSizing: "border-box", background: palette.surfaceRail, borderLeft: `1px solid ${palette.borderSoft}`, overflow: "hidden", display: "flex", flexDirection: "column", fontFamily: sansFamily },
+    ".qc-inspector-content": { flex: "1", minHeight: "0", overflowY: "auto" },
+    ".qc-inspector-actions": { flexShrink: "0", paddingTop: "16px", marginTop: "16px", borderTop: `1px solid ${palette.borderSoft}` },
+    ".qc-inspector h3": { fontSize: "13px", fontWeight: "400", lineHeight: "20px", margin: "10px 0", overflowWrap: "anywhere", display: "-webkit-box", WebkitBoxOrient: "vertical", WebkitLineClamp: "3", maxHeight: "60px", overflow: "hidden" },
+    ".qc-inspector h3.expanded": { display: "block", WebkitLineClamp: "unset", maxHeight: "160px", overflowY: "auto" },
+    ".qc-inspector .qc-preview-toggle": { border: "none", background: "transparent", color: palette.accentInk, padding: "0", margin: "0 0 10px", width: "auto", fontSize: "11px" },
+    ".qc-inspector .qc-preview-toggle[hidden]": { display: "none" },
+    ".qc-property": { display: "flex", justifyContent: "space-between", gap: "10px", padding: "10px 0", borderTop: `1px solid ${palette.borderSoft}`, fontSize: "12px", overflowWrap: "anywhere" },
+    ".qc-property span:first-child": { color: palette.soft },
+    ".qc-inspector button": { display: "block", width: "100%", border: `1px solid ${palette.borderSoft}`, marginTop: "16px", background: palette.surface },
+    ".qc-inspector button[data-shortcut-action], .qc-workspace-header button": { display: "flex", alignItems: "center", gap: "6px", justifyContent: "space-between" },
+    ".qc-shortcut": { fontFamily: monoFamily, fontSize: "11px", fontWeight: "500", whiteSpace: "nowrap", color: palette.soft, marginLeft: "auto" },
+    ".qc-inspector button:disabled": { opacity: "0.5", cursor: "default" },
+    ".qc-save-error": { position: "absolute", top: "56px", left: "180px", right: "22px", zIndex: "100", background: palette.warningFill, color: palette.text, border: `1px solid ${palette.priMed}`, borderRadius: "8px", padding: "16px", font: `13px ${sansFamily}` },
+    "@media(max-width: 850px)": { ".qc-navigation": { width: "130px" }, ".qc-inspector": { width: "190px", padding: "16px 10px" }, ".cm-scroller": { marginLeft: "130px", marginRight: "190px", width: "calc(100% - 320px)" } },
     ".cm-content": {
         fontFamily: 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace',
         fontSize: "13px",
         lineHeight: "1.6",
         // Full-width content (no left rail, no centered column) per the mockup;
         // generous side padding, extra bottom clearance for the status bar + fab.
-        padding: "36px 44px 110px",
+        padding: "22px 22px 66px",
         caretColor: palette.text,
     },
     ".cm-scroller": {
+        marginLeft: "170px",
+        marginRight: "215px",
+        width: "calc(100% - 385px)",
         overflow: "auto",
         fontFamily: 'inherit',
     },
@@ -682,6 +810,7 @@ function makeTheme() {
     },
     // Vim block cursor — steel accent (pops against the misted surface).
     ".cm-fat-cursor": {
+        maxHeight: "21px",
         backgroundColor: `${palette.accent} !important`,
         color: `${palette.onAccent} !important`,
     },
@@ -740,7 +869,7 @@ function makeTheme() {
     // Empty-state overlay — shown when the document has zero todo lines.
     ".cm-empty-state": {
         position: "absolute",
-        inset: "0",
+        inset: "50px 215px 33px 170px",
         bottom: "33px",   // clear the status bar
         display: "flex",
         flexDirection: "column",
@@ -749,7 +878,7 @@ function makeTheme() {
         gap: "6px",
         pointerEvents: "none",
         userSelect: "none",
-        color: palette.muted,
+        color: palette.soft,
         fontFamily: sansFamily,
         fontSize: "12px",
         lineHeight: "1.6",
@@ -932,28 +1061,10 @@ function makeTheme() {
     ".cm-searchMatch.cm-searchMatch-selected": {
         backgroundColor: `${palette.accent}66`,
     },
-    // Floating action cluster, bottom-right (replaces the old left rail). A
-    // small surface card holding the reorg + archive buttons; clears the
-    // status bar.
-    ".cm-sidebar": {
-        position: "absolute",
-        right: "18px",
-        bottom: "52px",
-        top: "auto",
-        left: "auto",
-        transform: "none",
-        display: "flex",
-        flexDirection: "column",
-        gap: "5px",
-        padding: "5px",
-        borderRadius: "10px",
-        backgroundColor: palette.surface,
-        border: `0.5px solid ${palette.borderSoft}`,
-        boxShadow: "0 12px 28px -16px rgba(0, 0, 0, 0.45)",
-        zIndex: "9",
-    },
+    // Persistent actions sit at the bottom of the item inspector.
+    ".cm-sidebar": { display: "flex", flexDirection: "column", gap: "0", marginTop: "0" },
     ".cm-sidebar-btn": {
-        width: "34px",
+        width: "100%",
         height: "34px",
         display: "flex",
         alignItems: "center",
@@ -966,6 +1077,8 @@ function makeTheme() {
         padding: "0",
         transition: "background-color 0.12s ease, color 0.12s ease",
     },
+    ".qc-inspector-actions .cm-sidebar-btn": { display: "grid", gridTemplateColumns: "18px minmax(0, 1fr) auto", alignItems: "center", justifyContent: "start", gap: "10px", height: "34px", marginTop: "0", padding: "6px 10px", marginBottom: "6px", textAlign: "left", boxSizing: "border-box" },
+    ".qc-inspector-actions .cm-sidebar-btn svg": { width: "18px", height: "18px" },
     ".cm-sidebar-btn:hover": {
         backgroundColor: palette.accentSoft,
         color: palette.accentInk,
@@ -1040,9 +1153,9 @@ function makeTheme() {
         margin: "0 1px",
     },
     // Attachment image line — folded pill / expanded inline preview.
-    ".cm-attachment": {
-        cursor: "default",
-    },
+    ".cm-attachment.cm-attachment-source": { display: "block" },
+    ".cm-image-key-hint": { display: "block", font: `11px ${sansFamily}`, color: palette.soft, marginTop: "6px" },
+    ".cm-attachment": { display: "inline-block", width: "360px", maxWidth: "100%", verticalAlign: "top", cursor: "default" },
     ".cm-attachment-pill": {
         display: "inline-flex",
         alignItems: "center",
@@ -1051,7 +1164,7 @@ function makeTheme() {
         borderRadius: "6px",
         backgroundColor: palette.surfaceField,
         border: `0.5px solid ${palette.borderSoft}`,
-        color: palette.muted,
+        color: palette.soft,
         fontSize: "12px",
         lineHeight: "1.5",
         verticalAlign: "1px",
@@ -1079,42 +1192,18 @@ function makeTheme() {
     // off the line), so editing the raw markdown reads normally.
     ".cm-done-label": {
         textDecoration: "line-through",
-        textDecorationColor: palette.muted,
-        color: palette.muted,
+        textDecorationColor: palette.soft,
+        color: palette.soft,
     },
     // Priority dot — a single colored circle at the far-right of the line,
     // drawn via a ::after pseudo-element so it doesn't disturb text layout.
     // Aligned to the first visual line so wrapped tasks still show the dot
     // at the top right.
-    ".cm-line.cm-priority-dot": {
-        position: "relative",
-        paddingRight: "28px",   // clear the 9px orb + 3px halo + 8px right offset
-    },
-    ".cm-line.cm-priority-dot::after": {
-        content: '""',
-        position: "absolute",
-        right: "8px",
-        top: "0.6em",
-        width: "9px",
-        height: "9px",
-        borderRadius: "50%",
-        pointerEvents: "none",
-    },
-    // Colour-coded priority orbs, each with a soft same-colour halo
-    // (`!!!` = high, `!!` = med, `!` = low). The only warm colour in the editor.
-    // `38` ≈ 22% alpha as an 8-digit hex, so the halo tracks the active palette.
-    ".cm-line.cm-priority-dot-3::after": {
-        backgroundColor: palette.priHigh,
-        boxShadow: `0 0 0 3px ${palette.priHigh}38`,
-    },
-    ".cm-line.cm-priority-dot-2::after": {
-        backgroundColor: palette.priMed,
-        boxShadow: `0 0 0 3px ${palette.priMed}38`,
-    },
-    ".cm-line.cm-priority-dot-1::after": {
-        backgroundColor: palette.priLow,
-        boxShadow: `0 0 0 3px ${palette.priLow}38`,
-    },
+    ".cm-line.cm-priority-dot": { position: "relative", paddingRight: "66px" },
+    ".cm-line.cm-priority-dot::after": { content: "attr(data-priority-short)", position: "absolute", right: "6px", top: "3px", fontFamily: sansFamily, fontSize: "11px", fontWeight: "500", pointerEvents: "none" },
+    ".cm-line.cm-priority-dot-3::after": { color: palette.priHigh },
+    ".cm-line.cm-priority-dot-2::after": { color: palette.priMed },
+    ".cm-line.cm-priority-dot-1::after": { color: palette.priLow },
     // Indent guides — thin vertical lines under each indent level on nested
     // list/task lines. Drawn via ::before + box-shadow so a single pseudo
     // element can render multiple lines (one per level) without extra DOM.
@@ -1197,9 +1286,9 @@ function makeTheme() {
         // line box — i.e. the content width inside .cm-content's padding — so
         // no horizontal margin is needed. (Vertical margins on a line
         // decoration break cursor navigation; see the note above.)
-        background: "var(--qc-section-band, transparent)",
-        borderRadius: "5px 5px 0 0",
-        borderBottom: `0.5px solid var(--qc-section-rule, ${palette.borderSoft})`,
+        background: "transparent",
+        borderRadius: "0",
+        borderBottom: `0.5px solid ${palette.borderSoft}`,
         textTransform: "uppercase",
     },
     // Breathing room between a section's heading block and the items it heads.
@@ -1221,7 +1310,7 @@ function makeTheme() {
         marginRight: "10px",
         borderRadius: "7px",
         background: `linear-gradient(180deg, ${palette.accent}E6, ${palette.accent})`,
-        color: "#FFFFFF",
+        color: palette.onAccent,
         fontFamily: sansFamily,
         fontSize: "15px",
         fontWeight: "700",
@@ -1269,6 +1358,7 @@ declare global {
             refileDidComplete: (targetName: string) => void;
             startRefile: () => void;
             setKeymap: (map: Record<string, string>) => void;
+            setShortcutHints: (map: Record<string, string>) => void;
             invoke: (actionId: string) => void;
             revealLine: (line: number) => void;
             revealSection: (name: string) => void;
@@ -1280,7 +1370,7 @@ let view: EditorView | null = null;
 let saveTimer: number | null = null;
 let suppressNextSave = false;
 const documentSession = new DocumentSession(
-    () => view?.state.doc.toString() ?? "",
+    () => view ? fileText(view.state) : "",
     request => sendToSwift(request),
     (message, disk) => showSaveError(message, disk),
     () => clearSaveError(),
@@ -1294,7 +1384,7 @@ function showSaveError(message: string, disk: string | null = null) {
     const banner = document.createElement("div");
     banner.id = "qc-save-error";
     banner.setAttribute("role", "alert");
-    banner.style.cssText = "position:absolute;top:8px;left:16px;right:60px;z-index:100;background:Canvas;color:CanvasText;border:1px solid #c65c00;border-radius:8px;padding:12px;font:13px system-ui;box-shadow:0 2px 12px #0003";
+    banner.className = "qc-save-error";
     const label = document.createElement("div");
     label.textContent = message;
     banner.appendChild(label);
@@ -1379,7 +1469,9 @@ const defaultAppKeymap: Record<string, string> = {
     readMode: "Mod-e",
     toggleTask: "Mod-l",
     save: "Mod-s",
-    reorg: "Mod-'",
+    reorg: "Alt-Mod-j",
+    archive: "Alt-Mod-k",
+    imageSource: "Alt-Mod-l",
     nextSection: "Alt-Mod-ArrowDown",
     prevSection: "Alt-Mod-ArrowUp",
 };
@@ -1390,10 +1482,36 @@ const appCommands: Record<string, (v: EditorView) => boolean> = {
     toggleTask: (v) => toggleTaskCommand(v),
     save: (v) => { saveNow(v); return true; },
     reorg: (v) => { moveCompletedToBottom(v); return true; },
+    archive: () => { void archiveCompleted(); return true; },
+    imageSource: toggleImageSource,
     refile: (v) => startRefile(v),
     nextSection: (v) => jumpToSection(v, 1),
     prevSection: (v) => jumpToSection(v, -1),
 };
+
+let archivePending = false;
+async function archiveCompleted() {
+    if (archivePending || !view || !canRunItemAction(view)) return;
+    archivePending = true;
+    try { if (await saveDocument() && view && canRunItemAction(view)) sendToSwift({ type: "archive" }); }
+    finally { archivePending = false; }
+}
+
+let shortcutHints: Record<string, string> = {};
+function labelAction(button: HTMLButtonElement, label: string, action: string) {
+    button.dataset.shortcutAction = action;
+    const text = document.createElement("span");
+    text.className = "qc-action-label"; text.textContent = label;
+    const hint = document.createElement("kbd");
+    hint.className = "qc-shortcut"; hint.textContent = shortcutHints[action] ?? "";
+    button.append(text, hint);
+}
+function refreshShortcutHints() {
+    document.querySelectorAll<HTMLButtonElement>("[data-shortcut-action]").forEach(button => {
+        const hint = button.querySelector(".qc-shortcut");
+        if (hint) hint.textContent = shortcutHints[button.dataset.shortcutAction!] ?? "";
+    });
+}
 
 /// ⌥⌘↓ / ⌥⌘↑ — move the cursor to the next/previous `##` section heading
 /// (column 0, so a follow-up refile acts on the heading's subtree) and pin
@@ -1473,8 +1591,13 @@ function toggleTaskAtMarker(view: EditorView, markerPos: number): void {
 /// where they were. Cursor stays at its (line, column) position so focus
 /// doesn't drift, and moved lines slide into their new spots via a FLIP
 /// (first/last/invert/play) animation.
+function canRunItemAction(editor: EditorView): boolean {
+    return !editor.state.readOnly && resolveSubtreeSpan(editor.state, editor.state.selection.main.head) !== null;
+}
+
 function moveCompletedToBottom(view: EditorView): void {
-    const original = view.state.doc.toString();
+    if (!canRunItemAction(view)) return;
+    const original = fileText(view.state);
     const lines = original.split("\n");
 
     // Group lines into sections.
@@ -1523,22 +1646,22 @@ function moveCompletedToBottom(view: EditorView): void {
             }
             const isChecked = /[xX]/.test(taskMatch[3]);
             if (isChecked) {
-                // Split off the hidden `<!--qc:…-->` creation token first so it
-                // survives the priority-marker strip, then re-append it. Strip
-                // priority (and the `➕` group, preserved as $1) from the body.
-                const tokenSplit = groupLines[0].match(/^(.*?)(\s*<!--qc:[^>]*-->)?\s*$/s);
-                const body = tokenSplit ? tokenSplit[1] : groupLines[0];
-                const token = tokenSplit && tokenSplit[2] ? tokenSplit[2] : "";
+                // Re-org runs on file form, so split off the source marker
+                // first so it survives the priority-marker strip, then
+                // re-append it. Strip priority (and the `➕` group, preserved
+                // as $1) from the body.
+                const { text: body, marks } = strip(groupLines[0]);
+                const token = marks[0]?.run ?? "";
                 groupLines[0] = body
                     .replace(/^\s+/, "")
                     .replace(/\s+!{1,3}(\s+➕\s+\S+\s+\S+)?\s*$/, "$1")
                     + token;
                 groups.push({ bucket: 4, lines: groupLines });
             } else {
-                // Optional ` ➕ DATE TIME` timestamp tail and the hidden
-                // `<!--qc:…-->` token are tolerated, so a captured
-                // `task !!! ➕ … <!--qc:…-->` still classifies as priority 3.
-                const priority = line.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?(?:\s*<!--qc:[^>]*-->)?\s*$/);
+                // Optional ` ➕ DATE TIME` timestamp tail and the source marker
+                // are tolerated, so `task !!! ➕ … <!--qc-source:…-->` still
+                // classifies as priority 3.
+                const priority = strip(line).text.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 const level = priority ? priority[1].length : 0;
                 const bucket = level === 0 ? 3 : 3 - level;
                 groups.push({ bucket, lines: groupLines });
@@ -1554,8 +1677,9 @@ function moveCompletedToBottom(view: EditorView): void {
         return result;
     });
 
-    const next = processed.map(s => s.join("\n")).join("\n");
-    if (next === original) return;
+    const nextFile = processed.map(s => s.join("\n")).join("\n");
+    if (nextFile === original) return;
+    const { text: next, marks: nextMarks } = strip(nextFile);
 
     // Preserve cursor at (line, column) — without this CodeMirror remaps the
     // absolute position through the whole-doc replace, which puts the cursor
@@ -1593,6 +1717,7 @@ function moveCompletedToBottom(view: EditorView): void {
 
     view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: next },
+        effects: setIdentities.of(nextMarks),
         selection: { anchor: newAnchor },
         scrollIntoView: false,
     });
@@ -1637,16 +1762,153 @@ function moveCompletedToBottom(view: EditorView): void {
     });
 }
 
-/// Floating vertical toolbar on the left edge of the editor. Built once and
-/// reused; each button's click handler captures `view`.
+/// Existing document actions, mounted in the workspace navigation.
+// The navigation and inspector read the live document. Navigation moves the
+// cursor without filtering/replacing text, so markdown editing and undo stay intact.
+function ensureWorkspace(v: EditorView) {
+    const makeButton = (label: string, actionId: string, action: () => void) => {
+        const button = document.createElement("button");
+        button.type = "button";
+        labelAction(button, label, actionId);
+        button.addEventListener("mousedown", e => e.preventDefault());
+        button.onclick = action;
+        return button;
+    };
+    const header = document.createElement("header");
+    header.className = "qc-workspace-header";
+    const title = document.createElement("strong");
+    title.textContent = "Quick Capture";
+    header.append(title, makeButton("Capture", "capture", () => sendToSwift({ type: "capture" })));
+    const nav = document.createElement("nav");
+    nav.className = "qc-navigation";
+    nav.setAttribute("aria-label", "Inbox sections");
+    const label = document.createElement("h2");
+    label.textContent = "Your inbox";
+    const sections = document.createElement("div");
+    sections.className = "qc-sections";
+    const actions = document.createElement("div");
+    actions.className = "qc-inspector-actions";
+    const toolbar = v.dom.querySelector(".cm-sidebar");
+    if (toolbar) actions.append(toolbar);
+    nav.append(label, sections);
+    const inspector = document.createElement("aside");
+    inspector.className = "qc-inspector";
+    inspector.setAttribute("aria-label", "Selected item");
+    const detail = document.createElement("div");
+    detail.className = "qc-item-detail";
+    const refile = makeButton("Refile item", "refile", () => startRefile(v));
+    const attach = makeButton("Attach image", "attachScreenshot", () => sendToSwift({ type: "screenshots" }));
+    attach.title = "Choose a recent screenshot";
+    refile.dataset.itemAction = attach.dataset.itemAction = "true";
+    const inspectorContent = document.createElement("div");
+    inspectorContent.className = "qc-inspector-content";
+    const send = makeButton("Send to organiser", "sendOrganiser", () => { void sendOrganiser(v, false); });
+    const sendNew = makeButton("Send as new item", "sendOrganiserNew", () => { void sendOrganiser(v, true); });
+    send.dataset.itemAction = sendNew.dataset.itemAction = "true";
+    const history = makeButton("Delivery history", "organiserHistory", () => sendToSwift({ type: "organiserHistory" }));
+    inspectorContent.append(detail, refile, attach, send, sendNew, history);
+    inspector.append(inspectorContent, actions);
+    v.dom.append(header, nav, inspector);
+    updateWorkspace(v);
+}
+
+function updateWorkspace(v: EditorView) {
+    const sections = v.dom.querySelector(".qc-sections") as HTMLElement | null;
+    const detail = v.dom.querySelector(".qc-item-detail") as HTMLElement | null;
+    if (!sections || !detail) return;
+    const doc = v.state.doc;
+    const current = doc.lineAt(v.state.selection.main.head);
+    const active = enclosingSection(v.state, current.number);
+    const entries: { name: string; from: number; count: number }[] = [];
+    let total = 0;
+    for (let n = 1; n <= doc.lines; n++) {
+        const line = doc.line(n);
+        const name = sectionNameOnLine(line.text);
+        if (name) entries.push({ name, from: line.from, count: 0 });
+        if (/^\s*[-*+] \[[ xX]\]/.test(line.text)) {
+            total++;
+            if (entries.length) entries[entries.length - 1].count++;
+        }
+    }
+    const signature = JSON.stringify([entries, total, active, palette.surface, tagHues]);
+    if (sections.dataset.signature !== signature) {
+        sections.dataset.signature = signature;
+        sections.replaceChildren();
+        for (const entry of [{ name: "All sections", from: 0, count: total }, ...entries]) {
+            const button = document.createElement("button");
+            button.type = "button";
+            button.className = (entry.from === 0 ? !active : active === entry.name) ? "active" : "";
+            button.setAttribute("aria-current", button.className ? "location" : "false");
+            const dot = document.createElement("span");
+            dot.className = "qc-section-dot";
+            dot.style.background = tagHue(entry.name) ?? palette.soft;
+            const name = document.createElement("span");
+            name.className = "qc-section-name";
+            name.textContent = entry.name;
+            const count = document.createElement("span");
+            count.className = "qc-section-count";
+            count.textContent = String(entry.count);
+            button.append(dot, name, count);
+            button.onclick = () => {
+                v.dispatch({ selection: { anchor: entry.from }, effects: EditorView.scrollIntoView(entry.from, { y: "start" }) });
+                v.focus();
+            };
+            sections.append(button);
+        }
+    }
+    const span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
+    const item = span ? doc.line(span.from + 1).text : "";
+    const priority = /(!{1,3})(?:\s|$)/.exec(item)?.[1].length ?? 0;
+    v.dom.querySelectorAll<HTMLButtonElement>(".qc-inspector-actions button").forEach(button => { button.disabled = !canRunItemAction(v); });
+    // Identity lives beside the text, so it joins the signature: a send-as-new
+    // or a removed duplicate must refresh the label without moving the cursor.
+    const itemSignature = JSON.stringify([span?.text, active, readMode, span ? isDuplicated(v.state, span.from) : false]);
+    if (detail.dataset.signature === itemSignature) return;
+    detail.dataset.signature = itemSignature;
+    detail.replaceChildren();
+    const label = document.createElement("h2");
+    label.textContent = "Selected item";
+    const title = document.createElement("h3");
+    title.textContent = span ? item.replace(/^\s*[-*+]\s+(?:\[[ xX]\]\s*)?/, "").replace(/\s*!{1,3}(?=\s|$)/, "") : "Select an item";
+    title.id = "qc-selected-preview";
+    const toggle = document.createElement("button");
+    toggle.type = "button";
+    toggle.className = "qc-preview-toggle";
+    toggle.textContent = "Show full text";
+    toggle.hidden = true;
+    toggle.setAttribute("aria-expanded", "false");
+    toggle.setAttribute("aria-controls", title.id);
+    toggle.onclick = () => {
+        const expanded = title.classList.toggle("expanded");
+        toggle.textContent = expanded ? "Show less" : "Show full text";
+        toggle.setAttribute("aria-expanded", String(expanded));
+    };
+    detail.append(label, title, toggle);
+    v.requestMeasure({
+        read: () => title.scrollHeight > title.clientHeight + 1,
+        write: overflowing => { toggle.hidden = !overflowing; },
+    });
+    for (const [name, value] of [["Section", active ?? "Inbox"], ["Priority", ["None", "Low", "Medium", "High"][priority]], ["Attachments", String((span?.text.match(/!\[/g) ?? []).length)]]) {
+        const row = document.createElement("div");
+        row.className = "qc-property";
+        const key = document.createElement("span"); key.textContent = name;
+        const text = document.createElement("span"); text.textContent = value;
+        row.append(key, text); detail.append(row);
+    }
+    v.dom.querySelectorAll<HTMLButtonElement>("[data-item-action]").forEach(button => { button.disabled = !span; });
+    const duplicated = span !== null && isDuplicated(v.state, span.from);
+    const newLabel = v.dom.querySelector('[data-shortcut-action="sendOrganiserNew"] .qc-action-label');
+    if (newLabel) newLabel.textContent = duplicated ? "Send this copy as new" : "Send as new item";
+}
+
 function ensureSidebar(view: EditorView) {
     if (view.dom.querySelector(".cm-sidebar")) return;
     const sidebar = document.createElement("div");
     sidebar.className = "cm-sidebar";
 
     sidebar.appendChild(makeSidebarButton(view, {
-        title: "Move completed items to the bottom of each section (⌘')",
-        label: "Re-org ⌘'",
+        title: "Re-organise each section",
+        label: "Re-org", actionId: "reorg",
         svg: `
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2"
@@ -1660,7 +1922,7 @@ function ensureSidebar(view: EditorView) {
 
     sidebar.appendChild(makeSidebarButton(view, {
         title: "Archive completed items to <name>_archive.md",
-        label: "Archive",
+        label: "Archive", actionId: "archive",
         svg: `
             <svg width="18" height="18" viewBox="0 0 24 24" fill="none"
                  stroke="currentColor" stroke-width="2"
@@ -1669,7 +1931,7 @@ function ensureSidebar(view: EditorView) {
                 <path d="M5 8v11a1 1 0 0 0 1 1h12a1 1 0 0 0 1-1V8"/>
                 <line x1="10" y1="13" x2="14" y2="13"/>
             </svg>`,
-        action: () => { void saveDocument().then(ok => { if (ok) sendToSwift({ type: "archive" }); }); },
+        action: () => { void archiveCompleted(); },
     }));
 
     view.dom.appendChild(sidebar);
@@ -1718,18 +1980,15 @@ function ensureSidebar(view: EditorView) {
 
 function makeSidebarButton(
     view: EditorView,
-    opts: { title: string; label: string; svg: string; action: (v: EditorView) => void },
+    opts: { title: string; label: string; actionId: string; svg: string; action: (v: EditorView) => void },
 ): HTMLButtonElement {
     const btn = document.createElement("button");
     btn.type = "button";
     btn.className = "cm-sidebar-btn";
     btn.style.position = "relative";
     btn.innerHTML = opts.svg;
-    // CSS tooltip — faster and theme-matched vs the native title tooltip.
-    const tooltip = document.createElement("span");
-    tooltip.className = "cm-btn-tooltip";
-    tooltip.textContent = opts.label;
-    btn.appendChild(tooltip);
+    labelAction(btn, opts.label, opts.actionId);
+    btn.setAttribute("aria-label", opts.title);
     // Stop mousedown from bubbling to CodeMirror, which would otherwise treat
     // the button press as the start of a drag-select — and complete the
     // selection when the user next clicks in the editor.
@@ -1937,6 +2196,51 @@ function sendToSwift(message: Record<string, unknown>) {
 // byte verification on the Swift side doubles as a check that both sides agree
 // on the span (issue #32).
 
+let organiserSending = false;
+
+/** Give a line a fresh source identity, keeping any legacy creation token. */
+function assignSourceID(v: EditorView, line: number, id: string) {
+    const current = v.state.field(identityField).marks;
+    const old = current.find(m => m.line === line)?.run ?? "";
+    const legacy = old.replace(/\s*<!--qc-source:[0-9a-fA-F-]{36}-->/g, "");
+    const marks = current.filter(m => m.line !== line).concat({ line, run: `${legacy} <!--qc-source:${id}-->` })
+        .sort((a, b) => a.line - b.line);
+    v.dispatch({ effects: setIdentities.of(marks) });
+}
+async function sendOrganiser(v: EditorView, asNew: boolean) {
+    if (organiserSending) return;
+    organiserSending = true;
+    try {
+        let span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
+        if (!span) { showRefileToast(v, "Put the cursor on an item to send."); return; }
+        const itemLine = span.from;
+        let id = sourceIDOnLine(v.state, itemLine) ?? undefined;
+        if (id && isDuplicated(v.state, itemLine)) {
+            // WKWebView does not install a JavaScript dialog delegate. Use native
+            // history for inspection and explicit Send as new item for resolution.
+            if (!asNew) {
+                showRefileToast(v, "Copied identity: view delivery history or choose Send this copy as new.");
+                sendToSwift({ type: "organiserHistory" });
+                return;
+            }
+            id = crypto.randomUUID();
+            assignSourceID(v, itemLine, id);
+        } else if (!id) {
+            id = crypto.randomUUID();
+            assignSourceID(v, itemLine, id);
+        }
+        if (!await saveDocument()) return;
+        // Recompute after the asynchronous save; native code verifies this exact
+        // slice against disk. Never send the pre-save stale selection.
+        span = resolveSubtreeSpan(v.state, v.state.doc.line(span.from + 1).from);
+        if (!span || sourceIDOnLine(v.state, span.from) !== id) {
+            showRefileToast(v, "The item moved while saving. Select it again."); return;
+        }
+        sendToSwift({ type: "sendOrganiser", sourceID: id, fromLine: span.from, toLine: span.to, subtree: fileLines(v.state, span.from, span.to), asNew });
+        showRefileToast(v, "Preparing organiser handoff; the source stays editable.");
+    } finally { organiserSending = false; }
+}
+
 function refileIndentWidth(text: string): number {
     let w = 0;
     for (const ch of text) {
@@ -2083,7 +2387,7 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
         // item now occupying the subtree's start line (the next item) — see mount().
         if (!await saveDocument()) return;
         pendingRefileCursorLine = span.from;
-        sendToSwift({ type: "refile", target, fromLine: span.from, toLine: span.to, subtree: span.text });
+        sendToSwift({ type: "refile", target, fromLine: span.from, toLine: span.to, subtree: fileLines(v.state, span.from, span.to) });
     };
 
     const onKey = (e: KeyboardEvent) => {
@@ -2235,7 +2539,8 @@ function mount(content: string) {
 
     if (view) {
         suppressNextSave = true;
-        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } });
+        const { text, marks } = strip(content);
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, effects: loadIdentities.of(marks) });
         suppressNextSave = false;
         if (pendingRefileCursorLine !== null) {
             placeCursorAfterRefile(view, pendingRefileCursorLine);
@@ -2244,9 +2549,12 @@ function mount(content: string) {
         return;
     }
 
+    const initial = strip(content);
     const state = EditorState.create({
-        doc: content,
+        doc: initial.text,
         extensions: [
+            identityField.init(() => ({ marks: initial.marks, graveyard: [] })),
+            identityHistory,
             // Vim has to be loaded BEFORE other keymaps so its normal-mode
             // bindings win over defaultKeymap's Insert-mode-only assumptions.
             vimComp.of(vimEnabled ? vim() : []),
@@ -2258,6 +2566,7 @@ function mount(content: string) {
             markdown({ base: markdownLanguage, codeLanguages: languages, addKeymap: true }),
             indentUnit.of("    "),   // 4-space indent matches Obsidian's defaults
             themeComp.of(themeExtensions()),
+            imageSourceField,
             livePreview,
             readModeComp.of([]),
             // Editor-local app shortcuts (read mode, toggle task, save,
@@ -2311,6 +2620,7 @@ function mount(content: string) {
                 ...historyKeymap,
             ]),
             EditorView.updateListener.of((update) => {
+                updateWorkspace(update.view);
                 if (update.docChanged) {
                     scheduleSave();
                     updateCounts(update.view);
@@ -2323,6 +2633,7 @@ function mount(content: string) {
     attachVimModeListener(view);
     updateBadge(view);
     ensureSidebar(view);
+    ensureWorkspace(view);
     // Deliberately NOT auto-focused. On a cold launch the editor mounts in the
     // background while the capture box is showing; focusing here would make the
     // (hidden) web view the window's first responder and steal focus off the
@@ -2352,7 +2663,7 @@ window.qcEditor = {
     saveResult: (id: number, error: string | null, disk: string | null) => {
         documentSession.acknowledge(id, error, disk);
     },
-    getContent: () => view?.state.doc.toString() ?? "",
+    getContent: () => view ? fileText(view.state) : "",
     focus: () => view?.focus(),
     setFilename: (name: string) => {
         filename = name || "inbox.md";
@@ -2421,6 +2732,9 @@ window.qcEditor = {
     // Editor-local bindings pushed from Swift's ShortcutRegistry — the single
     // source of truth for shortcuts. Before mount this just records the map;
     // mount() builds the keymap from it.
+    setShortcutHints: (map: Record<string, string>) => {
+        shortcutHints = map ?? {}; refreshShortcutHints();
+    },
     setKeymap: (map: Record<string, string>) => {
         appKeymap = { ...defaultAppKeymap, ...(map ?? {}) };
         view?.dispatch({ effects: appKeymapComp.reconfigure(buildAppKeymap()) });

@@ -1,0 +1,8 @@
+FROM python:3.14-slim
+WORKDIR /work
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt pytest==9.1.1 httpx==0.28.1
+COPY app.py organiser/app.py
+COPY static organiser/static
+COPY tests organiser/tests
+CMD ["python", "-m", "pytest", "organiser/tests", "-q"]

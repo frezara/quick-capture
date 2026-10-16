@@ -1,8 +1,8 @@
 import AppKit
-import CoreText
 import HotKey
 import SwiftUI
 
+@MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
     let appState = AppState()
 
@@ -33,14 +33,18 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             return
         }
 
-        registerBundledFonts()
         scaffoldDefaultCaptureFile()
         setupStatusItem()
         setupMainMenu()
         setupHotKey()
+        HandoffController.shared.start()
+        OrganiserController.shared.configureFromArguments(ProcessInfo.processInfo.arguments)
+        OrganiserController.shared.start()
+        ProjectStore.shared.start()
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        guard !appState.captureRecoveryBlocked else { return .terminateCancel }
         guard let panel = mainPanel else { return .terminateNow }
         DispatchQueue.main.async {
             panel.flushEditorSave { saved in sender.reply(toApplicationShouldTerminate: saved) }
@@ -132,6 +136,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         mainMenu.addItem(editorMenuItem)
         let editorMenu = NSMenu(title: "Editor")
         editorMenuItem.submenu = editorMenu
+        let navigationMenuItem = NSMenuItem()
+        let navigationMenu = NSMenu(title: "Navigate")
+        navigationMenuItem.submenu = navigationMenu
+        mainMenu.addItem(navigationMenuItem)
+        let navigationActions = Set(WorkspaceDestination.allCases.map(\.action))
         for action in ShortcutRegistry.menuActions {
             let item = NSMenuItem(title: action.menuTitle ?? "",
                                   action: #selector(performShortcutMenuItem(_:)),
@@ -139,7 +148,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             item.keyEquivalentModifierMask = action.chord.modifiers
             item.target = self
             item.representedObject = action.rawValue
-            editorMenu.addItem(item)
+            (navigationActions.contains(action) ? navigationMenu : editorMenu).addItem(item)
         }
 
         // Window menu
@@ -275,11 +284,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
             },
             onDismiss: { [weak self] in self?.hideCapture() }
         )
+        panel.onSettings = { [weak self] in self?.showSettings() }
         mainPanel = panel
         return panel
     }
 
     @objc func showCapture() {
+        hideSettingsWindows()
         appState.refreshRecentTags()
         ensurePanel().show()
     }
@@ -296,9 +307,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         guard !trimmed.isEmpty else { return false }
 
         if tag?.lowercased() == "cal" {
-            // Calendar captures never touch the markdown file; the capture UI
-            // disables the chips in #cal mode, so any attachments are dropped
-            // here with the user already informed.
+            // Calendar capture is saved locally and delivered as an internal event.
             return handleCalendarCapture(trimmed)
         }
 
@@ -307,6 +316,20 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         // and relative links resolve against the capture file path as it is
         // right now, not as it was at attach time (R18). Links are gathered in
         // selection order so the child lines match the chip order.
+        var importDraft: CaptureRecovery.Draft?
+        if !attachments.isEmpty {
+            do {
+                importDraft = try CaptureRecovery.beginImport(text: text, tag: tag, attachments: attachments)
+                appState.captureImportRecoveryID = importDraft?.id
+            }
+            catch {
+                let alert = NSAlert()
+                alert.messageText = "Could not prepare recoverable screenshot import"
+                alert.informativeText = "The draft is retained. Free disk space or check storage permissions, then retry."
+                alert.runModal()
+                return false
+            }
+        }
         var attachmentLinks: [String] = []
         for attachment in attachments {
             do {
@@ -319,13 +342,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         }
 
         do {
-            try FileWriter.appendTodo(
-                trimmed,
-                tag: tag,
-                to: appState.captureFileURL,
-                includeTimestamp: appState.includeTimestamp,
-                attachmentLinks: attachmentLinks
-            )
+            _ = try OrganiserCapture.save(trimmed, tag: tag, file: appState.captureFileURL,
+                timestamp: appState.includeTimestamp, attachments: attachmentLinks,
+                outbox: OrganiserController.shared.outbox, endpoint: nil)
+            if let draft = importDraft { try? CaptureRecovery.remove(draft.id) }
+            appState.captureImportRecoveryID = nil
             hideCapture()
             return true
         } catch {
@@ -350,17 +371,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
         return alert.runModal() == .alertFirstButtonReturn
     }
 
-    /// `#cal` branch: parse the text as a calendar event, hand the resulting
-    /// `.ics` to the default handler (Calendar.app shows its own confirmation
-    /// sheet). The markdown todo file is NOT touched for these captures.
-    /// Returns true when the .ics was opened and the panel dismissed.
+    /// `#cal` parses the input into an internal organiser event.
+    /// The event is retained in the capture file and the durable organiser queue.
     @discardableResult
     private func handleCalendarCapture(_ text: String) -> Bool {
         switch EventParser.parse(text) {
         case .success(let event):
             do {
-                let url = try ICSWriter.writeTempFile(for: event)
-                NSWorkspace.shared.open(url)
+                _ = try OrganiserCapture.save(text, tag: "cal", file: appState.captureFileURL,
+                    timestamp: appState.includeTimestamp, attachments: [], event: event,
+                    outbox: OrganiserController.shared.outbox, endpoint: nil)
                 hideCapture()
                 return true
             } catch {
@@ -385,27 +405,23 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuItemValidation {
 
     // MARK: - Settings
 
-    @objc func showSettings() {
-        settingsController.show()
+    private func hideSettingsWindows() {
+        settingsController.hide()
+        // Retire the former SwiftUI Settings scene if macOS restored it.
+        for window in NSApp.windows where window.identifier?.rawValue == "com_apple_SwiftUI_Settings_window" {
+            window.isRestorable = false
+            window.orderOut(nil)
+        }
     }
 
-    // MARK: - Font registration
-
-    /// Registers the IBM Plex Mono / Sans OTFs bundled in Resources/Fonts/
-    /// for the process lifetime. CTFontManager makes them available to SwiftUI
-    /// (.custom(…)) and AppKit (NSFont(name:size:)) without a system install.
-    private func registerBundledFonts() {
-        guard let fontsURL = Bundle.main.url(forResource: "Fonts", withExtension: nil) else {
-            NSLog("QuickCapture: Fonts/ folder not found in bundle")
-            return
+    @objc func showSettings() {
+        let present = { [weak self] in
+            guard let self else { return }
+            self.hideSettingsWindows()
+            self.settingsController.show()
         }
-        let otfs = (try? FileManager.default.contentsOfDirectory(
-            at: fontsURL, includingPropertiesForKeys: nil
-        ))?.filter { $0.pathExtension == "otf" } ?? []
-
-        for url in otfs {
-            CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
-        }
+        if let panel = mainPanel, panel.isVisible { panel.prepareForSettings(present) }
+        else { present() }
     }
 
     // MARK: - Default capture file scaffolding

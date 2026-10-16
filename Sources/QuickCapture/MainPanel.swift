@@ -43,8 +43,14 @@ final class MainPanel: NSPanel {
     private let appState: AppState
     private let onSubmit: (String, String?, [URL]) -> Bool
     private let onDismiss: () -> Void
+    var onSettings: (() -> Void)?
+    private var suspendedForSettings = false
 
     private(set) var editorOpen = false
+    private(set) var workspaceOpen = false
+    private lazy var workspaceModel = WorkspaceModel(appState: appState)
+    private var workspaceHost: NSHostingView<WorkspaceView>?
+
     /// True while the screenshot picker takeover surface is shown (a large
     /// centered frame, capture inputs hidden — same window, like editor mode).
     /// Guards `captureContentDidChange` from fighting the fixed picker frame.
@@ -88,11 +94,12 @@ final class MainPanel: NSPanel {
     private var editorFileLoaded = false
     private var exitPending = false
     private var webViewReady = false
-    private var fileWatcher: DispatchSourceFileSystemObject?
+    private var fileWatcher: FileWatcher?
     /// The ⌥⌘O picker is overlaying the editor (#126) rather than growing the
     /// capture window. Distinct from `pickerOpen`, which drives the capture-mode
     /// takeover and its frame animation.
     private var pickerOverEditor = false
+    private var hotKeyObserver: NSObjectProtocol?
     private var vimObserver: NSObjectProtocol?
     private var refileTargetsObserver: NSObjectProtocol?
     private var tagHuesObserver: NSObjectProtocol?
@@ -107,11 +114,12 @@ final class MainPanel: NSPanel {
     /// so stale completions from a prior summon cannot resurrect a detached chip.
     private var attachLookupGeneration = 0
 
-    private let splitWidth: CGFloat = 1000
+    private let splitWidth: CGFloat = 1120
     private let captureWidth: CGFloat = 680
 
     deinit {
         stopWatching()
+        if let hotKeyObserver { NotificationCenter.default.removeObserver(hotKeyObserver) }
         if let vimObserver { NotificationCenter.default.removeObserver(vimObserver) }
         if let refileTargetsObserver { NotificationCenter.default.removeObserver(refileTargetsObserver) }
         if let tagHuesObserver { NotificationCenter.default.removeObserver(tagHuesObserver) }
@@ -155,6 +163,10 @@ final class MainPanel: NSPanel {
         bridge.panel = self
         config.userContentController.add(bridge, name: "editorBridge")
         loadEditor()
+
+        hotKeyObserver = NotificationCenter.default.addObserver(forName: .hotKeyDidChange, object: nil, queue: .main) { [weak self] _ in
+            self?.pushEditorKeymap()
+        }
 
         // Live-toggle vim in the editor when the setting changes.
         vimObserver = NotificationCenter.default.addObserver(
@@ -217,7 +229,8 @@ final class MainPanel: NSPanel {
             onEscape: { [weak self] in self?.handleEscape() },
             onContentSizeChange: { [weak self] size in self?.captureContentDidChange(size) },
             onPickerAttach: { [weak self] urls in self?.pickerDidFinish(attaching: urls) },
-            onPickerCancel: { [weak self] in self?.pickerDidFinish(attaching: nil) }
+            onPickerCancel: { [weak self] in self?.pickerDidFinish(attaching: nil) },
+            onHintAction: { [weak self] action in self?.perform(shortcut: action) }
         )
     }
 
@@ -231,8 +244,11 @@ final class MainPanel: NSPanel {
     /// since the web view is never torn down and its queued save can land after
     /// a capture has been written.
     func show() {
+        let resumingSettings = suspendedForSettings
+        suspendedForSettings = false
         recordPreviousApp()   // before NSApp.activate steals frontmost from it
 
+        if workspaceOpen { closeWorkspace(); return }
         if editorOpen {
             closeEditor()     // handles activate, focus and the dismiss guard
             return
@@ -259,7 +275,7 @@ final class MainPanel: NSPanel {
 
         // Fresh summon from hidden — the one path that starts clean (R20).
         collapseStateReset()
-        resetCaptureAttachments()
+        if !resumingSettings { resetCaptureAttachments() }
         if let screen = currentScreenVisibleFrame() {
             anchorCenterY = screen.midY
             var f = frame
@@ -282,13 +298,12 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// Editor-mode frame: comfortable fixed width, full visible height (clears
-    /// the menu bar and Dock), centered horizontally on the active screen.
+    /// Center the workspace and keep it inside the active screen’s usable area.
     private func splitFrame(in screen: NSRect) -> NSRect {
-        NSRect(x: screen.midX - splitWidth / 2,
-               y: screen.minY,
-               width: splitWidth,
-               height: screen.height)
+        let width = min(splitWidth, screen.width - 40)
+        let height = min(820, screen.height - 40)
+        return NSRect(x: screen.midX - width / 2, y: screen.midY - height / 2,
+                      width: width, height: height)
     }
 
     /// Summon straight into the editor split, without the grow animation.
@@ -350,7 +365,10 @@ final class MainPanel: NSPanel {
     /// Switch to editor mode: crossfade the capture box out and the full editor
     /// in while the window grows to the editor frame.
     func openEditor() {
-        guard !editorOpen else { return }
+        guard !editorOpen, !exitPending else { return }
+        workspaceHost?.isHidden = true
+        captureHost.isHidden = false
+        workspaceOpen = false
         editorOpen = true
         // The picker is a capture-surface affordance; ⌥⌘I into the editor closes
         // it. editorOpen is set first so the capture re-measure this triggers is
@@ -446,6 +464,9 @@ final class MainPanel: NSPanel {
     }
 
     private func collapseStateReset() {
+        captureHost.isHidden = false
+        workspaceOpen = false
+        workspaceHost?.isHidden = true
         cancelPickerOverEditor()
         editorOpen = false
         pickerOpen = false
@@ -456,6 +477,82 @@ final class MainPanel: NSPanel {
         captureHost.alphaValue = 1
         isMovableByWindowBackground = true
         demoteToAccessory()
+    }
+
+    // MARK: - Native workspace
+
+    func openWorkspace(_ destination: WorkspaceDestination) {
+        guard !exitPending, !isCollapsing else { return }
+        if editorOpen {
+            exitPending = true
+            flushEditorSave { [weak self] saved in
+                guard let self else { return }
+                self.exitPending = false
+                guard saved else { return }
+                self.cancelPickerOverEditor()
+                self.editorOpen = false
+                self.openWorkspace(destination)
+            }
+            return
+        }
+        workspaceOpen = true
+        pickerOpen = false
+        attachLookupGeneration += 1
+        appState.screenshotPickerItems = nil
+        canDismissOnBlur = false
+        workspaceModel.navigate(destination)
+        if workspaceHost == nil {
+            let host = NSHostingView(rootView: WorkspaceView(model: workspaceModel,
+                onCapture: { [weak self] in self?.closeWorkspace() },
+                onEditor: { [weak self] in self?.openEditor() }))
+            host.frame = container.bounds
+            host.autoresizingMask = [.width, .height]
+            container.addSubview(host)
+            workspaceHost = host
+        }
+        container.editorActive = true
+        captureHost.alphaValue = 0
+        captureHost.isHidden = true
+        editorContainer.isHidden = true
+        workspaceHost?.isHidden = false
+        isMovableByWindowBackground = false
+        promoteToRegular()
+        if let screen = currentScreenVisibleFrame() { setFrame(splitFrame(in: screen), display: true, animate: true) }
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+        makeFirstResponder(workspaceHost)
+    }
+
+    private func closeWorkspace() {
+        guard workspaceOpen, !isCollapsing else { return }
+        canDismissOnBlur = false
+        isCollapsing = true
+        workspaceOpen = false
+        // Keep both surfaces concealed while capture remeasures. Revealing it
+        // in the workspace-sized frame lets its size callback shrink at the
+        // old left edge before AppKit animates the window back to the centre.
+        workspaceHost?.isHidden = true
+        captureHost.alphaValue = 0
+        captureHost.isHidden = false
+        container.editorActive = false
+        isMovableByWindowBackground = true
+        container.layoutSubtreeIfNeeded()
+        if let screen = self.screen?.visibleFrame ?? currentScreenVisibleFrame() {
+            let height = captureContentSize.height
+            anchorCenterY = screen.midY
+            setFrame(NSRect(x: screen.midX - captureWidth / 2, y: screen.midY - height / 2,
+                            width: captureWidth, height: height), display: false, animate: false)
+        }
+        container.layoutSubtreeIfNeeded()
+        demoteToAccessory()
+        NSApp.activate(ignoringOtherApps: true)
+        makeKeyAndOrderFront(nil)
+        captureHost.alphaValue = 1
+        isCollapsing = false
+        focusCapture()
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.25) { [weak self] in
+            self?.canDismissOnBlur = true
+        }
     }
 
     // MARK: - Frames
@@ -480,7 +577,7 @@ final class MainPanel: NSPanel {
         guard appState.screenshotPickerItems == nil else { return }
         captureContentSize = size
         container.captureHeight = size.height
-        guard !editorOpen else { return }
+        guard !editorOpen, !workspaceOpen else { return }
         // The picker just closed: re-center and shrink to the box's fresh height
         // (taller when a shot was attached). Owns the frame for this transition.
         if recenterCaptureAfterPicker {
@@ -563,6 +660,7 @@ final class MainPanel: NSPanel {
     private func focusCapture(retriesLeft: Int = 10) {
         DispatchQueue.main.async { [weak self] in
             guard let self else { return }
+            guard !self.editorOpen, !self.workspaceOpen else { return }
             if self.isVisible {
                 self.captureHost.layoutSubtreeIfNeeded()
                 if let tv = self.firstTextView(in: self.captureHost), self.makeFirstResponder(tv) {
@@ -578,7 +676,7 @@ final class MainPanel: NSPanel {
 
     private func focusEditor() {
         DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
+            guard let self, self.editorOpen, !self.workspaceOpen else { return }
             self.makeFirstResponder(self.webView)
             self.webView.evaluateJavaScript("window.qcEditor && window.qcEditor.focus && window.qcEditor.focus()",
                                             completionHandler: nil)
@@ -604,6 +702,13 @@ final class MainPanel: NSPanel {
     /// is current, then hands off to the dismiss closure (which hides the panel
     /// and clears any preserved capture text).
     func dismiss() {
+        if appState.captureRecoveryBlocked {
+            let alert = NSAlert()
+            alert.messageText = "The failed capture could not be backed up"
+            alert.informativeText = "Keep this panel open and copy or save the text before dismissing it."
+            alert.runModal()
+            return
+        }
         guard !exitPending else { return }
         exitPending = true
         flushEditorSave { [weak self] saved in
@@ -611,6 +716,27 @@ final class MainPanel: NSPanel {
             self.exitPending = false
             if saved { self.onDismiss() }
         }
+    }
+
+    /// Settings is an internal handoff, not a dismissal: retain the draft and
+    /// attachments and do not restore focus to the previously active app.
+    func prepareForSettings(_ completion: @escaping () -> Void) {
+        guard !exitPending else { return }
+        exitPending = true
+        canDismissOnBlur = false
+        flushEditorSave { [weak self] saved in
+            guard let self else { return }
+            self.exitPending = false
+            guard saved else { self.canDismissOnBlur = true; return }
+            self.suspendForSettings()
+            completion()
+        }
+    }
+
+    private func suspendForSettings() {
+        suspendedForSettings = true
+        canDismissOnBlur = false
+        super.orderOut(nil)
     }
 
     /// Esc in the editor with vim off (posted from editor.ts via the bridge).
@@ -634,7 +760,7 @@ final class MainPanel: NSPanel {
     /// recent screenshots (newest pre-highlighted). Picking one attaches it as
     /// the chip; Esc closes without changing the attachment. No screenshots →
     /// the transient "No screenshots found" feedback instead of an empty panel.
-    private func openScreenshotPicker() {
+    func openScreenshotPicker() {
         attachLookupGeneration += 1
         let generation = attachLookupGeneration
         ScreenshotLocator.recent(limit: 10) { [weak self] result in
@@ -867,13 +993,56 @@ final class MainPanel: NSPanel {
     // MARK: - Window overrides
 
     override var canBecomeKey: Bool { true }
-    override var canBecomeMain: Bool { editorOpen }
+    override var canBecomeMain: Bool { editorOpen || workspaceOpen }
 
     /// Intercept the window-level shortcuts (mode switch, dismiss, screenshot
     /// attach, refile) before CodeMirror/WebKit or the standard menu items can
     /// claim them. Which keys those are — and in which mode — lives in
     /// `ShortcutRegistry`, the single source of truth for bindings.
+    private func handleCalendarViewKey(_ event: NSEvent) -> Bool {
+        guard workspaceOpen, workspaceModel.destination == .calendar else { return false }
+        let textView = firstResponder as? NSTextView
+        let editingText = textView?.isEditable == true && textView?.isHiddenOrHasHiddenAncestor == false
+        guard let mode = CalendarLayout.mode(for: event.charactersIgnoringModifiers ?? "",
+            hasModifiers: !event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
+            editingText: editingText) else { return false }
+        workspaceModel.calendarMode = mode
+        return true
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if handleCalendarViewKey(event) { return }
+        super.keyDown(with: event)
+    }
+
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if event.charactersIgnoringModifiers == ",",
+           event.modifierFlags.intersection([.command, .option, .control, .shift]) == .command,
+           let onSettings {
+            onSettings()
+            return true
+        }
+        if handleCalendarViewKey(event) { return true }
+        // Also handle the summon chord locally while the workspace owns focus.
+        // Carbon remains responsible for summoning from other applications.
+        if workspaceOpen, UInt32(event.keyCode) == appState.hotKey.keyCode,
+           event.modifierFlags.intersection([.command, .option, .control, .shift]) == appState.hotKey.modifierFlags {
+            show()
+            return true
+        }
+        if workspaceOpen, workspaceModel.destination == .calendar,
+           event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command {
+            switch event.charactersIgnoringModifiers {
+            case "1": workspaceModel.calendarMode = .day; return true
+            case "2": workspaceModel.calendarMode = .week; return true
+            case "3": workspaceModel.calendarMode = .month; return true
+            case "t": workspaceModel.date = Date(); return true
+            default: break
+            }
+            if event.keyCode == 123 { workspaceModel.shiftDate(-1); return true }
+            if event.keyCode == 124 { workspaceModel.shiftDate(1); return true }
+        }
+        if workspaceOpen, event.keyCode == 53 { closeWorkspace(); return true }
         if let action = ShortcutRegistry.interceptedAction(for: event, editorOpen: editorOpen) {
             perform(shortcut: action)
             return true
@@ -898,11 +1067,17 @@ final class MainPanel: NSPanel {
     /// so this arm only runs for the Editor menu items.
     func perform(shortcut action: ShortcutAction) {
         switch action {
+        case .showCalendar: openWorkspace(.calendar)
+        case .showProjects: openWorkspace(.projects)
+        case .showTodos: openWorkspace(.todos)
+        case .showNotes: openWorkspace(.notes)
+        case .showLinks: openWorkspace(.links)
         case .toggleEditor:
             toggleEditor()
         case .dismissPanel:
             dismiss()
         case .attachScreenshot:
+            if workspaceOpen { closeWorkspace() }
             // ⌥⌘O toggles: a second press while the picker is up closes it the
             // same way Esc does (cancel, attachments untouched).
             if pickerOverEditor {
@@ -916,7 +1091,7 @@ final class MainPanel: NSPanel {
             // Deliberate no-op: ⌘R must never reach WebKit in editor mode or
             // it reloads the page, destroying the warm editor's state.
             break
-        case .refile, .readMode, .toggleTask, .save, .reorg, .nextSection, .prevSection:
+        case .refile, .readMode, .toggleTask, .save, .reorg, .archive, .imageSource, .nextSection, .prevSection:
             invokeEditorAction(action)
         }
     }
@@ -948,7 +1123,7 @@ final class MainPanel: NSPanel {
 
     override func resignKey() {
         super.resignKey()
-        guard canDismissOnBlur else { return }
+        guard canDismissOnBlur, !editorOpen, !workspaceOpen, !appState.captureSubmissionActive else { return }
         canDismissOnBlur = false
         dismiss()
     }
@@ -1014,6 +1189,11 @@ final class MainPanel: NSPanel {
     /// its own baked-in defaults (which the browser harness relies on).
     private func pushEditorKeymap() {
         guard webViewReady, let json = ShortcutRegistry.editorKeymapJSON else { return }
+        var hints = Dictionary(uniqueKeysWithValues: ShortcutAction.allCases.map { ($0.rawValue, $0.chord.displayGlyphs) })
+        hints["capture"] = appState.hotKey.displayString
+        if let data = try? JSONEncoder().encode(hints), let hintJSON = String(data: data, encoding: .utf8) {
+            webView.evaluateJavaScript("window.qcEditor?.setShortcutHints(\(hintJSON))", completionHandler: nil)
+        }
         webView.evaluateJavaScript(
             "window.qcEditor && window.qcEditor.setKeymap && window.qcEditor.setKeymap(\(json))",
             completionHandler: nil
@@ -1074,6 +1254,23 @@ final class MainPanel: NSPanel {
     /// watcher reloads the editor afterwards (same pattern as archive). On
     /// success the editor flashes a toast; on any failure the source is left
     /// intact and an `NSAlert` explains why (the failure contract, R29).
+    fileprivate func sendToOrganiser(sourceID: String, fromLine: Int, toLine: Int, subtree: String, asNew: Bool) {
+        do {
+            let content = try FileWriter.read(loadedFileURL)
+            _ = try FileWriter.verifyAndRemove(subtree: subtree, at: fromLine..<toLine, in: content)
+            guard SourceIdentity.ids(in: subtree.components(separatedBy: "\n").first ?? "") == [sourceID],
+                  SourceIdentity.ids(in: content).filter({ $0 == sourceID }).count == 1 else {
+                throw HandoffError.invalid("ambiguous_source_identity")
+            }
+            HandoffController.shared.send(sourceID: sourceID, body: subtree, sourceFile: loadedFileURL, asNew: asNew)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Could not send to organiser"
+            alert.informativeText = "The source changed or its identity is ambiguous. Save and select the item again."
+            alert.runModal()
+        }
+    }
+
     fileprivate func refile(targetID: String, fromLine: Int, toLine: Int, subtree: String) {
         do {
             // Resolved by identity, not position: the effective list is
@@ -1083,6 +1280,8 @@ final class MainPanel: NSPanel {
             guard let target = appState.effectiveRefileTargets.first(where: { $0.id == targetID }) else {
                 throw FileWriter.RefileError.targetUnavailable
             }
+            try OrganiserController.shared.outbox.prepareMove(ids: SourceIdentity.ids(in: subtree),
+                to: target.folderURL.appendingPathComponent("inbox.md"))
             try RefileService.refile(
                 subtree: subtree,
                 range: fromLine..<toLine,
@@ -1097,6 +1296,7 @@ final class MainPanel: NSPanel {
                 completionHandler: nil
             )
         } catch {
+            OrganiserController.shared.outbox.cancelMove(ids: SourceIdentity.ids(in: subtree))
             let alert = NSAlert()
             alert.messageText = "Couldn’t refile"
             alert.informativeText = error.localizedDescription
@@ -1218,44 +1418,17 @@ final class MainPanel: NSPanel {
     // MARK: - File watching
     //
     // Watch the capture file for external writes (input-only captures, or edits
-    // from Obsidian/another app) and reload the editor. Atomic writes replace
-    // the file via temp+rename, orphaning our fd, so we re-open on
-    // `.rename`/`.delete`.
+    // from Obsidian/another app) and reload the editor. `FileWatcher` handles
+    // the re-open that atomic (temp+rename) writes require.
 
     private func startWatching() {
         stopWatching()
-        let fd = open(loadedFileURL.path, O_EVTONLY)
-        guard fd >= 0 else { return }
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .extend, .delete, .rename],
-            queue: .main
-        )
-        source.setEventHandler { [weak self] in self?.handleWatcherEvent() }
-        // Capture this watcher's descriptor; a delayed cancellation must not
-        // close the replacement watcher's descriptor.
-        source.setCancelHandler { Darwin.close(fd) }
-        source.resume()
-        fileWatcher = source
+        fileWatcher = FileWatcher(url: loadedFileURL) { [weak self] in self?.reloadIfChanged() }
     }
 
     private func stopWatching() {
         fileWatcher?.cancel()
         fileWatcher = nil
-    }
-
-    private func handleWatcherEvent() {
-        guard let source = fileWatcher else { return }
-        let event = source.data
-        if event.contains(.rename) || event.contains(.delete) {
-            stopWatching()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.reloadIfChanged()
-                self?.startWatching()
-            }
-            return
-        }
-        reloadIfChanged()
     }
 
     private func reloadIfChanged() {
@@ -1367,16 +1540,12 @@ private final class EditorContainerView: NSView {
     // Dynamic so the panel surface/border track light/dark. Layer colours are
     // CGColors (no auto-update), so applyChrome() re-resolves them against the
     // effective appearance, and we re-apply on appearance change.
-    // Mirrors Theme.surface / Theme.borderStrong (design/native-v2/HANDOFF.md).
+    // Resolve shared SwiftUI tokens here so native and web window edges agree.
     static let windowSurface = NSColor(name: nil) { a in
-        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(srgbRed: 0x21/255, green: 0x21/255, blue: 0x25/255, alpha: 1)
-            : NSColor(srgbRed: 0xF6/255, green: 0xF6/255, blue: 0xF8/255, alpha: 1)
+        NSColor(a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? Theme.dark.surface : Theme.light.surface)
     }
     static let windowBorder = NSColor(name: nil) { a in
-        a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(white: 1, alpha: 0.14)
-            : NSColor(white: 0, alpha: 0.18)
+        NSColor(a.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua ? Theme.dark.border : Theme.light.border)
     }
 
     func configure(web: NSView) {
@@ -1430,6 +1599,10 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
             if let content = dict["content"] as? String,
                let expected = dict["expected"] as? String,
                let id = dict["id"] as? Int { panel?.write(content, expected: expected, id: id) }
+        case "capture":
+            panel?.toggleEditor()
+        case "screenshots":
+            panel?.openScreenshotPicker()
         case "archive":
             panel?.archive()
         case "dismiss":
@@ -1438,6 +1611,14 @@ final class EditorBridge: NSObject, WKScriptMessageHandler {
         case "attachment":
             // The editor wants an image's bytes for the expanded preview.
             if let path = dict["path"] as? String { panel?.sendAttachment(relativePath: path) }
+        case "organiserHistory":
+            HandoffController.shared.showHistory()
+        case "sendOrganiser":
+            if let id = dict["sourceID"] as? String,
+               let from = dict["fromLine"] as? Int, let to = dict["toLine"] as? Int,
+               let subtree = dict["subtree"] as? String {
+                panel?.sendToOrganiser(sourceID: id, fromLine: from, toLine: to, subtree: subtree, asNew: dict["asNew"] as? Bool ?? false)
+            }
         case "refile":
             // Move the subtree at [fromLine, toLine) into the chosen target.
             if let target = dict["target"] as? String,

@@ -34,13 +34,13 @@ enum TagPalette {
     /// Blue stays — at the heading mix it renders as a dark navy, well clear of
     /// the system accent.
     static let entries: [Entry] = [
-        .init(lightHex: 0xE8643F, darkHex: 0xF4795A), // coral
-        .init(lightHex: 0x2A9D8F, darkHex: 0x3DBDAD), // teal
-        .init(lightHex: 0xC2479B, darkHex: 0xDA62B4), // magenta
-        .init(lightHex: 0x4F9E4F, darkHex: 0x5FBF60), // green
-        .init(lightHex: 0x3B82F6, darkHex: 0x5C9DFF), // blue
-        .init(lightHex: 0xC77800, darkHex: 0xE0A33E), // amber
-        .init(lightHex: 0x5856D6, darkHex: 0x7D7AFF), // indigo
+        .init(lightHex: 0xAF553D, darkHex: 0xEDAC95), // coral
+        .init(lightHex: 0x247B69, darkHex: 0x83CDB5), // teal
+        .init(lightHex: 0x9D4286, darkHex: 0xE4A0CB), // magenta
+        .init(lightHex: 0x527346, darkHex: 0xB0CEA0), // green
+        .init(lightHex: 0x486D91, darkHex: 0xA1BFDF), // blue
+        .init(lightHex: 0x90651F, darkHex: 0xDEC187), // amber
+        .init(lightHex: 0x69608E, darkHex: 0xBEB2DE), // indigo
     ]
 
     static var count: Int { entries.count }

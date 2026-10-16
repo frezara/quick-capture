@@ -13,6 +13,32 @@ final class RefileTargetTests: XCTestCase {
                        "a blank label falls back to the basename")
     }
 
+    func testMovingATargetCarriesItsLabelWithIt() {
+        let targets = [
+            RefileTarget(path: "/a", label: "Alpha"),
+            RefileTarget(path: "/b", label: nil),
+            RefileTarget(path: "/c", label: "Gamma"),
+        ]
+        let moved = RefileTarget.moving("/b", by: -1, in: targets)
+        XCTAssertEqual(moved, [
+            RefileTarget(path: "/b", label: nil),
+            RefileTarget(path: "/a", label: "Alpha"),
+            RefileTarget(path: "/c", label: "Gamma"),
+        ])
+        XCTAssertEqual(RefileTarget.moving("/a", by: -1, in: targets), targets, "the first can't move up")
+        XCTAssertEqual(RefileTarget.moving("/c", by: 1, in: targets), targets, "the last can't move down")
+        XCTAssertEqual(RefileTarget.moving("/missing", by: 1, in: targets), targets)
+    }
+
+    func testLabelInputTreatsBlankAsNoLabel() {
+        var target = RefileTarget(path: "/a", label: nil)
+        XCTAssertEqual(target.labelInput, "")
+        target.labelInput = "Work"
+        XCTAssertEqual(target.label, "Work")
+        target.labelInput = "   "
+        XCTAssertNil(target.label, "a blank label clears it so the basename shows")
+    }
+
     func testTargetsRoundTripThroughUserDefaults() throws {
         let defaults = UserDefaults(suiteName: "quickcapture-refile-test-\(UUID().uuidString)")!
         defer { defaults.removePersistentDomain(forName: defaults.dictionaryRepresentation().description) }

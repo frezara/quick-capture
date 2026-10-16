@@ -77,3 +77,14 @@ NOTES.md
 inbox.md
 inbox_archive.md
 attachments/
+
+# Python development receiver bytecode
+__pycache__/
+*.pyc
+
+# Organiser deployment credentials and database backups
+organiser/.env
+organiser/secrets/
+organiser/backups/
+.pytest_cache/
+organiser/node_modules/

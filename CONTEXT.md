@@ -37,8 +37,7 @@ crossfades between them.
   box's tag field, which is the same tag. Nothing else borrows a tag hue —
   system blue is **interaction**, neutral is the ground. A section takes the
   next unused hue the first time it is seen and keeps it, so the hue survives
-  reordering and relaunches. Decided in #101; the code still hashes the name —
-  implementation is #102 (assignment), #103 (editor), #104 (capture).
+  reordering and relaunches. Decided in #101, implemented in #102–#104.
 
 - **Quick capture** — the `## Quick capture` section: the catch-all where
   untagged items land. Use this exact phrase for the catch-all; don't call it
@@ -124,7 +123,86 @@ crossfades between them.
   to it on refile but never opens it.
 
 - **`#cal`** — a capture prefix that re-interprets the input as a
-  natural-language calendar event and opens a generated `.ics`.
+  natural-language calendar event retained locally and delivered to the organiser.
+
+- **Source marker** — the trailing identifier a delivered item carries so the
+  organiser recognises it across edits and reordering (ADR-0008). Never shown
+  in the editor; it lives and dies with its line.
+
+## Organiser handoff language
+
+Automatic capture delivery and explicit snapshot handoff are distinct workflows.
+
+**Organiser**:
+The personal system for managing captured information, notes, tasks, reminders,
+bookmarks and calendar events. It includes the user-facing workspace and the
+services that retain and manage its records.
+_Avoid_: Backend (when referring to the whole product)
+
+**Automatic capture delivery**:
+The default whereby a newly saved capture-box entry reaches the
+organiser without a separate Send action. An unavailable organiser delays delivery
+without preventing local capture.
+
+**Calendar event**:
+A scheduled occurrence entered by the user in the organiser's calendar.
+The initial calendar is independent of external calendar services.
+
+**Synchronised item**:
+One organiser item whose identity persists across changes made in Quick Capture
+and the organiser. Completion and deletion change that same item.
+
+**Revision**:
+An accepted version of a synchronised item.
+
+**Sync conflict**:
+Two changes made from the same earlier revision. Both versions remain available
+until the user chooses how to reconcile them.
+
+**Deletion tombstone**:
+The retained identity of a deleted item, preventing a delayed device from
+recreating it unintentionally.
+
+**Capture draft**:
+Unsubmitted content in the capture box. Ordinary dismissal discards it;
+content retained after a failed save or interrupted import/send is recovery content.
+
+**Item subtree**:
+A saved item together with its attachment lines and nested child items.
+It is the initial selection unit for Send to organiser, as it is for refile.
+
+**Source item identity**:
+The identity of a local item across edits and moves, distinct from its wording
+or position. One source item can have several intentionally created handoffs.
+_Avoid_: Filename identity, content identity
+
+**Handoff snapshot**:
+An immutable copy of an explicitly selected item subtree and its included
+attachments for delivery to one organiser destination. Later source edits do
+not change it, and retries retain the same handoff identity.
+_Avoid_: Live sync, refile
+
+**Organiser inbox item**:
+A record accepted by the organiser for later organisation; it need not be a
+task. It is independent of the source item and any refile target inbox.
+_Avoid_: Target inbox
+
+**Delivery receipt**:
+The organiser's durable acknowledgement of a particular handoff snapshot.
+It proves acceptance by that organiser, not availability on other devices.
+
+**Send as new item**:
+An explicit request to create a new handoff snapshot, even when its source
+item has already been sent. It does not replace an earlier organiser inbox item.
+
+**Send this copy as new**:
+An explicit resolution for an item whose source identity was duplicated by
+copying: the selected copy becomes a distinct source item with a new handoff.
+
+**Missing attachment**:
+A locally referenced attachment whose bytes cannot be read for a handoff.
+It blocks sending unless the user explicitly approves its omission; a remote
+image URL remains a link and is not an attachment to fetch.
 
 ## Language to avoid
 
