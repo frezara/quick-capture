@@ -7,7 +7,7 @@ struct NativeCalendarView: View {
     private let hourHeight: CGFloat = 60
     private let timeWidth: CGFloat = 54
     private var calendar: Calendar { .current }
-    private var events: [WorkspaceItem] { model.visible.sorted { ($0.starts ?? .distantPast) < ($1.starts ?? .distantPast) } }
+    private func events(on day: Date) -> [WorkspaceItem] { model.projection.eventsByDay[day] ?? [] }
     private var title: String {
         model.calendarMode == .day
             ? model.date.formatted(.dateTime.weekday(.wide).day().month(.wide).year())
@@ -31,16 +31,25 @@ struct NativeCalendarView: View {
             }.foregroundStyle(.secondary).padding(.horizontal, 18).padding(.vertical, 9)
         }
         .background(Color(nsColor: .textBackgroundColor))
-        .popover(item: $selectedEvent) { item in
-            VStack(alignment: .leading, spacing: 12) {
-                Text(item.title).font(.headline)
-                if let starts = item.starts { Text(starts.formatted(date: .complete, time: .shortened)) }
-                if let ends = item.ends { Text("Ends " + ends.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary) }
-                Text(item.section).font(.caption).foregroundStyle(.secondary)
-                if item.text != item.title { Text(item.text).textSelection(.enabled) }
-                Button("Done") { selectedEvent = nil }
-            }.padding(22).frame(width: 320)
-        }
+    }
+
+    /// Opens the event's detail anchored to the event itself; one `selectedEvent`
+    /// still guarantees only one popover is up at a time.
+    private func eventButton<Label: View>(_ item: WorkspaceItem, @ViewBuilder label: () -> Label) -> some View {
+        Button { selectedEvent = item } label: { label() }
+            .buttonStyle(.plain)
+            .help(item.title)
+            .popover(isPresented: Binding(get: { selectedEvent?.id == item.id },
+                                          set: { if !$0, selectedEvent?.id == item.id { selectedEvent = nil } })) {
+                VStack(alignment: .leading, spacing: 12) {
+                    Text(item.title).font(.headline)
+                    if let starts = item.starts { Text(starts.formatted(date: .complete, time: .shortened)) }
+                    if let ends = item.ends { Text("Ends " + ends.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary) }
+                    Text(item.section).font(.caption).foregroundStyle(.secondary)
+                    if item.text != item.title { Text(item.text).textSelection(.enabled) }
+                    Button("Done") { selectedEvent = nil }
+                }.padding(22).frame(width: 320)
+            }
     }
 
     private var toolbar: some View {
@@ -89,7 +98,7 @@ struct NativeCalendarView: View {
     }
 
     private func monthDay(_ day: Date, height: CGFloat) -> some View {
-        let dayEvents = events.filter { $0.occurs(on: day) }
+        let dayEvents = events(on: day)
         let limit = max(1, Int((height - 38) / 21))
         let inMonth = calendar.isDate(day, equalTo: model.date, toGranularity: .month)
         return VStack(alignment: .leading, spacing: 3) {
@@ -100,7 +109,7 @@ struct NativeCalendarView: View {
                 } label: { dateNumber(day) }.buttonStyle(.plain).help("Open " + day.formatted(date: .complete, time: .omitted))
             }.padding(.horizontal, 7).padding(.top, 5)
             ForEach(Array(dayEvents.prefix(limit))) { item in
-                Button { selectedEvent = item } label: {
+                eventButton(item) {
                     HStack(spacing: 4) {
                         Circle().fill(Color.accentColor).frame(width: 5, height: 5)
                         Text(item.title).lineLimit(1)
@@ -110,7 +119,7 @@ struct NativeCalendarView: View {
                         }
                     }.font(.system(size: 11)).padding(.horizontal, 6).padding(.vertical, 2)
                         .background(CalendarLayout.isAllDay(item) ? Color.accentColor.opacity(0.12) : .clear)
-                }.buttonStyle(.plain).help(item.title)
+                }
             }
             if dayEvents.count > limit {
                 Button("\(dayEvents.count - limit) more…") { model.date = day; model.calendarMode = .day }
@@ -149,11 +158,11 @@ struct NativeCalendarView: View {
                     .frame(width: timeWidth, alignment: .trailing).padding(.top, 6)
                 ForEach(model.days, id: \.self) { day in
                     VStack(spacing: 3) {
-                        ForEach(events.filter { $0.occurs(on: day) && CalendarLayout.isAllDay($0) }) { item in
-                            Button { selectedEvent = item } label: {
+                        ForEach(events(on: day).filter { CalendarLayout.isAllDay($0) }) { item in
+                            eventButton(item) {
                                 Text(item.title).font(.caption).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
                                     .padding(4).background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
-                            }.buttonStyle(.plain)
+                            }
                         }
                     }.padding(4).frame(maxWidth: .infinity, minHeight: 30)
                 }
@@ -180,16 +189,18 @@ struct NativeCalendarView: View {
     }
 
     private func timelineDay(_ day: Date) -> some View {
-        GeometryReader { geometry in
+        let dayEvents = events(on: day)
+        let byID = Dictionary(dayEvents.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        return GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 ForEach(0..<24) { hour in
                     Rectangle().fill(Color.secondary.opacity(0.18)).frame(height: 0.5).offset(y: CGFloat(hour) * hourHeight)
                     Rectangle().fill(Color.secondary.opacity(0.07)).frame(height: 0.5).offset(y: (CGFloat(hour) + 0.5) * hourHeight)
                 }
-                ForEach(CalendarLayout.segments(items: events, day: day)) { segment in
-                    if let item = events.first(where: { $0.id == segment.id }) {
+                ForEach(CalendarLayout.segments(items: dayEvents, day: day)) { segment in
+                    if let item = byID[segment.id] {
                         let width = max(1, (geometry.size.width - 4) / CGFloat(segment.columnCount))
-                        Button { selectedEvent = item } label: {
+                        eventButton(item) {
                             VStack(alignment: .leading, spacing: 2) {
                                 Text(item.title).font(.system(size: 11, weight: .medium)).lineLimit(2)
                                 if segment.endMinute - segment.startMinute >= 40, let starts = item.starts {
@@ -201,7 +212,7 @@ struct NativeCalendarView: View {
                                 .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 4))
                                 .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 1).fill(Color.accentColor).frame(width: 3) }
                                 .clipped()
-                        }.buttonStyle(.plain).help(item.title)
+                        }
                             .offset(x: CGFloat(segment.column) * width + 2, y: CGFloat(segment.startMinute) / 60 * hourHeight)
                     }
                 }

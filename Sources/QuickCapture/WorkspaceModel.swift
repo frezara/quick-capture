@@ -63,13 +63,16 @@ struct WorkspaceItem: Identifiable, Equatable {
         return parser.date(from: value)
     }
 
+    // Compiled once: parse runs over every inbox on each refresh.
+    private static let tagPattern = try! NSRegularExpression(pattern: #"(?:^|\s)#([\p{L}\p{N}_/-]+)"#)
+    private static let linkDetector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+
     /// Reads existing Markdown without enrolling old items in sync or changing it.
     static func parse(_ text: String, file: URL, metadata: [String: OrganiserItem]) -> [WorkspaceItem] {
         let lines = text.components(separatedBy: "\n")
         var section = "Quick capture", result: [WorkspaceItem] = []
         var inFence = false
-        let tagPattern = try! NSRegularExpression(pattern: #"(?:^|\s)#([\p{L}\p{N}_/-]+)"#)
-        let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue)
+        let tagPattern = Self.tagPattern, detector = Self.linkDetector
         for (index, line) in lines.enumerated() {
             if line.trimmingCharacters(in: .whitespaces).hasPrefix("```") { inFence.toggle(); continue }
             guard !inFence else { continue }
@@ -107,18 +110,85 @@ struct WorkspaceItem: Identifiable, Equatable {
     }
 }
 
+/// Everything the workspace views derive from the loaded items, computed once
+/// per change of input rather than on each read — the month grid used to
+/// re-filter and re-sort every item for each of its ~35 day cells.
+struct WorkspaceProjection {
+    let visible: [WorkspaceItem]
+    let days: [Date]
+    /// Dated items keyed by the start of each day they touch, in start order.
+    let eventsByDay: [Date: [WorkspaceItem]]
+
+    static let empty = WorkspaceProjection(visible: [], days: [], eventsByDay: [:])
+
+    private init(visible: [WorkspaceItem], days: [Date], eventsByDay: [Date: [WorkspaceItem]]) {
+        self.visible = visible; self.days = days; self.eventsByDay = eventsByDay
+    }
+
+    init(items: [WorkspaceItem], destination: WorkspaceDestination, project: String?,
+         date: Date, mode: WorkspaceCalendarMode, calendar: Calendar = .current) {
+        visible = items.filter { item in
+            switch destination {
+            case .todos: return item.isTodo && !item.completed
+            case .notes: return item.kind == "note"
+            case .links: return item.kind == "bookmark" || item.url != nil
+            case .projects: return project.map { item.projects.contains($0) } ?? !item.projects.isEmpty
+            case .calendar: return item.starts != nil && !item.completed
+            }
+        }.sorted { $0.priority == $1.priority ? $0.id < $1.id : $0.priority < $1.priority }
+        days = Self.days(around: date, mode: mode, calendar: calendar)
+        guard destination == .calendar else { eventsByDay = [:]; return }
+        let dated = visible.sorted { ($0.starts ?? .distantPast, $0.id) < ($1.starts ?? .distantPast, $1.id) }
+        var byDay: [Date: [WorkspaceItem]] = [:]
+        for day in days {
+            let events = dated.filter { $0.occurs(on: day, calendar: calendar) }
+            if !events.isEmpty { byDay[day] = events }
+        }
+        eventsByDay = byDay
+    }
+
+    private static func days(around date: Date, mode: WorkspaceCalendarMode, calendar base: Calendar) -> [Date] {
+        var calendar = base; calendar.firstWeekday = 2
+        let start: Date, count: Int
+        switch mode {
+        case .day:
+            start = calendar.startOfDay(for: date); count = 1
+        case .week:
+            start = calendar.dateInterval(of: .weekOfYear, for: date)?.start ?? calendar.startOfDay(for: date); count = 7
+        case .month:
+            guard let month = calendar.dateInterval(of: .month, for: date)?.start,
+                  let gridStart = calendar.dateInterval(of: .weekOfYear, for: month)?.start,
+                  let end = calendar.date(byAdding: .month, value: 1, to: month),
+                  let span = calendar.dateComponents([.day], from: gridStart, to: end).day else { return [] }
+            start = gridStart; count = ((span + 6) / 7) * 7
+        }
+        return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
+    }
+}
+
 @MainActor
 final class WorkspaceModel: ObservableObject {
-    @Published var destination: WorkspaceDestination = .todos
-    @Published var calendarMode: WorkspaceCalendarMode = .month
-    @Published var date = Date()
-    @Published var project: String?
+    @Published var destination: WorkspaceDestination = .todos { didSet { recompute() } }
+    @Published var calendarMode: WorkspaceCalendarMode = .month { didSet { recompute() } }
+    @Published var date = Date() { didSet { recompute() } }
+    @Published var project: String? { didSet { recompute() } }
     @Published var selectedID: String?
-    @Published private(set) var items: [WorkspaceItem] = []
+    @Published private(set) var items: [WorkspaceItem] = [] { didSet { recompute() } }
     @Published private(set) var problem: String?
+    @Published private(set) var projection = WorkspaceProjection.empty
+    var visible: [WorkspaceItem] { projection.visible }
+    var days: [Date] { projection.days }
     var captureFile: URL { appState.captureFileURL }
     private let appState: AppState
-    init(appState: AppState) { self.appState = appState }
+    /// Inboxes are watched rather than polled; a watcher event or an explicit
+    /// refresh starts a load, and a newer load supersedes an older one.
+    private var watchers: [URL: FileWatcher] = [:]
+    private var loadGeneration = 0
+    private var pendingRefresh: Task<Void, Never>?
+    init(appState: AppState) {
+        self.appState = appState
+        recompute()
+    }
 
     func refresh() {
         let controller = OrganiserController.shared
@@ -128,49 +198,63 @@ final class WorkspaceModel: ObservableObject {
             else { metadata[record.id] = record.baseline?.item }
         }
         let files = [appState.captureFileURL] + appState.effectiveRefileTargets.map { $0.folderURL.appendingPathComponent("inbox.md") }
+        watch(files)
+        loadGeneration += 1
+        // The first load is synchronous so the workspace never opens on a
+        // false "No todos yet"; later loads keep the previous items on screen.
+        if loadGeneration == 1 {
+            (items, problem) = Self.load(files, metadata: metadata)
+            return
+        }
+        let generation = loadGeneration
+        Task.detached(priority: .userInitiated) {
+            let (loaded, message) = Self.load(files, metadata: metadata)
+            await MainActor.run { [weak self] in
+                guard let self, generation == self.loadGeneration else { return }
+                if loaded != self.items { self.items = loaded }
+                if self.problem != message { self.problem = message }
+            }
+        }
+    }
+
+    private nonisolated static func load(_ files: [URL], metadata: [String: OrganiserItem]) -> ([WorkspaceItem], String?) {
         var loaded: [WorkspaceItem] = [], failures: [String] = []
         for file in files {
             do { loaded += WorkspaceItem.parse(try String(contentsOf: file, encoding: .utf8), file: file, metadata: metadata) }
             catch { failures.append(file.lastPathComponent + ": " + error.localizedDescription) }
         }
-        if loaded != items { items = loaded }
-        let message = failures.isEmpty ? nil : failures.joined(separator: "\n")
-        if problem != message { problem = message }
+        return (loaded, failures.isEmpty ? nil : failures.joined(separator: "\n"))
     }
+
+    private func watch(_ files: [URL]) {
+        let wanted = Set(files)
+        for url in watchers.keys where !wanted.contains(url) { watchers.removeValue(forKey: url)?.cancel() }
+        for url in wanted where watchers[url] == nil {
+            watchers[url] = FileWatcher(url: url) { [weak self] in self?.scheduleRefresh() }
+        }
+    }
+
+    /// One atomic save can deliver several events; coalesce them into one load.
+    private func scheduleRefresh() {
+        pendingRefresh?.cancel()
+        pendingRefresh = Task { [weak self] in
+            try? await Task.sleep(for: .milliseconds(100))
+            guard !Task.isCancelled else { return }
+            self?.refresh()
+        }
+    }
+
+    private func recompute() {
+        projection = WorkspaceProjection(items: items, destination: destination, project: project,
+                                         date: date, mode: calendarMode)
+    }
+
     var projects: [String] { Array(Set(items.flatMap(\.projects))).sorted() }
-    var visible: [WorkspaceItem] {
-        items.filter { item in
-            let matches: Bool
-            switch destination {
-            case .todos: matches = item.isTodo && !item.completed
-            case .notes: matches = item.kind == "note"
-            case .links: matches = item.kind == "bookmark" || item.url != nil
-            case .projects: matches = project.map { item.projects.contains($0) } ?? !item.projects.isEmpty
-            case .calendar: matches = item.starts != nil && !item.completed
-            }
-            return matches
-        }.sorted { $0.priority == $1.priority ? $0.id < $1.id : $0.priority < $1.priority }
-    }
     func navigate(_ destination: WorkspaceDestination) {
         self.destination = destination; selectedID = nil; refresh()
     }
     func shiftDate(_ direction: Int) {
         let component: Calendar.Component = calendarMode == .month ? .month : .day
         date = Calendar.current.date(byAdding: component, value: direction * (calendarMode == .week ? 7 : 1), to: date) ?? date
-    }
-    var days: [Date] {
-        var calendar = Calendar.current; calendar.firstWeekday = 2
-        let start: Date, count: Int
-        switch calendarMode {
-        case .day: start = calendar.startOfDay(for: date); count = 1
-        case .week: start = calendar.dateInterval(of: .weekOfYear, for: date)!.start; count = 7
-        case .month:
-            let month = calendar.dateInterval(of: .month, for: date)!.start
-            start = calendar.dateInterval(of: .weekOfYear, for: month)!.start
-            let end = calendar.date(byAdding: .month, value: 1, to: month)!
-            let days = calendar.dateComponents([.day], from: start, to: end).day!
-            count = ((days + 6) / 7) * 7
-        }
-        return (0..<count).compactMap { calendar.date(byAdding: .day, value: $0, to: start) }
     }
 }
