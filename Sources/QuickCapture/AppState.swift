@@ -47,7 +47,6 @@ final class AppState: ObservableObject {
         static let tagHues                = "tagHues"
     }
 
-    @Published var captureProjectID: String?
     @Published var captureRecoveryBlocked = false
     var captureSubmissionActive = false
     var captureImportRecoveryID: String?

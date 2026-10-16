@@ -150,3 +150,37 @@ week view. Visual inspection identified an oversized week header and a month
 separator orientation issue; both were corrected, rebuilt and installed. The
 final spacing check and live D/M check await reopening the capture panel after
 that last restart. D/W/M routing is covered by the passing unit tests.
+
+
+## Hidden source markers and no project capture — 16 October 2026
+
+Delivered items carry a trailing `<!--qc-source:…-->` identity (ADR-0008). The
+editor used to reveal it on the cursor line; it is now never shown, on any line,
+and a transaction filter keeps edits off it: text typed at the end of a line
+lands before the marker, Enter opens the new line after it, delete-to-end and
+join keep the identity, and only deleting the whole line removes it. The rules
+live in `editor-web/src/source-marker.ts` with 17 node tests written first.
+
+The "Capture in" project picker, the Projects "Capture Here" button, their
+shared setting, the project branch in the capture save path and the project
+field on recovery drafts were removed top-down, suite green after each cut. The
+compiler caught one over-reach: the Projects task field shared the store's
+capture method, which now survives as `addTask` with its own test. One new
+Swift test checks a draft saved by the previous build, with its project field,
+still loads. A repo-wide grep for the removed names and strings is clean.
+
+- Editor tests: 27 passed. Swift suite: 276 executed, 273 passed, 3 opt-in
+  tests skipped.
+- An independent review of the diff found the guard rewrote the caret for any
+  change on a delivered line, even one it had not altered, which would have
+  moved the caret on checkbox toggle, ⌘L, Tab and vim operators. Fixed with a
+  test; the re-org and priority code now read the one marker grammar instead of
+  hand copies, and the guard carries the history annotations through.
+- Chrome harness against the built bundle, driving the real CodeMirror view:
+  markers invisible on task, priority and note lines; the five edit rules, the
+  caret after each, and the three review cases confirmed.
+- Signed with the same Apple Development identity as the previous install and
+  installed to `~/Applications` after backing up the app, inbox and support
+  folder. Still to check by eye in the installed app: vim `A` and `$` on a
+  delivered line, the capture box with no picker, and the two calendar checks
+  carried over from 15 October (final spacing, live D/M switch).

@@ -102,17 +102,10 @@ final class ProjectStore: ObservableObject {
             try ProjectFiles.write(text, project: project, expected: expected)
         } catch { message = error.localizedDescription }
     }
-    func capture(_ text: String, tag: String?, attachments: [URL], project: DiskProject) throws {
-        guard tag?.lowercased() != "cal" else { throw HandoffError.invalid("For calendar events, choose the main inbox as the capture destination. Project calendar capture is not available yet.") }
+    func addTask(_ text: String, project: DiskProject) throws {
         let old = try ProjectFiles.read(project)
-        var block = FileWriter.todoLine(text, includeTimestamp: false)
-        for file in attachments {
-            let path = try AttachmentStore.copy(file, besideFile: project.file)
-            block += "\n" + FileWriter.attachmentChildLine(path)
-        }
-        let section = (tag?.isEmpty == false) ? tag! : "Inbox"
-        guard !section.contains("\n"), !section.contains("\r") else { throw HandoffError.invalid("Use a single-line tag.") }
-        try ProjectFiles.write(ProjectDocument.appending(block, section: section, to: old), project: project, expected: old)
+        let line = FileWriter.todoLine(text, includeTimestamp: false)
+        try ProjectFiles.write(ProjectDocument.appending(line, section: "Inbox", to: old), project: project, expected: old)
     }
 
     func start() {

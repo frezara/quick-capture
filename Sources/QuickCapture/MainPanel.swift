@@ -504,11 +504,7 @@ final class MainPanel: NSPanel {
         if workspaceHost == nil {
             let host = NSHostingView(rootView: WorkspaceView(model: workspaceModel,
                 onCapture: { [weak self] in self?.closeWorkspace() },
-                onEditor: { [weak self] in self?.openEditor() },
-                onProjectCapture: { [weak self] id in
-                    self?.appState.captureProjectID = id
-                    self?.closeWorkspace()
-                }))
+                onEditor: { [weak self] in self?.openEditor() }))
             host.frame = container.bounds
             host.autoresizingMask = [.width, .height]
             container.addSubview(host)

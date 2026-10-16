@@ -3,7 +3,6 @@ import AppKit
 
 struct ProjectsView: View {
     @ObservedObject private var store = ProjectStore.shared
-    let onCapture: (String) -> Void
     @State private var selected: String?
     @State private var tab = "Overview"
     @State private var content = ""
@@ -83,7 +82,6 @@ struct ProjectsView: View {
                 }
                 Spacer()
                 Button("Open Folder") { NSWorkspace.shared.open(project.folderURL) }
-                Button("Capture Here") { onCapture(project.id) }
             }
             HStack {
                 Label(project.conflict != nil ? "Sync conflict" : project.pending != nil ? "Sync queued" : project.baseline != nil ? "Synced" : "Local · waiting to sync",
@@ -194,7 +192,7 @@ struct ProjectsView: View {
     }
     private func addTask(_ project: DiskProject) {
         guard !taskText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
-        do { try store.capture(taskText, tag: nil, attachments: [], project: project); taskText = ""; reload() }
+        do { try store.addTask(taskText, project: project); taskText = ""; reload() }
         catch { store.message = error.localizedDescription }
     }
     private func markdown(_ project: DiskProject) -> some View {

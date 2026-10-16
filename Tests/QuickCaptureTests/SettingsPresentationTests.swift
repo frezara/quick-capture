@@ -10,7 +10,6 @@ final class SettingsPresentationTests: XCTestCase {
         let panel = try XCTUnwrap(NSApp.windows.compactMap { $0 as? MainPanel }.first { $0.isVisible })
         let attachment = URL(fileURLWithPath: "/tmp/settings-draft-attachment.png")
         delegate.appState.pendingAttachments = [attachment]
-        delegate.appState.captureProjectID = "draft-project"
         let comma = try XCTUnwrap(NSEvent.keyEvent(with: .keyDown, location: .zero,
             modifierFlags: .command, timestamp: 0, windowNumber: panel.windowNumber,
             context: nil, characters: ",", charactersIgnoringModifiers: ",", isARepeat: false, keyCode: 43))
@@ -24,7 +23,6 @@ final class SettingsPresentationTests: XCTestCase {
         XCTAssertFalse(settings.isVisible, "Summoning capture must hide Settings")
         XCTAssertTrue(panel.isVisible)
         XCTAssertEqual(delegate.appState.pendingAttachments, [attachment])
-        XCTAssertEqual(delegate.appState.captureProjectID, "draft-project")
         XCTAssertFalse(settings.isRestorable)
         panel.orderOut(nil)
         settings.orderOut(nil)

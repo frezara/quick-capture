@@ -169,6 +169,19 @@ final class HandoffTests: XCTestCase {
         try CaptureRecovery.remove(first.id, root: location)
         XCTAssertEqual(CaptureRecovery.drafts(root: location).first?.text, "second")
     }
+    func testDraftSavedWithRetiredProjectFieldStillLoads() throws {
+        let location = root.appendingPathComponent("recovery")
+        let id = UUID().uuidString
+        let folder = location.appendingPathComponent(id)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let legacy = """
+        {"id":"\(id)","text":"typed before upgrade","tag":"work","attachments":[],"projectID":"/Users/me/Projects/old"}
+        """
+        try Data(legacy.utf8).write(to: folder.appendingPathComponent("draft.json"))
+        let drafts = CaptureRecovery.drafts(root: location)
+        XCTAssertEqual(drafts.map(\.text), ["typed before upgrade"])
+        XCTAssertEqual(drafts.first?.tag, "work")
+    }
     func testRealSpoolReceiverRoundTripAndLostAcknowledgement() async throws {
         let repo = URL(fileURLWithPath: #filePath).deletingLastPathComponent().deletingLastPathComponent().deletingLastPathComponent()
         let spool = root.appendingPathComponent("spool")

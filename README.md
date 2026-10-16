@@ -139,8 +139,9 @@ If the root inbox is missing at registration, Quick Capture creates a template.
   Moving a task preserves its indented notes and file references.
 - **Markdown:** edit the complete root `inbox.md`. Unsaved drafts are retained
   locally across restarts. Save checks that the on-disk version hasn't changed.
-- **Capture Here:** return to quick capture with this project selected. The
-  capture destination menu also lets you choose a project or the main inbox.
+
+Quick capture always writes to the main inbox; add project tasks from the Tasks
+tab, or refile them from the editor.
 
 The folder is the project; its root `inbox.md` is the source of truth. With sync
 enabled, the database holds that Markdown as one versioned `project` document.

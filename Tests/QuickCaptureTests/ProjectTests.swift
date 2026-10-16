@@ -70,13 +70,12 @@ final class ProjectTests: XCTestCase {
         XCTAssertTrue(try ProjectFiles.read(project).contains("External edit"))
         XCTAssertEqual(ProjectStore(root: storeURL).draft(for: project)?.text, "My unsaved draft")
     }
-    func testCaptureWritesOnlySelectedRootInbox() throws {
+    func testAddTaskWritesOnlyThatProjectInbox() throws {
         let store = ProjectStore(root: root.appendingPathComponent("registry"))
         let a = try store.create(parent: root, name: "A"), b = try store.create(parent: root, name: "B")
-        try store.capture("Do this", tag: nil, attachments: [], project: a)
+        try store.addTask("Do this", project: a)
         XCTAssertTrue(try ProjectFiles.read(a).contains("- [ ] Do this"))
         XCTAssertFalse(try ProjectFiles.read(b).contains("Do this"))
-        XCTAssertThrowsError(try store.capture("Meeting tomorrow", tag: "cal", attachments: [], project: a))
     }
     func testLiveWholeInboxSyncAndConcurrentEdits() async throws {
         let env = ProcessInfo.processInfo.environment

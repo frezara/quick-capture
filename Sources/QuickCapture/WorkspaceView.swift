@@ -5,7 +5,6 @@ struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
     let onCapture: () -> Void
     let onEditor: () -> Void
-    let onProjectCapture: (String) -> Void
     private let refresh = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     var body: some View {
@@ -37,7 +36,7 @@ struct WorkspaceView: View {
             .background(.regularMaterial)
             Divider()
             if model.destination == .projects {
-                ProjectsView(onCapture: onProjectCapture)
+                ProjectsView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.destination == .calendar {
                 NativeCalendarView(model: model, onCapture: onCapture)
