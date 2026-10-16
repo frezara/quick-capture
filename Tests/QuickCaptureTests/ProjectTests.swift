@@ -138,4 +138,23 @@ final class ProjectTests: XCTestCase {
         XCTAssertEqual(ProjectDocument(text: captured).tasks.count, 1)
     }
 
+    func testSummaryCountsOpenTasksAndNamesTheNextAction() {
+        let text = "# Inbox\n## Project\nStatus: Paused\n## Backlog\n- [ ] Someday\n## Doing\n- [ ] Write intro\n## Next\n- [ ] Draft outline\n## Done\n- [x] Pick a name\n"
+        let summary = ProjectSummary(text: text)
+        XCTAssertEqual(summary.line, "Paused · 3 open")
+        XCTAssertEqual(summary.nextAction, "Write intro")
+    }
+
+    func testSummaryOfAFreshTemplateHasNoNextAction() {
+        let summary = ProjectSummary(text: ProjectDocument.template(name: "Fresh"))
+        XCTAssertEqual(summary.line, "Active · 0 open")
+        XCTAssertNil(summary.nextAction)
+    }
+
+    func testSummaryOfAnUnreadableInboxSaysSo() {
+        let summary = ProjectSummary(text: nil)
+        XCTAssertEqual(summary.line, "Inbox unavailable")
+        XCTAssertNil(summary.nextAction)
+    }
+
 }

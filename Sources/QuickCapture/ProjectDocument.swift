@@ -14,9 +14,19 @@ struct ProjectTask: Identifiable {
 }
 
 /// Management views are projections of a single readable Markdown document.
+/// Parsed once at init: views read `tasks`, `status` and `goal` many times per
+/// render, and re-scanning the whole inbox on each read made typing lag.
 struct ProjectDocument {
     let text: String
-    var lines: [String] { text.components(separatedBy: "\n") }
+    let lines: [String]
+    let overview: [String: String]
+    let tasks: [ProjectTask]
+    init(text: String) {
+        self.text = text
+        lines = text.components(separatedBy: "\n")
+        overview = Self.parseOverview(lines)
+        tasks = Self.parseTasks(lines)
+    }
     private static func outsideFences(_ lines: [String]) -> Set<Int> {
         var fence: String?, visible = Set<Int>()
         for (index, line) in lines.enumerated() {
@@ -28,9 +38,9 @@ struct ProjectDocument {
         }
         return visible
     }
-    var overview: [String: String] {
+    private static func parseOverview(_ lines: [String]) -> [String: String] {
         var active = false, values: [String: String] = [:]
-        let lines = lines, visible = Self.outsideFences(lines)
+        let visible = outsideFences(lines)
         for (index, line) in lines.enumerated() where visible.contains(index) {
             if line.hasPrefix("## ") { active = line == "## Project"; continue }
             guard active, let colon = line.firstIndex(of: ":") else { continue }
@@ -40,8 +50,7 @@ struct ProjectDocument {
     }
     var status: String { overview["Status"] ?? "Active" }
     var goal: String { overview["Goal"] ?? "" }
-    var tasks: [ProjectTask] {
-        let lines = lines
+    private static func parseTasks(_ lines: [String]) -> [ProjectTask] {
         var section = "Inbox", fence: String?, result: [ProjectTask] = []
         for (index, line) in lines.enumerated() {
             let trimmed = line.trimmingCharacters(in: .whitespaces)
@@ -93,6 +102,19 @@ struct ProjectDocument {
     }
     static func template(name: String) -> String {
         "# Inbox\n\n## Project\nName: \(name)\nStatus: Active\nGoal: \n\n## Inbox\n\n## Backlog\n\n## Next\n\n## Doing\n\n## Blocked\n\n## Done\n\n## Notes\n"
+    }
+}
+
+/// What a sidebar row shows for one project, built when its inbox is read
+/// rather than in the row's `body`.
+struct ProjectSummary: Equatable {
+    let line: String
+    let nextAction: String?
+    init(text: String?) {
+        guard let text else { line = "Inbox unavailable"; nextAction = nil; return }
+        let document = ProjectDocument(text: text)
+        line = "\(document.status) · \(document.tasks.filter { $0.status != .done }.count) open"
+        nextAction = document.tasks.first { $0.status == .next || $0.status == .doing }?.title
     }
 }
 
