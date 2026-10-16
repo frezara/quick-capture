@@ -184,3 +184,33 @@ still loads. A repo-wide grep for the removed names and strings is clean.
   folder. Still to check by eye in the installed app: vim `A` and `$` on a
   delivered line, the capture box with no picker, and the two calendar checks
   carried over from 15 October (final spacing, live D/M switch).
+
+
+## Source identity beside the editor text — 16 October 2026
+
+Supersedes the hidden-marker guard from earlier today, which still fought vim
+motions. Markers now never enter the editor buffer: stripped on load, tracked
+per line through every edit, serialised back at every boundary to Swift.
+Recorded as an amendment to ADR-0008, including the same-session text-match
+recovery that keeps identity through `dd`/`p` and undo. The guard, the hidden
+atomic decoration and their tests were deleted.
+
+- Editor tests: 26 passed, 17 of them new for strip/serialise, identity
+  through split, join, delete, move, copy and replace-all, duplicate detection,
+  and typing never reclaiming an identity. Swift suite: 276 executed, 0
+  failures, 3 opt-in skips.
+- An independent review traced the design against real CodeMirror commands
+  and found text-match recovery too weak for undo: undoing a re-org or a line
+  move lost or swapped identities, Alt-Down dropped one, a freshly typed line
+  could take a deleted item's identity, and the sidebar's "Send this copy as
+  new" label could go stale. Undo and redo now restore the exact identity map
+  through CodeMirror's history; text-match recovery is limited to pastes and
+  moves and runs over every line a transaction touched; two identities on one
+  line count as a duplicate. Each case re-run in Chrome: Alt-Down, re-org with
+  identical lines and a checked priority item, `dd` then typing, and undo of
+  each, all restoring the file byte for byte.
+- Chrome harness, real vim key handling: `$` lands on the last visible
+  character, `x`, `A`, `J` and `D` behave natively and keep identities, and
+  three undos restored a joined and a deleted line with their identities.
+  Chrome blocks clipboard reads, so `p` could not paste there; the recovery it
+  relies on is covered by the unit tests and should be checked in the app.

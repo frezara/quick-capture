@@ -2,130 +2,140 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { build } from 'esbuild';
 const result = await build({ entryPoints: ['src/source-marker.ts'], bundle: true, write: false, format: 'esm', platform: 'node' });
-const { trailingMarkerSpan } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+const { strip, serialise, sourceIDs, mapIdentities, recoverIdentities, hasDuplicateIdentity } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
 
 const ID = '4457a173-9f6c-4efe-97ce-d9e0701e29df';
+const M = ` <!--qc-source:${ID}-->`;
+const M2 = M.replace('4457', '9999');
 
-test('a delivered task ends in a source marker span that includes the space before it', () => {
-    const line = `- [ ] lunch at 3pm <!--qc-source:${ID}-->`;
-    assert.deepEqual(trailingMarkerSpan(line), { from: '- [ ] lunch at 3pm'.length, to: line.length });
+// ---- Strip and serialise -------------------------------------------------
+
+test('stripping takes trailing markers out of the text and remembers their lines', () => {
+    const file = `# Inbox\n- [ ] lunch${M}\n- [ ] plain !!\n- [ ] plan !!!${M2}`;
+    const { text, marks } = strip(file);
+    assert.equal(text, '# Inbox\n- [ ] lunch\n- [ ] plain !!\n- [ ] plan !!!');
+    assert.deepEqual(marks, [{ line: 1, run: M }, { line: 3, run: M2 }]);
 });
-test('legacy creation tokens and stacked markers form one trailing span', () => {
-    const line = `- [ ] task ➕ 2026-10-15 09:00 <!--qc:abc--> <!--qc-source:${ID}-->`;
-    assert.deepEqual(trailingMarkerSpan(line), { from: '- [ ] task ➕ 2026-10-15 09:00'.length, to: line.length });
+test('serialising puts every marker back byte for byte, legacy tokens included', () => {
+    const file = `# Inbox\n- [ ] old ➕ 2026-10-15 09:00 <!--qc:abc-->${M}  \n- [ ] note <!-- ordinary comment -->\n`;
+    const { text, marks } = strip(file);
+    assert.equal(text, '# Inbox\n- [ ] old ➕ 2026-10-15 09:00\n- [ ] note <!-- ordinary comment -->\n');
+    assert.equal(serialise(text, marks), file);
 });
-test('lines without a trailing marker have no span', () => {
-    assert.equal(trailingMarkerSpan('- [ ] plain task !!'), null);
-    assert.equal(trailingMarkerSpan(`- [ ] a <!--qc-source:${ID}--> b`), null);
-    assert.equal(trailingMarkerSpan('<!-- an ordinary html comment -->'), null);
+test('markers in the middle of a line are left as text', () => {
+    const file = `- [ ] a${M} b`;
+    assert.deepEqual(strip(file), { text: file, marks: [] });
+});
+test('the source identities of a mark list are read from their runs', () => {
+    assert.deepEqual(sourceIDs([{ line: 0, run: ` <!--qc:abc-->${M}` }, { line: 2, run: ' <!--qc:old-->' }]), [ID, null]);
 });
 
-const { confineChange } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
+// ---- Identity through a change --------------------------------------------
 
-/** A minimal stand-in for CodeMirror's Text: lineAt(pos) and length. */
 function doc(text) {
     const lines = []; let from = 0;
-    for (const t of text.split('\n')) { lines.push({ from, to: from + t.length, text: t }); from += t.length + 1; }
-    return { length: text.length, lineAt: pos => lines.find(l => pos >= l.from && pos <= l.to) ?? lines[lines.length - 1] };
+    text.split('\n').forEach((t, i) => { lines.push({ from, to: from + t.length, text: t, number: i + 1 }); from += t.length + 1; });
+    return { lineAt: pos => lines.find(l => pos >= l.from && pos <= l.to), line: n => lines[n - 1] };
 }
-function apply(text, changes) {
-    let out = text, shift = 0;
-    for (const c of [...changes].sort((a, b) => a.from - b.from)) {
-        out = out.slice(0, c.from + shift) + c.insert + out.slice(c.to + shift);
-        shift += c.insert.length - (c.to - c.from);
-    }
-    return out;
+/** One change, then recovery over the lines it touched, as a paste or move would get. */
+function edit(text, ids, change, { typing = false } = {}) {
+    const next = text.slice(0, change.from) + change.insert + text.slice(change.to);
+    let mapped = mapIdentities(doc(text), ids, change);
+    if (!typing) mapped = recoverIdentities(doc(next), mapped, touched(next, change.from, change.from + change.insert.length));
+    return { text: next, ids: mapped };
 }
-const M = `<!--qc-source:${ID}-->`;
+function touched(text, from, to) {
+    const first = text.slice(0, from).split('\n').length - 1, last = text.slice(0, to).split('\n').length - 1;
+    return Array.from({ length: last - first + 1 }, (_, i) => first + i);
+}
+const start = (file) => { const { text, marks } = strip(file); return { text, ids: { marks, graveyard: [] } }; };
+const at = (s, i) => s.ids.marks.find(m => m.line === i)?.run ?? null;
 
-test('typing at the end of a delivered line lands before its marker', () => {
-    const text = `- [ ] lunch ${M}\n- [ ] other`;
-    const changes = confineChange(doc(text), { from: `- [ ] lunch ${M}`.length, to: `- [ ] lunch ${M}`.length, insert: ' now' });
-    assert.equal(apply(text, changes), `- [ ] lunch now ${M}\n- [ ] other`);
+test('typing on a line keeps its identity, and lines below shift with an inserted line', () => {
+    let s = start(`- [ ] lunch${M}\n- [ ] plan${M2}`);
+    s = edit(s.text, s.ids, { from: 11, to: 11, insert: ' now' });
+    assert.equal(at(s, 0), M);
+    s = edit(s.text, s.ids, { from: 0, to: 0, insert: '- [ ] new\n' });
+    assert.equal(at(s, 1), M); assert.equal(at(s, 2), M2); assert.equal(at(s, 0), null);
 });
-
-test('Enter at the end of a delivered line opens the new line after the marker', () => {
-    const text = `- [ ] lunch ${M}`;
-    const changes = confineChange(doc(text), { from: text.length, to: text.length, insert: '\n- [ ] ' });
-    assert.equal(apply(text, changes), `- [ ] lunch ${M}\n- [ ] `);
+test('Enter mid-line keeps the identity on the first half', () => {
+    let s = start(`- [ ] lunch at 3pm${M}`);
+    s = edit(s.text, s.ids, { from: 11, to: 11, insert: '\n- [ ] ' });
+    assert.equal(s.text, '- [ ] lunch\n- [ ]  at 3pm');
+    assert.equal(at(s, 0), M); assert.equal(at(s, 1), null);
 });
-test('deleting to the end of the line stops at the marker', () => {
-    const text = `- [ ] lunch at 3pm ${M}`;
-    const changes = confineChange(doc(text), { from: '- [ ] lunch'.length, to: text.length, insert: '' });
-    assert.equal(apply(text, changes), `- [ ] lunch ${M}`);
+test('a line opened above with O pushes the identity down with its text', () => {
+    let s = start(`- [ ] lunch${M}`);
+    s = edit(s.text, s.ids, { from: 0, to: 0, insert: '- [ ] above\n' });
+    assert.equal(at(s, 1), M); assert.equal(at(s, 0), null);
 });
-test('deleting the whole line takes the marker with it', () => {
-    const text = `- [ ] lunch ${M}\n- [ ] other ${M}`;
-    const changes = confineChange(doc(text), { from: 0, to: `- [ ] lunch ${M}\n`.length, insert: '' });
-    assert.equal(apply(text, changes), `- [ ] other ${M}`);
+test('J keeps the first line identity and drops the second', () => {
+    let s = start(`- [ ] lunch${M}\n  other${M2}`);
+    s = edit(s.text, s.ids, { from: 11, to: 14, insert: ' ' });
+    assert.equal(s.text, '- [ ] lunch other');
+    assert.deepEqual(s.ids.marks, [{ line: 0, run: M }]);
 });
-test('joining the next line pulls its text in front of the marker and drops its own identity', () => {
-    const text = `- [ ] lunch ${M}\n  other ${M.replace('4457', '9999')}`;
-    const lineEnd = `- [ ] lunch ${M}`.length;
-    const changes = confineChange(doc(text), { from: lineEnd, to: lineEnd + '\n  '.length, insert: ' ' });
-    assert.equal(apply(text, changes), `- [ ] lunch other ${M}`);
+test('dd drops the identity of the deleted line and moves the next one up', () => {
+    let s = start(`- [ ] lunch${M}\n- [ ] plan${M2}`);
+    s = edit(s.text, s.ids, { from: 0, to: 12, insert: '' });
+    assert.deepEqual(s.ids.marks, [{ line: 0, run: M2 }]);
 });
-test('a replacement reaching into the next line keeps the first identity at the end', () => {
-    const text = `- [ ] lunch ${M}\n- [ ] other`;
-    const from = '- [ ] lun'.length, to = `- [ ] lunch ${M}\n- [ ] ot`.length;
-    const changes = confineChange(doc(text), { from, to, insert: 'x' });
-    assert.equal(apply(text, changes), `- [ ] lunxher ${M}`);
+test('dd on the last line drops only that line identity', () => {
+    let s = start(`- [ ] lunch${M}\n- [ ] plan${M2}`);
+    s = edit(s.text, s.ids, { from: 11, to: 22, insert: '' });
+    assert.deepEqual(s.ids.marks, [{ line: 0, run: M }]);
 });
-test('edits on lines without a marker pass through untouched', () => {
-    const text = `- [ ] plain\n- [ ] other ${M}`;
-    const change = { from: 5, to: 11, insert: 'edited' };
-    assert.deepEqual(confineChange(doc(text), change), [change]);
+test('dd then p moves an item and it keeps its identity', () => {
+    let s = start(`- [ ] lunch${M}\n- [ ] plan`);
+    s = edit(s.text, s.ids, { from: 0, to: 12, insert: '' });          // dd
+    s = edit(s.text, s.ids, { from: 10, to: 10, insert: '\n- [ ] lunch' }); // p
+    assert.equal(s.text, '- [ ] plan\n- [ ] lunch');
+    assert.deepEqual(s.ids.marks, [{ line: 1, run: M }]);
 });
-test('typing just before the marker is already in place', () => {
-    const text = `- [ ] lunch ${M}`;
-    const change = { from: '- [ ] lunch'.length, to: '- [ ] lunch'.length, insert: '!' };
-    assert.deepEqual(confineChange(doc(text), change), [change]);
+test('undo of J restores the second line identity', () => {
+    let s = start(`- [ ] lunch${M}\n  other${M2}`);
+    s = edit(s.text, s.ids, { from: 11, to: 14, insert: ' ' });
+    s = edit(s.text, s.ids, { from: 11, to: 12, insert: '\n  ' });
+    assert.deepEqual(s.ids.marks, [{ line: 0, run: M }, { line: 1, run: M2 }]);
 });
-test('a selection ending inside a later marked line keeps that line identity', () => {
-    const text = `- [ ] plain\n- [ ] other ${M}`;
-    const from = '- [ ] pl'.length, to = `- [ ] plain\n- [ ] ot`.length;
-    assert.equal(apply(text, confineChange(doc(text), { from, to, insert: '' })), `- [ ] plher ${M}`);
+test('a copied line never takes an identity that is still in use', () => {
+    let s = start(`- [ ] lunch${M}`);
+    s = edit(s.text, s.ids, { from: 11, to: 11, insert: '\n- [ ] lunch' }); // yy p
+    assert.deepEqual(s.ids.marks, [{ line: 0, run: M }]);
 });
-
-const { confineEdit } = await import(`data:text/javascript;base64,${Buffer.from(result.outputFiles[0].text).toString('base64')}`);
-
-test('confineEdit places the caret after typed text, before the marker', () => {
-    const text = `- [ ] lunch ${M}`;
-    const { changes, cursor } = confineEdit(doc(text), { from: text.length, to: text.length, insert: ' now' });
-    assert.equal(apply(text, changes), `- [ ] lunch now ${M}`);
-    assert.equal(cursor, '- [ ] lunch now'.length);
-});
-test('confineEdit leaves Enter at the end of a marked line to the editor', () => {
-    const text = `- [ ] lunch ${M}`;
-    const enter = { from: text.length, to: text.length, insert: '\n- [ ] ' };
-    assert.deepEqual(confineEdit(doc(text), enter), { changes: [enter], cursor: null });
-});
-test('confineEdit places the caret at the join point when lines merge', () => {
-    const text = `- [ ] lunch ${M}\n  other`;
-    const lineEnd = `- [ ] lunch ${M}`.length;
-    const { changes, cursor } = confineEdit(doc(text), { from: lineEnd, to: lineEnd + 3, insert: ' ' });
-    assert.equal(apply(text, changes), `- [ ] lunch other ${M}`);
-    assert.equal(cursor, '- [ ] lunch '.length);
-});
-test('confineEdit places the caret at the deletion point when deleting to end of line', () => {
-    const text = `- [ ] lunch at 3pm ${M}`;
-    const { cursor } = confineEdit(doc(text), { from: '- [ ] lunch'.length, to: text.length, insert: '' });
-    assert.equal(cursor, '- [ ] lunch'.length);
-});
-test('confineEdit reports no caret for untouched edits', () => {
-    const text = `- [ ] plain`;
-    const { changes, cursor } = confineEdit(doc(text), { from: 5, to: 5, insert: 'x' });
-    assert.deepEqual(changes, [{ from: 5, to: 5, insert: 'x' }]);
-    assert.equal(cursor, null);
+test('replacing everything and undoing it brings every identity back', () => {
+    const file = `- [ ] lunch${M}\n- [ ] plain\n- [ ] plan${M2}`;
+    let s = start(file);
+    const original = s.text;
+    s = edit(s.text, s.ids, { from: 0, to: original.length, insert: 'x' });
+    assert.deepEqual(s.ids.marks, []);
+    s = edit(s.text, s.ids, { from: 0, to: 1, insert: original });
+    assert.equal(serialise(s.text, s.ids.marks), file);
 });
 
-test('confineEdit reports no caret when a change on a marked line needed no confining', () => {
-    const text = `- [ ] lunch ${M}`;
-    const toggle = { from: 3, to: 4, insert: 'x' };
-    assert.deepEqual(confineEdit(doc(text), toggle), { changes: [toggle], cursor: null });
-    const indent = { from: 0, to: 0, insert: '    ' };
-    assert.deepEqual(confineEdit(doc(text), indent), { changes: [indent], cursor: null });
-    const lineAbove = `- [ ] plain\n${text}`;
-    const dd = { from: 0, to: '- [ ] plain\n'.length, insert: '' };
-    assert.deepEqual(confineEdit(doc(lineAbove), dd), { changes: [dd], cursor: null });
+test('a freshly typed line never takes a deleted item identity', () => {
+    let s = start(`- [ ] call${M}\n- [ ] plan`);
+    s = edit(s.text, s.ids, { from: 0, to: 11, insert: '' });
+    for (const ch of '\n- [ ] call') s = edit(s.text, s.ids, { from: s.text.length, to: s.text.length, insert: ch }, { typing: true });
+    assert.deepEqual(s.ids.marks, []);
+});
+test('moving a line down in one transaction keeps both identities', () => {
+    // Alt-Down on line 0: CodeMirror inserts "b\n" above, then deletes the old "b" line.
+    const file = `- [ ] a${M}\n- [ ] b${M2}\n- [ ] c`;
+    let { text, marks } = strip(file);
+    let ids = { marks, graveyard: [] };
+    const c1 = { from: 0, to: 0, insert: '- [ ] b\n' };
+    const t1 = text.slice(0, c1.from) + c1.insert + text.slice(c1.to);
+    ids = mapIdentities(doc(text), ids, c1);
+    const c2 = { from: t1.indexOf('\n- [ ] b', 8), to: t1.indexOf('\n- [ ] c'), insert: '' };
+    const t2 = t1.slice(0, c2.from) + c2.insert + t1.slice(c2.to);
+    ids = mapIdentities(doc(t1), ids, c2);
+    ids = recoverIdentities(doc(t2), ids, [0, 1]);
+    assert.equal(t2, '- [ ] b\n- [ ] a\n- [ ] c');
+    assert.deepEqual(ids.marks, [{ line: 0, run: M2 }, { line: 1, run: M }]);
+});
+test('two identities on one line count as a duplicate', () => {
+    assert.equal(hasDuplicateIdentity([{ line: 0, run: `${M}${M2}` }], 0), true);
+    assert.equal(hasDuplicateIdentity([{ line: 0, run: M }, { line: 3, run: M }], 0), true);
+    assert.equal(hasDuplicateIdentity([{ line: 0, run: M }, { line: 3, run: M2 }], 0), false);
 });

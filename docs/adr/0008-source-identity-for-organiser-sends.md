@@ -18,3 +18,22 @@ The implementation plan specifies marker syntax and snapshot representation;
 these must preserve user-authored Markdown and tolerate legacy creation tokens.
 
 Accepted during integration planning on 15 October 2026; implementation pending.
+
+## Amendment — 16 October 2026: identity lives beside the editor's text
+
+The marker stays in the file exactly as specified, but the editor no longer
+holds it in its buffer. Hiding real text inside the buffer broke vim: every
+line-end motion and edit collided with characters the user could not see. On
+load the editor strips markers, tracks which line owns each one through every
+edit, and writes them back for every save, refile and send. Swift, sync and the
+file format are unchanged. Syncing the inbox as one document, as projects and
+Obsidian do, was rejected: it would lose per-item identity for reminders and
+calendar events.
+
+One narrow exception to "matching text is never sufficient to recover
+identity": within one editor session, a line whose identity was deleted or
+joined away gets it back if a line with exactly the same text reappears and no
+other line holds that identity. Without it, moving an item with `dd`/`p`, or
+undoing a deletion, would turn an edit into a delete plus a new organiser item
+and drop its reminder. The exception never applies across reloads, and never
+lets two lines share an identity.

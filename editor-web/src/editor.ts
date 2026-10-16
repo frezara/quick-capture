@@ -1,11 +1,11 @@
 import { DocumentSession } from "./document-session";
-import { trailingMarkerSpan, confineEdit, Change } from "./source-marker";
-import { EditorState, EditorSelection, ChangeSet, Transaction, Annotation, RangeSetBuilder, Compartment, StateEffect, StateField } from "@codemirror/state";
+import { strip, serialise, sourceIDs, mapIdentities, recoverIdentities, hasDuplicateIdentity, Identities, Mark } from "./source-marker";
+import { EditorState, Text, RangeSetBuilder, Compartment, StateEffect, StateField } from "@codemirror/state";
 import {
     EditorView, keymap, drawSelection, highlightActiveLine,
     WidgetType, Decoration, DecorationSet, ViewPlugin, ViewUpdate,
 } from "@codemirror/view";
-import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertTab } from "@codemirror/commands";
+import { defaultKeymap, history, historyKeymap, indentMore, indentLess, insertTab, invertedEffects } from "@codemirror/commands";
 import { search, searchKeymap } from "@codemirror/search";
 import { markdown, markdownLanguage } from "@codemirror/lang-markdown";
 import { languages } from "@codemirror/language-data";
@@ -581,21 +581,6 @@ function buildLivePreview(view: EditorView): DecorationSet {
                 continue;
             }
 
-            // Source markers (`<!--qc-source:…-->`, and legacy `<!--qc:…-->`
-            // creation tokens) are the item's organiser identity, never its
-            // content: hidden on every line, cursor or not, and atomic so the
-            // caret steps over them. `sourceMarkerGuard` keeps edits off them.
-            // `contentEnd` is the line length minus the marker run, so the
-            // priority/label logic below ignores the marker entirely.
-            const markerSpan = trailingMarkerSpan(line.text);
-            const contentEnd = markerSpan ? line.from + markerSpan.from : line.to;
-            if (markerSpan && markerSpan.to > markerSpan.from) {
-                ranges.push({
-                    from: contentEnd, to: line.to,
-                    deco: Decoration.replace({ markerAtomic: true }),
-                });
-            }
-
             const match = line.text.match(/^(\s*)([-*+]\s+)(\[[\sxX]\])/);
             if (match) {
                 const startPos = line.from + match[1].length;
@@ -616,12 +601,10 @@ function buildLivePreview(view: EditorView): DecorationSet {
                             widget: new CheckboxWidget(checked, widthInChars, taskOffset),
                         }),
                     });
-                    // Strike + mute the label of a completed task. The hidden
-                    // token is excluded (contentEnd) so the strike never spans it.
-                    const labelEnd = contentEnd;
-                    if (checked && labelEnd > endPos) {
+                    // Strike + mute the label of a completed task.
+                    if (checked && line.to > endPos) {
                         ranges.push({
-                            from: endPos, to: labelEnd,
+                            from: endPos, to: line.to,
                             deco: Decoration.mark({ class: "cm-done-label" }),
                         });
                     }
@@ -629,11 +612,8 @@ function buildLivePreview(view: EditorView): DecorationSet {
 
                 // Priority suffix: trailing ` !`/` !!`/` !!!` paints a colored
                 // dot at the far-right of the line via a ::after pseudo (line
-                // class), and hides the raw `!`s off-cursor. Matched against the
-                // line with the hidden marker stripped, so a captured
-                // `task !!! <!--qc-source:…-->` still classifies and hides correctly.
-                const priorityText = line.text.slice(0, contentEnd - line.from);
-                const priority = priorityText.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
+                // class), and hides the raw `!`s off-cursor.
+                const priority = line.text.match(/(\s+)(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 if (priority && priority.index !== undefined) {
                     const level = priority[2].length;
                     const priorityLabel = level === 3 ? "High priority (!!!)"
@@ -649,7 +629,7 @@ function buildLivePreview(view: EditorView): DecorationSet {
                     if (!onLine) {
                         const suffixStart = line.from + priority.index;
                         ranges.push({
-                            from: suffixStart, to: contentEnd,
+                            from: suffixStart, to: line.to,
                             deco: Decoration.replace({}),
                         });
                     }
@@ -662,59 +642,79 @@ function buildLivePreview(view: EditorView): DecorationSet {
 }
 
 /**
- * A source marker lives and dies with its line (ADR-0008). Every document
- * change is confined so typing at the end of a line lands before the marker,
- * Enter opens the new line after it, and deletions stop at its edge; only
- * removing the whole line removes the marker. Clicking past the end of a
- * line puts the caret before the hidden marker rather than after it.
+ * Source markers (ADR-0008) live in the file but never in the editor's text,
+ * so vim and every other command see plain lines. This field remembers which
+ * line owns which marker and maps them through every edit (see
+ * source-marker.ts); `fileText` and `fileLines` put them back for anything
+ * that leaves the editor.
+ *
+ * `setIdentities` replaces the map outright: re-org, send-as-new, and undo or
+ * redo, which restore the exact map the history recorded rather than guessing
+ * from text. `loadIdentities` also forgets the session's deleted identities,
+ * for a fresh read from disk.
  */
-const sourceMarkerGuard = EditorState.transactionFilter.of(tr => {
-    const startDoc = tr.startState.doc;
-    if (tr.docChanged) {
-        const confined: Change[] = [];
-        let cursor: number | null = null, altered = false, count = 0;
-        tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
-            count += 1;
-            const change = { from: fromA, to: toA, insert: inserted.toString() };
-            const edit = confineEdit(startDoc, change);
-            if (edit.cursor !== null) { altered = true; cursor = edit.cursor; }
-            confined.push(...edit.changes);
-        });
-        if (!altered) return tr;
-        const changes = ChangeSet.of(confined, startDoc.length);
-        // Transaction exposes no annotation list, so the ones that matter to
-        // history and collaboration are carried over by name.
-        const annotations: Annotation<unknown>[] = [];
-        const userEvent = tr.annotation(Transaction.userEvent);
-        if (userEvent !== undefined) annotations.push(Transaction.userEvent.of(userEvent));
-        const addToHistory = tr.annotation(Transaction.addToHistory);
-        if (addToHistory !== undefined) annotations.push(Transaction.addToHistory.of(addToHistory));
-        const remote = tr.annotation(Transaction.remote);
-        if (remote !== undefined) annotations.push(Transaction.remote.of(remote));
-        const selection = count === 1 && cursor !== null && tr.newSelection.ranges.length === 1
-            ? EditorSelection.cursor(cursor)
-            : tr.newSelection.map(tr.changes.invertedDesc).map(changes);
-        return {
-            changes, selection,
-            effects: tr.effects,
-            scrollIntoView: tr.scrollIntoView,
-            annotations,
-        };
-    }
-    if (tr.selection && tr.isUserEvent("select.pointer")) {
-        const ranges = tr.selection.ranges.map(range => {
-            if (!range.empty) return range;
-            const line = tr.newDoc.lineAt(range.head);
-            const span = trailingMarkerSpan(line.text);
-            const s = span ? line.from + span.from : null;
-            return s !== null && range.head > s && range.head <= line.to ? EditorSelection.cursor(s) : range;
-        });
-        if (ranges.some((r, i) => r.head !== tr.selection!.ranges[i].head)) {
-            return [tr, { selection: EditorSelection.create(ranges, tr.selection.mainIndex), sequential: true }];
+const setIdentities = StateEffect.define<Mark[]>();
+const loadIdentities = StateEffect.define<Mark[]>();
+const identityField = StateField.define<Identities>({
+    create: () => ({ marks: [], graveyard: [] }),
+    update(ids, tr) {
+        // History merges events newest-first, so the last effect is the
+        // oldest state, which is the one an undo of the whole group restores.
+        let replaced: Identities | null = null;
+        for (const e of tr.effects) {
+            if (e.is(loadIdentities)) replaced = { marks: e.value, graveyard: [] };
+            else if (e.is(setIdentities)) replaced = { marks: e.value, graveyard: ids.graveyard };
         }
-    }
-    return tr;
+        if (replaced) return replaced;
+        if (!tr.docChanged) return ids;
+        // Changes are reported in start-document coordinates; replay them one
+        // at a time against the evolving document so each sees its own before.
+        let doc: Text = tr.startState.doc, offset = 0;
+        tr.changes.iterChanges((fromA, toA, _fromB, _toB, inserted) => {
+            const change = { from: fromA + offset, to: toA + offset, insert: inserted.toString() };
+            ids = mapIdentities(doc, ids, change);
+            doc = doc.replace(change.from, change.to, inserted);
+            offset += inserted.length - (toA - fromA);
+        });
+        // Pastes and line moves can put a deleted item's exact line back;
+        // typing never does, so a new line can't take an old identity.
+        if (tr.isUserEvent("input.type") || tr.isUserEvent("input.complete")) return ids;
+        const lines: number[] = [];
+        tr.changes.iterChangedRanges((_fromA, _toA, fromB, toB) => {
+            for (let n = doc.lineAt(fromB).number; n <= doc.lineAt(toB).number; n++) lines.push(n - 1);
+        });
+        return recoverIdentities(doc, ids, lines);
+    },
 });
+
+const sameMarks = (a: Mark[], b: Mark[]) => a.length === b.length && a.every((m, i) => m.line === b[i].line && m.run === b[i].run);
+
+/** Undo and redo restore the identity map exactly as it was. */
+const identityHistory = invertedEffects.of(tr => {
+    const before = tr.startState.field(identityField).marks;
+    return sameMarks(before, tr.state.field(identityField).marks) ? [] : [setIdentities.of(before)];
+});
+
+function fileText(state: EditorState): string {
+    return serialise(state.doc.toString(), state.field(identityField).marks);
+}
+
+/** 0-based half-open line range in file form, matching Swift's line indexing. */
+function fileLines(state: EditorState, from: number, to: number): string {
+    const marks = state.field(identityField).marks;
+    const out: string[] = [];
+    for (let i = from; i < to; i++) out.push(state.doc.line(i + 1).text + (marks.find(m => m.line === i)?.run ?? ""));
+    return out.join("\n");
+}
+
+function sourceIDOnLine(state: EditorState, line: number): string | null {
+    const mark = state.field(identityField).marks.find(m => m.line === line);
+    return mark ? sourceIDs([mark])[0] : null;
+}
+
+function isDuplicated(state: EditorState, line: number): boolean {
+    return hasDuplicateIdentity(state.field(identityField).marks, line);
+}
 
 function atxHeadingLevel(name: string): number | null {
     const match = /^ATXHeading([1-6])$/.exec(name);
@@ -738,7 +738,7 @@ const livePreview = ViewPlugin.fromClass(class {
     decorations: (v) => v.decorations,
     provide: plugin => EditorView.atomicRanges.of(editor =>
         editor.plugin(plugin)?.decorations.update({
-            filter: (_from, _to, value) => value.spec.imageAtomic === true || value.spec.markerAtomic === true,
+            filter: (_from, _to, value) => value.spec.imageAtomic === true,
         }) ?? Decoration.none),
 });
 
@@ -1370,7 +1370,7 @@ let view: EditorView | null = null;
 let saveTimer: number | null = null;
 let suppressNextSave = false;
 const documentSession = new DocumentSession(
-    () => view?.state.doc.toString() ?? "",
+    () => view ? fileText(view.state) : "",
     request => sendToSwift(request),
     (message, disk) => showSaveError(message, disk),
     () => clearSaveError(),
@@ -1597,7 +1597,7 @@ function canRunItemAction(editor: EditorView): boolean {
 
 function moveCompletedToBottom(view: EditorView): void {
     if (!canRunItemAction(view)) return;
-    const original = view.state.doc.toString();
+    const original = fileText(view.state);
     const lines = original.split("\n");
 
     // Group lines into sections.
@@ -1646,23 +1646,22 @@ function moveCompletedToBottom(view: EditorView): void {
             }
             const isChecked = /[xX]/.test(taskMatch[3]);
             if (isChecked) {
-                // Split off the hidden `<!--qc:…-->` creation token first so it
-                // survives the priority-marker strip, then re-append it. Strip
-                // priority (and the `➕` group, preserved as $1) from the body.
-                const span = trailingMarkerSpan(groupLines[0]);
-                const body = span ? groupLines[0].slice(0, span.from) : groupLines[0].replace(/\s+$/, "");
-                const token = span ? groupLines[0].slice(span.from) : "";
+                // Re-org runs on file form, so split off the source marker
+                // first so it survives the priority-marker strip, then
+                // re-append it. Strip priority (and the `➕` group, preserved
+                // as $1) from the body.
+                const { text: body, marks } = strip(groupLines[0]);
+                const token = marks[0]?.run ?? "";
                 groupLines[0] = body
                     .replace(/^\s+/, "")
                     .replace(/\s+!{1,3}(\s+➕\s+\S+\s+\S+)?\s*$/, "$1")
                     + token;
                 groups.push({ bucket: 4, lines: groupLines });
             } else {
-                // Optional ` ➕ DATE TIME` timestamp tail and the hidden
-                // `<!--qc:…-->` token are tolerated, so a captured
-                // `task !!! ➕ … <!--qc:…-->` still classifies as priority 3.
-                const span = trailingMarkerSpan(line);
-                const priority = (span ? line.slice(0, span.from) : line).match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
+                // Optional ` ➕ DATE TIME` timestamp tail and the source marker
+                // are tolerated, so `task !!! ➕ … <!--qc-source:…-->` still
+                // classifies as priority 3.
+                const priority = strip(line).text.match(/\s+(!{1,3})(?:\s+➕\s+\S+\s+\S+)?\s*$/);
                 const level = priority ? priority[1].length : 0;
                 const bucket = level === 0 ? 3 : 3 - level;
                 groups.push({ bucket, lines: groupLines });
@@ -1678,8 +1677,9 @@ function moveCompletedToBottom(view: EditorView): void {
         return result;
     });
 
-    const next = processed.map(s => s.join("\n")).join("\n");
-    if (next === original) return;
+    const nextFile = processed.map(s => s.join("\n")).join("\n");
+    if (nextFile === original) return;
+    const { text: next, marks: nextMarks } = strip(nextFile);
 
     // Preserve cursor at (line, column) — without this CodeMirror remaps the
     // absolute position through the whole-doc replace, which puts the cursor
@@ -1717,6 +1717,7 @@ function moveCompletedToBottom(view: EditorView): void {
 
     view.dispatch({
         changes: { from: 0, to: view.state.doc.length, insert: next },
+        effects: setIdentities.of(nextMarks),
         selection: { anchor: newAnchor },
         scrollIntoView: false,
     });
@@ -1859,7 +1860,9 @@ function updateWorkspace(v: EditorView) {
     const item = span ? doc.line(span.from + 1).text : "";
     const priority = /(!{1,3})(?:\s|$)/.exec(item)?.[1].length ?? 0;
     v.dom.querySelectorAll<HTMLButtonElement>(".qc-inspector-actions button").forEach(button => { button.disabled = !canRunItemAction(v); });
-    const itemSignature = JSON.stringify([span?.text, active, readMode]);
+    // Identity lives beside the text, so it joins the signature: a send-as-new
+    // or a removed duplicate must refresh the label without moving the cursor.
+    const itemSignature = JSON.stringify([span?.text, active, readMode, span ? isDuplicated(v.state, span.from) : false]);
     if (detail.dataset.signature === itemSignature) return;
     detail.dataset.signature = itemSignature;
     detail.replaceChildren();
@@ -1893,8 +1896,7 @@ function updateWorkspace(v: EditorView) {
         row.append(key, text); detail.append(row);
     }
     v.dom.querySelectorAll<HTMLButtonElement>("[data-item-action]").forEach(button => { button.disabled = !span; });
-    const sourceIDs = [...(span?.text.split("\n")[0] ?? "").matchAll(/<!--qc-source:([0-9a-fA-F-]{36})-->/g)].map(m => m[1].toLowerCase());
-    const duplicated = sourceIDs.length > 1 || (sourceIDs.length === 1 && [...doc.toString().matchAll(/<!--qc-source:([0-9a-fA-F-]{36})-->/g)].filter(m => m[1].toLowerCase() === sourceIDs[0]).length > 1);
+    const duplicated = span !== null && isDuplicated(v.state, span.from);
     const newLabel = v.dom.querySelector('[data-shortcut-action="sendOrganiserNew"] .qc-action-label');
     if (newLabel) newLabel.textContent = duplicated ? "Send this copy as new" : "Send as new item";
 }
@@ -2195,17 +2197,25 @@ function sendToSwift(message: Record<string, unknown>) {
 // on the span (issue #32).
 
 let organiserSending = false;
+
+/** Give a line a fresh source identity, keeping any legacy creation token. */
+function assignSourceID(v: EditorView, line: number, id: string) {
+    const current = v.state.field(identityField).marks;
+    const old = current.find(m => m.line === line)?.run ?? "";
+    const legacy = old.replace(/\s*<!--qc-source:[0-9a-fA-F-]{36}-->/g, "");
+    const marks = current.filter(m => m.line !== line).concat({ line, run: `${legacy} <!--qc-source:${id}-->` })
+        .sort((a, b) => a.line - b.line);
+    v.dispatch({ effects: setIdentities.of(marks) });
+}
 async function sendOrganiser(v: EditorView, asNew: boolean) {
     if (organiserSending) return;
     organiserSending = true;
     try {
         let span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
         if (!span) { showRefileToast(v, "Put the cursor on an item to send."); return; }
-        const line = v.state.doc.line(span.from + 1);
-        const marker = /<!--qc-source:([0-9a-fA-F-]{36})-->/g;
-        const matches = [...line.text.matchAll(marker)];
-        let id = matches[0]?.[1]?.toLowerCase();
-        if (matches.length > 1 || (id && [...v.state.doc.toString().matchAll(marker)].filter(m => m[1].toLowerCase() === id).length > 1)) {
+        const itemLine = span.from;
+        let id = sourceIDOnLine(v.state, itemLine) ?? undefined;
+        if (id && isDuplicated(v.state, itemLine)) {
             // WKWebView does not install a JavaScript dialog delegate. Use native
             // history for inspection and explicit Send as new item for resolution.
             if (!asNew) {
@@ -2213,21 +2223,20 @@ async function sendOrganiser(v: EditorView, asNew: boolean) {
                 sendToSwift({ type: "organiserHistory" });
                 return;
             }
-            const cleaned = line.text.replace(/\s*<!--qc-source:[0-9a-fA-F-]{36}-->/g, "");
             id = crypto.randomUUID();
-            v.dispatch({ changes: { from: line.from, to: line.to, insert: cleaned + ` <!--qc-source:${id}-->` } });
+            assignSourceID(v, itemLine, id);
         } else if (!id) {
             id = crypto.randomUUID();
-            v.dispatch({ changes: { from: line.to, insert: ` <!--qc-source:${id}-->` } });
+            assignSourceID(v, itemLine, id);
         }
         if (!await saveDocument()) return;
         // Recompute after the asynchronous save; native code verifies this exact
         // slice against disk. Never send the pre-save stale selection.
         span = resolveSubtreeSpan(v.state, v.state.doc.line(span.from + 1).from);
-        if (!span || !span.text.split("\n")[0].includes(`<!--qc-source:${id}-->`)) {
+        if (!span || sourceIDOnLine(v.state, span.from) !== id) {
             showRefileToast(v, "The item moved while saving. Select it again."); return;
         }
-        sendToSwift({ type: "sendOrganiser", sourceID: id, fromLine: span.from, toLine: span.to, subtree: span.text, asNew });
+        sendToSwift({ type: "sendOrganiser", sourceID: id, fromLine: span.from, toLine: span.to, subtree: fileLines(v.state, span.from, span.to), asNew });
         showRefileToast(v, "Preparing organiser handoff; the source stays editable.");
     } finally { organiserSending = false; }
 }
@@ -2378,7 +2387,7 @@ function openRefileDropdown(v: EditorView, span: SubtreeSpan) {
         // item now occupying the subtree's start line (the next item) — see mount().
         if (!await saveDocument()) return;
         pendingRefileCursorLine = span.from;
-        sendToSwift({ type: "refile", target, fromLine: span.from, toLine: span.to, subtree: span.text });
+        sendToSwift({ type: "refile", target, fromLine: span.from, toLine: span.to, subtree: fileLines(v.state, span.from, span.to) });
     };
 
     const onKey = (e: KeyboardEvent) => {
@@ -2530,7 +2539,8 @@ function mount(content: string) {
 
     if (view) {
         suppressNextSave = true;
-        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: content } });
+        const { text, marks } = strip(content);
+        view.dispatch({ changes: { from: 0, to: view.state.doc.length, insert: text }, effects: loadIdentities.of(marks) });
         suppressNextSave = false;
         if (pendingRefileCursorLine !== null) {
             placeCursorAfterRefile(view, pendingRefileCursorLine);
@@ -2539,14 +2549,16 @@ function mount(content: string) {
         return;
     }
 
+    const initial = strip(content);
     const state = EditorState.create({
-        doc: content,
+        doc: initial.text,
         extensions: [
+            identityField.init(() => ({ marks: initial.marks, graveyard: [] })),
+            identityHistory,
             // Vim has to be loaded BEFORE other keymaps so its normal-mode
             // bindings win over defaultKeymap's Insert-mode-only assumptions.
             vimComp.of(vimEnabled ? vim() : []),
             history(),
-            sourceMarkerGuard,
             drawSelection(),
             bracketMatching(),
             indentOnInput(),
@@ -2651,7 +2663,7 @@ window.qcEditor = {
     saveResult: (id: number, error: string | null, disk: string | null) => {
         documentSession.acknowledge(id, error, disk);
     },
-    getContent: () => view?.state.doc.toString() ?? "",
+    getContent: () => view ? fileText(view.state) : "",
     focus: () => view?.focus(),
     setFilename: (name: string) => {
         filename = name || "inbox.md";
