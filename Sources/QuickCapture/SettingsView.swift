@@ -30,6 +30,8 @@ struct SettingsView: View {
         }
         .background(t.surface)
         .tint(t.accent)
+        // Login Items can be changed in System Settings while this is open.
+        .onAppear { loginEnabled = SMAppService.mainApp.status == .enabled }
     }
 
     // MARK: - Cards
@@ -127,9 +129,11 @@ struct SettingsView: View {
                         symbol: "folder"
                     ) { EmptyView() }
                 } else {
-                    ForEach(appState.refileTargets.indices, id: \.self) { index in
-                        if index > 0 { rowDivider }
-                        refileTargetRow(index: index)
+                    // Identity is the folder path, not the position, so a label
+                    // being edited stays with its folder through a reorder.
+                    ForEach($appState.refileTargets) { $target in
+                        if target.id != appState.refileTargets.first?.id { rowDivider }
+                        refileTargetRow($target)
                     }
                 }
             }
@@ -231,8 +235,8 @@ struct SettingsView: View {
 
     // MARK: - Refile targets
 
-    private func refileTargetRow(index: Int) -> some View {
-        let target = appState.refileTargets[index]
+    private func refileTargetRow(_ binding: Binding<RefileTarget>) -> some View {
+        let target = binding.wrappedValue
         return HStack(alignment: .center, spacing: Metrics.s2) {
             settingsIcon("folder")
             VStack(alignment: .leading, spacing: 3) {
@@ -250,7 +254,7 @@ struct SettingsView: View {
             // The label was a borderless TextField, which gave no sign it could
             // be typed in (#116). A well — the same recipe as the capture
             // field — is what makes it read as an input.
-            TextField("Label", text: labelBinding(index))
+            TextField("Label", text: binding.labelInput)
                 .textFieldStyle(.plain)
                 .font(Typeface.ui(12))
                 .foregroundStyle(t.ink)
@@ -265,14 +269,14 @@ struct SettingsView: View {
             // Reorder and remove read as chrome, not as actions competing with
             // the accent — the accent means interaction elsewhere (ADR-0005).
             HStack(spacing: 2) {
-                reorderButton("chevron.up", enabled: index > 0) {
-                    moveRefileTarget(from: index, to: index - 1)
+                reorderButton("chevron.up", enabled: target.id != appState.refileTargets.first?.id) {
+                    appState.refileTargets = RefileTarget.moving(target.id, by: -1, in: appState.refileTargets)
                 }
-                reorderButton("chevron.down", enabled: index < appState.refileTargets.count - 1) {
-                    moveRefileTarget(from: index, to: index + 1)
+                reorderButton("chevron.down", enabled: target.id != appState.refileTargets.last?.id) {
+                    appState.refileTargets = RefileTarget.moving(target.id, by: 1, in: appState.refileTargets)
                 }
             }
-            Button { removeRefileTarget(at: index) } label: {
+            Button { appState.refileTargets.removeAll { $0.id == target.id } } label: {
                 Image(systemName: "xmark")
                     .font(.system(size: 10, weight: .semibold))
             }
@@ -295,19 +299,6 @@ struct SettingsView: View {
         .disabled(!enabled)
     }
 
-    /// Maps the target's optional label to a non-optional text binding; a blank
-    /// value clears the label (so the dropdown falls back to the basename).
-    private func labelBinding(_ index: Int) -> Binding<String> {
-        Binding(
-            get: { appState.refileTargets.indices.contains(index) ? (appState.refileTargets[index].label ?? "") : "" },
-            set: { newValue in
-                guard appState.refileTargets.indices.contains(index) else { return }
-                let trimmed = newValue.trimmingCharacters(in: .whitespacesAndNewlines)
-                appState.refileTargets[index].label = trimmed.isEmpty ? nil : newValue
-            }
-        )
-    }
-
     private func addRefileTarget() {
         let panel = NSOpenPanel()
         panel.canChooseFiles = false
@@ -319,19 +310,6 @@ struct SettingsView: View {
         let standardized = url.standardizedFileURL
         guard !appState.refileTargets.contains(where: { $0.folderURL.standardizedFileURL == standardized }) else { return }
         appState.refileTargets.append(RefileTarget(path: url.path, label: nil))
-    }
-
-    private func removeRefileTarget(at index: Int) {
-        guard appState.refileTargets.indices.contains(index) else { return }
-        appState.refileTargets.remove(at: index)
-    }
-
-    private func moveRefileTarget(from: Int, to: Int) {
-        var targets = appState.refileTargets
-        guard targets.indices.contains(from), to >= 0, to < targets.count else { return }
-        let item = targets.remove(at: from)
-        targets.insert(item, at: to)
-        appState.refileTargets = targets
     }
 
     // MARK: - Actions
