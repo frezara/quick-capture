@@ -1,20 +1,32 @@
 import SwiftUI
 import AppKit
 
+enum ProjectTab: String, CaseIterable {
+    case overview = "Overview", tasks = "Tasks", markdown = "Markdown"
+}
+
 struct ProjectsView: View {
-    @ObservedObject private var store = ProjectStore.shared
+    @ObservedObject private var store: ProjectStore
     @State private var selected: String?
-    @State private var tab = "Overview"
+    @State private var tab = ProjectTab.overview
     @State private var content = ""
+    @State private var document = ProjectDocument(text: "")
+    @State private var modified: Date?
+    @State private var summaries: [String: ProjectSummary] = [:]
     @State private var fileProblem: String?
+    /// Markdown typed since the last flush to the store. Persisting a draft
+    /// rewrites the whole project registry, so keystrokes collect here and are
+    /// flushed after a pause, or at once before anything reads the draft.
+    @State private var pendingDraft: String?
+    @State private var pendingDraftBase = ""
     @State private var newName = ""
     @State private var creating = false
     @State private var overviewEditor = false
     @State private var taskText = ""
     @State private var board = false
-    private let refresh = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
     private var project: DiskProject? { selected.flatMap { store.project($0) } }
-    private var document: ProjectDocument { ProjectDocument(text: content) }
+
+    init(store: ProjectStore = .shared) { self.store = store }
 
     var body: some View {
         VStack(spacing: 0) {
@@ -27,7 +39,8 @@ struct ProjectsView: View {
             Divider()
             HSplitView {
                 List(store.projects, selection: $selected) { project in
-                    ProjectListRow(project: project).tag(project.id)
+                    ProjectListRow(project: project, summary: summaries[project.id])
+                        .tag(project.id)
                 }.listStyle(.sidebar).frame(minWidth: 190, idealWidth: 230, maxWidth: 300)
                 if let project {
                     projectDetail(project)
@@ -37,14 +50,28 @@ struct ProjectsView: View {
                         Text("A folder for each project").font(.title2)
                         Text("Add an existing folder or create a new one.\nManage it through the inbox.md in its root.")
                             .multilineTextAlignment(.center).foregroundStyle(.secondary)
-                        Button("Add Existing Folder…") { selected = store.chooseExisting() }
+                        Button("Add Existing Folder…") { if let id = store.chooseExisting() { selected = id } }
                     }.frame(maxWidth: .infinity, maxHeight: .infinity)
                 }
             }
         }
         .onAppear { if selected == nil { selected = store.projects.first?.id }; reload() }
-        .onChange(of: selected) { _, _ in tab = "Overview"; reload() }
-        .onReceive(refresh) { _ in reload() }
+        .onChange(of: selected) { old, _ in flushDraft(old); tab = .overview; reload() }
+        .onChange(of: tab) { _, _ in flushDraft(selected) }
+        .onChange(of: store.projects.map(\.id)) { _, _ in reload() }
+        .onDisappear { flushDraft(selected) }
+        .task {
+            while !Task.isCancelled {
+                try? await Task.sleep(for: .seconds(3))
+                reload()
+            }
+        }
+        .task(id: pendingDraft) {
+            guard pendingDraft != nil else { return }
+            try? await Task.sleep(for: .milliseconds(500))
+            guard !Task.isCancelled else { return }
+            flushDraft(selected)
+        }
         .alert("Project", isPresented: Binding(get: { store.message != nil }, set: { if !$0 { store.message = nil } })) {
             Button("OK") { store.message = nil }
         } message: { Text(store.message ?? "") }
@@ -69,9 +96,38 @@ struct ProjectsView: View {
         }
     }
     private func reload() {
-        guard let project else { content = ""; return }
-        do { content = try ProjectFiles.read(project); fileProblem = nil }
-        catch { fileProblem = error.localizedDescription }
+        var next: [String: ProjectSummary] = [:]
+        for project in store.projects {
+            let result = Result { try ProjectFiles.read(project) }
+            next[project.id] = ProjectSummary(text: try? result.get())
+            guard project.id == selected else { continue }
+            switch result {
+            case .success(let text):
+                if text != content { content = text; document = ProjectDocument(text: text) }
+                fileProblem = nil
+            case .failure(let error):
+                fileProblem = error.localizedDescription
+            }
+            modified = try? project.file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate
+        }
+        if project == nil, !content.isEmpty { content = ""; document = ProjectDocument(text: "") }
+        if next != summaries { summaries = next }
+    }
+    private func hasDraft(_ project: DiskProject) -> Bool {
+        pendingDraft != nil || store.draft(for: project) != nil
+    }
+    private func flushDraft(_ id: String?) {
+        guard let text = pendingDraft else { return }
+        pendingDraft = nil
+        guard let project = id.flatMap({ store.project($0) }) else { return }
+        guard text != (store.draft(for: project)?.text ?? pendingDraftBase) else { return }
+        store.editDraft(text, project: project, base: pendingDraftBase)
+    }
+    private var syncStatus: (label: String, symbol: String) {
+        guard let project else { return ("", "") }
+        if project.conflict != nil { return ("Sync conflict", "exclamationmark.triangle") }
+        let label = project.pending != nil ? "Sync queued" : project.baseline != nil ? "Synced" : "Local · waiting to sync"
+        return (label, "arrow.triangle.2.circlepath")
     }
     private func projectDetail(_ project: DiskProject) -> some View {
         VStack(alignment: .leading, spacing: 14) {
@@ -84,8 +140,7 @@ struct ProjectsView: View {
                 Button("Open Folder") { NSWorkspace.shared.open(project.folderURL) }
             }
             HStack {
-                Label(project.conflict != nil ? "Sync conflict" : project.pending != nil ? "Sync queued" : project.baseline != nil ? "Synced" : "Local · waiting to sync",
-                      systemImage: project.conflict != nil ? "exclamationmark.triangle" : "arrow.triangle.2.circlepath")
+                Label(syncStatus.label, systemImage: syncStatus.symbol)
                 Spacer()
                 Text("Only inbox.md syncs").foregroundStyle(.secondary)
             }.font(.caption)
@@ -103,14 +158,18 @@ struct ProjectsView: View {
                 }.disabled(store.busy.contains(project.id) || conflict.item.deleted)
             }
             Picker("Project view", selection: $tab) {
-                ForEach(["Overview", "Tasks", "Markdown"], id: \.self) { Text($0).tag($0) }
+                ForEach(ProjectTab.allCases, id: \.self) { Text($0.rawValue).tag($0) }
             }.pickerStyle(.segmented).frame(maxWidth: 400)
             if fileProblem != nil {
                 Text("The inbox could not be read. Restore the root inbox.md to continue; no replacement or deletion has been sent.")
                 Spacer()
-            } else if tab == "Overview" { overview(project) }
-            else if tab == "Tasks" { tasks(project) }
-            else { markdown(project) }
+            } else {
+                switch tab {
+                case .overview: overview(project)
+                case .tasks: tasks(project)
+                case .markdown: markdown(project)
+                }
+            }
         }.padding(20).frame(minWidth: 450, maxWidth: .infinity, maxHeight: .infinity, alignment: .topLeading)
     }
     private func overview(_ project: DiskProject) -> some View {
@@ -120,7 +179,7 @@ struct ProjectsView: View {
                 HStack {
                     Text(document.status).font(.headline)
                     Spacer()
-                    Button("Edit Overview") { overviewEditor = true }.disabled(store.draft(for: project) != nil)
+                    Button("Edit Overview") { overviewEditor = true }.disabled(hasDraft(project))
                 }
                 Text(document.goal.isEmpty ? "Add a goal to describe what this project should achieve." : document.goal)
                     .foregroundStyle(document.goal.isEmpty ? .secondary : .primary)
@@ -132,7 +191,7 @@ struct ProjectsView: View {
                 if !tasks.isEmpty { ProgressView(value: Double(done), total: Double(tasks.count)) }
                 Text("Next action").font(.headline)
                 Text(tasks.first { $0.status == .doing || $0.status == .next }?.title ?? "Choose a task and move it to Next or Doing.")
-                if let modified = try? project.file.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate {
+                if let modified {
                     Text("Updated " + modified.formatted(date: .abbreviated, time: .shortened)).font(.caption).foregroundStyle(.secondary)
                 }
                 Text("Tasks, notes and project information live together in inbox.md. Use Markdown for notes, links and any additional sections.")
@@ -144,20 +203,21 @@ struct ProjectsView: View {
         VStack(alignment: .leading) { Text("\(count)").font(.title); Text(title).font(.caption).foregroundStyle(.secondary) }
     }
     private func tasks(_ project: DiskProject) -> some View {
-        VStack(alignment: .leading) {
+        let byStatus = Dictionary(grouping: document.tasks, by: \.status)
+        return VStack(alignment: .leading) {
             HStack {
                 TextField("Capture a task in this project…", text: $taskText).onSubmit { addTask(project) }
                 Button("Add") { addTask(project) }.disabled(taskText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
                 Toggle("Board", isOn: $board).toggleStyle(.switch).controlSize(.small)
             }
-            if store.draft(for: project) != nil { Text("Save or discard your Markdown draft before moving tasks.").font(.caption).foregroundStyle(.orange) }
+            if hasDraft(project) { Text("Save or discard your Markdown draft before moving tasks.").font(.caption).foregroundStyle(.orange) }
             if board {
                 ScrollView(.horizontal) {
                     HStack(alignment: .top, spacing: 10) {
                         ForEach(ProjectTaskStatus.allCases) { status in
                             VStack(alignment: .leading, spacing: 12) {
                                 Text(status.rawValue).font(.headline)
-                                ForEach(document.tasks.filter { $0.status == status }) { task in taskRow(task, project: project) }
+                                ForEach(byStatus[status] ?? []) { task in taskRow(task, project: project) }
                                 Spacer()
                             }.padding(12).frame(width: 180).frame(maxHeight: .infinity)
                                 .background(.quaternary.opacity(0.4), in: RoundedRectangle(cornerRadius: 10))
@@ -167,8 +227,7 @@ struct ProjectsView: View {
             } else {
                 List {
                     ForEach(ProjectTaskStatus.allCases) { status in
-                        let tasks = document.tasks.filter { $0.status == status }
-                        if !tasks.isEmpty {
+                        if let tasks = byStatus[status], !tasks.isEmpty {
                             Section(status.rawValue) { ForEach(tasks) { task in taskRow(task, project: project) } }
                         }
                     }
@@ -187,7 +246,7 @@ struct ProjectsView: View {
                     }
                 }
             }.menuStyle(.borderlessButton).fixedSize()
-                .disabled(store.draft(for: project) != nil)
+                .disabled(hasDraft(project))
         }.padding(.vertical, 4)
     }
     private func addTask(_ project: DiskProject) {
@@ -198,13 +257,17 @@ struct ProjectsView: View {
     private func markdown(_ project: DiskProject) -> some View {
         VStack(alignment: .leading, spacing: 10) {
             HStack {
-                Text(store.draft(for: project) == nil ? "inbox.md" : "Unsaved draft · retained locally").font(.caption).foregroundStyle(.secondary)
+                Text(hasDraft(project) ? "Unsaved draft · retained locally" : "inbox.md").font(.caption).foregroundStyle(.secondary)
                 Spacer()
-                Button("Discard Draft") { store.discardDraft(project); reload() }.disabled(store.draft(for: project) == nil)
-                Button("Save") { store.saveDraft(project); reload() }.disabled(store.draft(for: project) == nil)
+                Button("Discard Draft") { pendingDraft = nil; store.discardDraft(project); reload() }.disabled(!hasDraft(project))
+                Button("Save") { flushDraft(project.id); store.saveDraft(project); reload() }.disabled(!hasDraft(project))
             }
-            TextEditor(text: Binding(get: { store.draft(for: project)?.text ?? content },
-                                    set: { store.editDraft($0, project: project, base: content) }))
+            TextEditor(text: Binding(
+                get: { pendingDraft ?? store.draft(for: project)?.text ?? content },
+                set: { text in
+                    if pendingDraft == nil { pendingDraftBase = content }
+                    pendingDraft = text
+                }))
                 .font(.system(size: 13, design: .monospaced))
         }
     }
@@ -212,15 +275,15 @@ struct ProjectsView: View {
 
 private struct ProjectListRow: View {
     let project: DiskProject
+    let summary: ProjectSummary?
     var body: some View {
-        let text = try? ProjectFiles.read(project)
-        let document = ProjectDocument(text: text ?? "")
         VStack(alignment: .leading, spacing: 5) {
             Label(project.name, systemImage: "folder")
-            Text(text == nil ? "Inbox unavailable" : "\(document.status) · \(document.tasks.filter { $0.status != .done }.count) open")
-                .font(.caption).foregroundStyle(.secondary)
-            if let next = document.tasks.first(where: { $0.status == .next || $0.status == .doing }) {
-                Text(next.title).font(.caption).lineLimit(1).foregroundStyle(.secondary)
+            if let summary {
+                Text(summary.line).font(.caption).foregroundStyle(.secondary)
+                if let next = summary.nextAction {
+                    Text(next).font(.caption).lineLimit(1).foregroundStyle(.secondary)
+                }
             }
         }.padding(.vertical, 5)
     }
@@ -256,4 +319,16 @@ private struct ProjectOverviewEditor: View {
             }
         }.padding(24).frame(width: 400)
     }
+}
+
+#Preview("Projects · sample") {
+    let root = FileManager.default.temporaryDirectory.appendingPathComponent("qc-preview-projects")
+    try? FileManager.default.removeItem(at: root)
+    try? FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+    let store = ProjectStore(root: root.appendingPathComponent("registry"))
+    if let garden = try? store.create(parent: root, name: "Garden") {
+        try? store.addTask("Order seeds", project: garden)
+    }
+    _ = try? store.create(parent: root, name: "Kitchen refit")
+    return ProjectsView(store: store).frame(width: 900, height: 600)
 }
