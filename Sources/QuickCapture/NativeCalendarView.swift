@@ -4,6 +4,12 @@ struct NativeCalendarView: View {
     @Bindable var model: WorkspaceModel
     let onCapture: () -> Void
     @State private var selectedEvent: WorkspaceItem?
+    @Environment(\.colorScheme) private var scheme
+    private var t: Theme { scheme == .dark ? .dark : .light }
+    /// One device pixel. Grid columns sit at fractional x, where a 0.5pt line
+    /// drops out entirely on a 1x display.
+    @Environment(\.displayScale) private var displayScale
+    private var hairline: CGFloat { 1 / displayScale }
     private let hourHeight: CGFloat = 60
     private let timeWidth: CGFloat = 54
     private var calendar: Calendar { .current }
@@ -17,20 +23,24 @@ struct NativeCalendarView: View {
     var body: some View {
         VStack(spacing: 0) {
             toolbar
-            Divider()
+            t.border.frame(height: hairline)
             if let problem = model.problem {
-                Label(problem, systemImage: "exclamationmark.triangle").font(.caption).foregroundStyle(.orange).padding(8)
+                WarningBanner(text: problem, t: t).padding(Metrics.s2)
             }
             if model.calendarMode == .month { month }
             else { timeline }
-            Divider()
-            HStack {
-                Text("D Day   W Week   M Month").font(.caption)
+            t.border.frame(height: hairline)
+            HStack(spacing: Metrics.s1) {
+                Keycap(text: "D", t: t); hint("Day")
+                Keycap(text: "W", t: t); hint("Week")
+                Keycap(text: "M", t: t); hint("Month")
                 Spacer()
-                Text(TimeZone.current.identifier).font(.caption)
-            }.foregroundStyle(.secondary).padding(.horizontal, 18).padding(.vertical, 9)
+                hint(TimeZone.current.identifier)
+            }.padding(.horizontal, Metrics.s3).padding(.vertical, Metrics.s1 + 2)
+            .background(t.surfaceRail)
         }
-        .background(Color(nsColor: .textBackgroundColor))
+        .background(t.surface)
+        .tint(t.accent)
     }
 
     /// Opens the event's detail anchored to the event itself; one `selectedEvent`
@@ -41,21 +51,34 @@ struct NativeCalendarView: View {
             .help(item.title)
             .popover(isPresented: Binding(get: { selectedEvent?.id == item.id },
                                           set: { if !$0, selectedEvent?.id == item.id { selectedEvent = nil } })) {
-                VStack(alignment: .leading, spacing: 12) {
-                    Text(item.title).font(.headline)
-                    if let starts = item.starts { Text(starts.formatted(date: .complete, time: .shortened)) }
-                    if let ends = item.ends { Text("Ends " + ends.formatted(date: .abbreviated, time: .shortened)).foregroundStyle(.secondary) }
-                    Text(item.section).font(.caption).foregroundStyle(.secondary)
-                    if item.text != item.title { Text(item.text).textSelection(.enabled) }
-                    Button("Done") { selectedEvent = nil }
-                }.padding(22).frame(width: 320)
+                VStack(alignment: .leading, spacing: Metrics.s2) {
+                    Text(item.section.uppercased())
+                        .font(TypeScale.caption).tracking(Tracking.caption).foregroundStyle(t.inkSecondary)
+                    Text(item.title).font(Typeface.ui(16, .semibold)).foregroundStyle(t.ink)
+                    if let starts = item.starts {
+                        Text(starts.formatted(date: .complete, time: .shortened)).font(Typeface.ui(12)).foregroundStyle(t.ink)
+                    }
+                    if let ends = item.ends {
+                        Text("Ends " + ends.formatted(date: .abbreviated, time: .shortened)).font(Typeface.ui(12)).foregroundStyle(t.inkSecondary)
+                    }
+                    if item.text != item.title {
+                        Text(item.text).font(Typeface.ui(12)).foregroundStyle(t.ink).textSelection(.enabled)
+                    }
+                    HStack { Spacer(); Button("Done") { selectedEvent = nil }.buttonStyle(GhostButtonStyle(t: t)) }
+                }.padding(Metrics.s4).frame(width: 320).background(t.surface)
             }
+    }
+
+    private func hint(_ text: String) -> some View {
+        Text(text).font(TypeScale.caption).foregroundStyle(t.inkSecondary).padding(.trailing, Metrics.s1)
     }
 
     private var toolbar: some View {
         VStack(spacing: 14) {
             HStack {
-                Button(action: onCapture) { Image(systemName: "plus") }.help("Capture a new event with #cal")
+                Button(action: onCapture) { Image(systemName: "plus") }
+                    .buttonStyle(GhostButtonStyle(t: t))
+                    .help("Capture a new event with #cal")
                 Spacer()
                 Picker("Calendar view", selection: $model.calendarMode) {
                     ForEach(WorkspaceCalendarMode.allCases, id: \.self) { Text($0.rawValue).tag($0) }
@@ -65,14 +88,14 @@ struct NativeCalendarView: View {
                     Button { model.shiftDate(-1) } label: { Image(systemName: "chevron.left") }.help("Previous · ⌘←")
                     Button("Today") { model.date = Date() }.help("Today · ⌘T")
                     Button { model.shiftDate(1) } label: { Image(systemName: "chevron.right") }.help("Next · ⌘→")
-                }
+                }.buttonStyle(GhostButtonStyle(t: t))
             }.controlSize(.small)
             HStack {
-                Text(title).font(.system(size: 27, weight: .regular))
+                Text(title).font(TypeScale.h1).tracking(Tracking.h1).foregroundStyle(t.ink)
                 Spacer()
             }
-        }.padding(.horizontal, 20).padding(.top, 16).padding(.bottom, 14)
-            .background(.bar)
+        }.padding(.horizontal, Metrics.s4).padding(.top, Metrics.s3).padding(.bottom, Metrics.s3)
+            .background(t.surfaceRail)
     }
 
     private var month: some View {
@@ -81,8 +104,8 @@ struct NativeCalendarView: View {
             VStack(spacing: 0) {
                 HStack(spacing: 0) {
                     ForEach(Array(model.days.prefix(7)), id: \.self) { day in
-                        Text(day.formatted(.dateTime.weekday(.abbreviated)))
-                            .font(.system(size: 11, weight: .medium)).foregroundStyle(.secondary)
+                        Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                            .font(TypeScale.caption).tracking(Tracking.caption).foregroundStyle(t.inkSecondary)
                             .frame(maxWidth: .infinity, alignment: .trailing).padding(.trailing, 12)
                     }
                 }.frame(height: 28)
@@ -111,35 +134,39 @@ struct NativeCalendarView: View {
             ForEach(Array(dayEvents.prefix(limit))) { item in
                 eventButton(item) {
                     HStack(spacing: 4) {
-                        Circle().fill(Color.accentColor).frame(width: 5, height: 5)
-                        Text(item.title).lineLimit(1)
+                        Circle().fill(t.accent).frame(width: 5, height: 5)
+                        Text(item.title).foregroundStyle(CalendarLayout.isAllDay(item) ? t.accentInk : t.ink).lineLimit(1)
                         Spacer(minLength: 0)
                         if let starts = item.starts, !CalendarLayout.isAllDay(item), calendar.isDate(starts, inSameDayAs: day) {
-                            Text(starts.formatted(.dateTime.hour().minute())).foregroundStyle(.secondary).lineLimit(1)
+                            Text(starts.formatted(.dateTime.hour().minute())).foregroundStyle(t.inkSecondary).lineLimit(1)
                         }
-                    }.font(.system(size: 11)).padding(.horizontal, 6).padding(.vertical, 2)
-                        .background(CalendarLayout.isAllDay(item) ? Color.accentColor.opacity(0.12) : .clear)
+                    }.font(Typeface.ui(11)).padding(.horizontal, 6).padding(.vertical, 2)
+                        .background(CalendarLayout.isAllDay(item) ? t.accentSoft : .clear,
+                                    in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 }
             }
             if dayEvents.count > limit {
                 Button("\(dayEvents.count - limit) more…") { model.date = day; model.calendarMode = .day }
-                    .buttonStyle(.plain).font(.caption2).foregroundStyle(.secondary).padding(.leading, 7)
+                    .buttonStyle(.plain).font(TypeScale.caption).foregroundStyle(t.inkSecondary).padding(.leading, 7)
             }
             Spacer(minLength: 0)
         }
         .frame(height: height, alignment: .top)
         .frame(maxWidth: .infinity)
-        .background(inMonth ? Color.clear : Color.secondary.opacity(0.035))
-        .overlay(alignment: .top) { Divider() }
-        .overlay(alignment: .trailing) { Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5) }
+        .background(inMonth ? Color.clear : t.surfaceRail)
+        .overlay(alignment: .top) { t.border.frame(height: hairline) }
+        .overlay(alignment: .trailing) { t.border.frame(width: hairline) }
     }
 
+    /// Today keeps the calendar convention of a red disc, drawn in the
+    /// palette's own red so it sits with the rest of the tokens.
     private func dateNumber(_ day: Date) -> some View {
-        Text(day.formatted(.dateTime.day()))
-            .font(.system(size: 13, weight: calendar.isDateInToday(day) ? .semibold : .regular))
-            .foregroundStyle(calendar.isDateInToday(day) ? Color.white : .primary)
+        let today = calendar.isDateInToday(day)
+        return Text(day.formatted(.dateTime.day()))
+            .font(Typeface.ui(13, today ? .semibold : .regular))
+            .foregroundStyle(today ? t.surface : t.ink)
             .frame(width: 25, height: 25)
-            .background(calendar.isDateInToday(day) ? Color.red : .clear, in: Circle())
+            .background(today ? t.priHigh : .clear, in: Circle())
     }
 
     private var timeline: some View {
@@ -148,32 +175,34 @@ struct NativeCalendarView: View {
                 Color.clear.frame(width: timeWidth, height: 41)
                 ForEach(model.days, id: \.self) { day in
                     HStack(spacing: 6) {
-                        Text(day.formatted(.dateTime.weekday(.abbreviated))).font(.caption).foregroundStyle(.secondary)
+                        Text(day.formatted(.dateTime.weekday(.abbreviated)).uppercased())
+                            .font(TypeScale.caption).tracking(Tracking.caption).foregroundStyle(t.inkSecondary)
                         dateNumber(day)
                     }.frame(maxWidth: .infinity).padding(.vertical, 8)
                 }
             }.fixedSize(horizontal: false, vertical: true)
             HStack(alignment: .top, spacing: 0) {
-                Text("all-day").font(.system(size: 10)).foregroundStyle(.secondary)
+                Text("all-day").font(Typeface.ui(10)).foregroundStyle(t.inkSecondary)
                     .frame(width: timeWidth, alignment: .trailing).padding(.top, 6)
                 ForEach(model.days, id: \.self) { day in
                     VStack(spacing: 3) {
                         ForEach(events(on: day).filter { CalendarLayout.isAllDay($0) }) { item in
                             eventButton(item) {
-                                Text(item.title).font(.caption).lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
-                                    .padding(4).background(Color.accentColor.opacity(0.15), in: RoundedRectangle(cornerRadius: 3))
+                                Text(item.title).font(Typeface.ui(11)).foregroundStyle(t.accentInk)
+                                    .lineLimit(1).frame(maxWidth: .infinity, alignment: .leading)
+                                    .padding(4).background(t.accentSoft, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                             }
                         }
                     }.padding(4).frame(maxWidth: .infinity, minHeight: 30)
                 }
             }.fixedSize(horizontal: false, vertical: true)
-            Divider()
+            t.border.frame(height: hairline)
             ScrollViewReader { proxy in
                 ScrollView(.vertical) {
                     HStack(alignment: .top, spacing: 0) {
                         VStack(spacing: 0) {
                             ForEach(0..<24) { hour in
-                                Text(String(format: "%02d:00", hour)).font(.system(size: 10)).foregroundStyle(.secondary)
+                                Text(String(format: "%02d:00", hour)).font(Typeface.mono(10)).foregroundStyle(t.inkSecondary)
                                     .frame(width: timeWidth - 8, height: hourHeight, alignment: .topTrailing).padding(.trailing, 8)
                                     .id(hour)
                             }
@@ -194,23 +223,23 @@ struct NativeCalendarView: View {
         return GeometryReader { geometry in
             ZStack(alignment: .topLeading) {
                 ForEach(0..<24) { hour in
-                    Rectangle().fill(Color.secondary.opacity(0.18)).frame(height: 0.5).offset(y: CGFloat(hour) * hourHeight)
-                    Rectangle().fill(Color.secondary.opacity(0.07)).frame(height: 0.5).offset(y: (CGFloat(hour) + 0.5) * hourHeight)
+                    t.border.frame(height: hairline).offset(y: CGFloat(hour) * hourHeight)
+                    t.border.opacity(0.4).frame(height: hairline).offset(y: (CGFloat(hour) + 0.5) * hourHeight)
                 }
                 ForEach(CalendarLayout.segments(items: dayEvents, day: day)) { segment in
                     if let item = byID[segment.id] {
                         let width = max(1, (geometry.size.width - 4) / CGFloat(segment.columnCount))
                         eventButton(item) {
                             VStack(alignment: .leading, spacing: 2) {
-                                Text(item.title).font(.system(size: 11, weight: .medium)).lineLimit(2)
+                                Text(item.title).font(Typeface.ui(11, .medium)).foregroundStyle(t.accentInk).lineLimit(2)
                                 if segment.endMinute - segment.startMinute >= 40, let starts = item.starts {
-                                    Text(starts.formatted(date: .omitted, time: .shortened)).font(.system(size: 10))
+                                    Text(starts.formatted(date: .omitted, time: .shortened)).font(Typeface.ui(10)).foregroundStyle(t.accentInk)
                                 }
                                 Spacer(minLength: 0)
                             }.padding(.horizontal, 5).padding(.vertical, 3)
                                 .frame(width: max(1, width - 2), height: max(18, CGFloat(segment.endMinute - segment.startMinute) / 60 * hourHeight - 1), alignment: .topLeading)
-                                .background(Color.accentColor.opacity(0.16), in: RoundedRectangle(cornerRadius: 4))
-                                .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 1).fill(Color.accentColor).frame(width: 3) }
+                                .background(t.accentSoft, in: RoundedRectangle(cornerRadius: 4, style: .continuous))
+                                .overlay(alignment: .leading) { RoundedRectangle(cornerRadius: 1).fill(t.accent).frame(width: 3) }
                                 .clipped()
                         }
                             .offset(x: CGFloat(segment.column) * width + 2, y: CGFloat(segment.startMinute) / 60 * hourHeight)
@@ -220,13 +249,24 @@ struct NativeCalendarView: View {
                     TimelineView(.periodic(from: .now, by: 60)) { context in
                         let parts = calendar.dateComponents([.hour, .minute], from: context.date)
                         let y = CGFloat((parts.hour ?? 0) * 60 + (parts.minute ?? 0)) / 60 * hourHeight
-                        Rectangle().fill(.red).frame(height: 1).overlay(alignment: .leading) {
-                            Circle().fill(.red).frame(width: 5, height: 5)
+                        Rectangle().fill(t.priHigh).frame(height: 1).overlay(alignment: .leading) {
+                            Circle().fill(t.priHigh).frame(width: 5, height: 5)
                         }.offset(y: y)
                     }.allowsHitTesting(false)
                 }
             }
         }.frame(maxWidth: .infinity).frame(height: hourHeight * 24)
-            .overlay(alignment: .leading) { Rectangle().fill(Color(nsColor: .separatorColor)).frame(width: 0.5) }
+            .overlay(alignment: .leading) { t.border.frame(width: hairline) }
     }
+}
+
+#Preview("Calendar · month") {
+    NativeCalendarView(model: .preview(destination: .calendar), onCapture: {})
+        .frame(width: 900, height: 640)
+}
+
+#Preview("Calendar · week · dark") {
+    NativeCalendarView(model: .preview(destination: .calendar, calendarMode: .week), onCapture: {})
+        .frame(width: 900, height: 640)
+        .preferredColorScheme(.dark)
 }

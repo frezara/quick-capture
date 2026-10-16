@@ -185,12 +185,15 @@ final class WorkspaceModel {
     private var watchers: [URL: FileWatcher] = [:]
     private var loadGeneration = 0
     private var pendingRefresh: Task<Void, Never>?
+    /// Previews hold fixed items and never read the real inboxes.
+    @ObservationIgnored private var frozen = false
     init(appState: AppState) {
         self.appState = appState
         recompute()
     }
 
     func refresh() {
+        guard !frozen else { return }
         let controller = OrganiserController.shared
         var metadata: [String: OrganiserItem] = [:]
         for record in controller.records {
@@ -258,3 +261,32 @@ final class WorkspaceModel {
         date = Calendar.current.date(byAdding: component, value: direction * (calendarMode == .week ? 7 : 1), to: date) ?? date
     }
 }
+
+#if DEBUG
+extension WorkspaceModel {
+    static func preview(destination: WorkspaceDestination, calendarMode: WorkspaceCalendarMode = .month) -> WorkspaceModel {
+        let model = WorkspaceModel(appState: AppState())
+        model.frozen = true
+        model.destination = destination
+        model.calendarMode = calendarMode
+        let file = URL(fileURLWithPath: "/tmp/preview-inbox.md")
+        let today = Calendar.current.startOfDay(for: Date())
+        func hours(_ h: Double, from day: Date = today) -> Date { day.addingTimeInterval(h * 3600) }
+        func item(_ id: String, _ text: String, section: String, priority: Int = 3, kind: String = "capture",
+                  starts: Date? = nil, ends: Date? = nil) -> WorkspaceItem {
+            WorkspaceItem(id: id, text: text, section: section, file: file, completed: false, priority: priority,
+                          tags: [], kind: kind, starts: starts, ends: ends, url: nil)
+        }
+        model.items = [
+            item("1", "Renew passport", section: "Admin", priority: 0),
+            item("2", "Order seeds for the spring beds", section: "Garden", priority: 2),
+            item("3", "Reply to the landlord about the boiler", section: "Home"),
+            item("4", "Dentist", section: "Calendar", kind: "event", starts: hours(9), ends: hours(10)),
+            item("5", "Standup", section: "Calendar", kind: "event", starts: hours(9.5), ends: hours(9.75)),
+            item("6", "Seb's birthday", section: "Calendar", kind: "event", starts: hours(24), ends: hours(48)),
+            item("7", "Call the council", section: "Calendar", kind: "event", starts: hours(24 * 3 + 14), ends: hours(24 * 3 + 14.5)),
+        ]
+        return model
+    }
+}
+#endif

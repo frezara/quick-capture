@@ -78,7 +78,7 @@ private struct SettingsForm: View {
                         .multilineTextAlignment(.trailing)
                         .truncationMode(.head)
                     Button("Choose…", action: chooseFile)
-                        .buttonStyle(SettingsGhostButton(t: t))
+                        .buttonStyle(GhostButtonStyle(t: t))
                 }
             }
             rowDivider
@@ -145,7 +145,7 @@ private struct SettingsForm: View {
                 }
             }
             Button("Add Folder…", action: addRefileTarget)
-                .buttonStyle(SettingsGhostButton(t: t))
+                .buttonStyle(GhostButtonStyle(t: t))
                 .padding(.leading, 2)
         }
     }
@@ -173,12 +173,7 @@ private struct SettingsForm: View {
                 .tracking(Tracking.caption)
                 .foregroundStyle(t.inkSecondary)
             VStack(spacing: 0) { content() }
-                .background(t.group)
-                .clipShape(RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous))
-                .overlay(
-                    RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                        .strokeBorder(t.borderStrong, lineWidth: 0.5)
-                )
+                .groupedSurface(t)
         }
     }
 
@@ -371,26 +366,4 @@ private struct SettingsForm: View {
 #Preview("Settings · short path") {
     SettingsView()
         .environment(AppState())
-}
-
-// MARK: - Ghost button
-
-private struct SettingsGhostButton: ButtonStyle {
-    let t: Theme
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(Typeface.ui(12))
-            .foregroundStyle(t.ink)
-            .padding(.horizontal, 10)
-            .padding(.vertical, 4)
-            .background(
-                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                    .fill(configuration.isPressed ? t.chipHover : t.control)
-            )
-            .overlay(
-                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                    .strokeBorder(t.borderStrong, lineWidth: 0.5)
-            )
-            .shadow(color: .black.opacity(0.06), radius: 0.5, y: 0.5)
-    }
 }

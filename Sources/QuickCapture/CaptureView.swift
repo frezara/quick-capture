@@ -924,15 +924,7 @@ struct CaptureView: View {
     /// Small bordered key chip for the picker's keyboard hints (mono, per the
     /// mockup's keycap treatment).
     private func keycap(_ label: String) -> some View {
-        Text(label)
-            .font(Typeface.mono(11, .medium))
-            .foregroundStyle(theme.inkSecondary)
-            .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(
-                RoundedRectangle(cornerRadius: 4, style: .continuous)
-                    .fill(theme.chip)
-            )
+        Keycap(text: label, t: theme)
     }
 
     private func hintLabel(_ text: String) -> some View {
