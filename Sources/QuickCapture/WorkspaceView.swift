@@ -5,7 +5,6 @@ struct WorkspaceView: View {
     @ObservedObject var model: WorkspaceModel
     let onCapture: () -> Void
     let onEditor: () -> Void
-    private let refresh = Timer.publish(every: 3, on: .main, in: .common).autoconnect()
 
     var body: some View {
         HStack(spacing: 0) {
@@ -58,7 +57,6 @@ struct WorkspaceView: View {
         .background(Color(nsColor: .windowBackgroundColor))
         .clipShape(RoundedRectangle(cornerRadius: 16))
         .onAppear { model.refresh() }
-        .onReceive(refresh) { _ in model.refresh() }
     }
 
     private var library: some View {

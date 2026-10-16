@@ -94,7 +94,7 @@ final class MainPanel: NSPanel {
     private var editorFileLoaded = false
     private var exitPending = false
     private var webViewReady = false
-    private var fileWatcher: DispatchSourceFileSystemObject?
+    private var fileWatcher: FileWatcher?
     /// The ⌥⌘O picker is overlaying the editor (#126) rather than growing the
     /// capture window. Distinct from `pickerOpen`, which drives the capture-mode
     /// takeover and its frame animation.
@@ -1418,44 +1418,17 @@ final class MainPanel: NSPanel {
     // MARK: - File watching
     //
     // Watch the capture file for external writes (input-only captures, or edits
-    // from Obsidian/another app) and reload the editor. Atomic writes replace
-    // the file via temp+rename, orphaning our fd, so we re-open on
-    // `.rename`/`.delete`.
+    // from Obsidian/another app) and reload the editor. `FileWatcher` handles
+    // the re-open that atomic (temp+rename) writes require.
 
     private func startWatching() {
         stopWatching()
-        let fd = open(loadedFileURL.path, O_EVTONLY)
-        guard fd >= 0 else { return }
-        let source = DispatchSource.makeFileSystemObjectSource(
-            fileDescriptor: fd,
-            eventMask: [.write, .extend, .delete, .rename],
-            queue: .main
-        )
-        source.setEventHandler { [weak self] in self?.handleWatcherEvent() }
-        // Capture this watcher's descriptor; a delayed cancellation must not
-        // close the replacement watcher's descriptor.
-        source.setCancelHandler { Darwin.close(fd) }
-        source.resume()
-        fileWatcher = source
+        fileWatcher = FileWatcher(url: loadedFileURL) { [weak self] in self?.reloadIfChanged() }
     }
 
     private func stopWatching() {
         fileWatcher?.cancel()
         fileWatcher = nil
-    }
-
-    private func handleWatcherEvent() {
-        guard let source = fileWatcher else { return }
-        let event = source.data
-        if event.contains(.rename) || event.contains(.delete) {
-            stopWatching()
-            DispatchQueue.main.asyncAfter(deadline: .now() + 0.05) { [weak self] in
-                self?.reloadIfChanged()
-                self?.startWatching()
-            }
-            return
-        }
-        reloadIfChanged()
     }
 
     private func reloadIfChanged() {
