@@ -260,6 +260,7 @@ struct NativeCalendarView: View {
     }
 }
 
+#if DEBUG
 #Preview("Calendar · month") {
     NativeCalendarView(model: .preview(destination: .calendar), onCapture: {})
         .frame(width: 900, height: 640)
@@ -270,3 +271,4 @@ struct NativeCalendarView: View {
         .frame(width: 900, height: 640)
         .preferredColorScheme(.dark)
 }
+#endif

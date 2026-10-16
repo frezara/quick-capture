@@ -157,6 +157,7 @@ struct WorkspaceView: View {
     }
 }
 
+#if DEBUG
 #Preview("Workspace · todos") {
     WorkspaceView(model: .preview(destination: .todos), onCapture: {}, onEditor: {})
         .frame(width: 1000, height: 640)
@@ -167,3 +168,4 @@ struct WorkspaceView: View {
         .frame(width: 1000, height: 640)
         .preferredColorScheme(.dark)
 }
+#endif
