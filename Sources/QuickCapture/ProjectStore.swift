@@ -6,16 +6,16 @@ struct ProjectDraft: Codable {
     var text: String
 }
 
-@MainActor
-final class ProjectStore: ObservableObject {
+@MainActor @Observable
+final class ProjectStore {
     static let shared = ProjectStore(root: FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0].appendingPathComponent("QuickCapture/Projects"))
     struct State: Codable {
         var projects: [DiskProject] = []
         var drafts: [String: ProjectDraft] = [:]
     }
-    @Published private(set) var state = State()
-    @Published var message: String?
-    @Published private(set) var busy: Set<String> = []
+    private(set) var state = State()
+    var message: String?
+    private(set) var busy: Set<String> = []
     private let root: URL
     private var readable = true
     private var worker: Task<Void, Never>?

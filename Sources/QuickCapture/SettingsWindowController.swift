@@ -14,7 +14,7 @@ final class SettingsWindowController {
 
     func show() {
         if window == nil {
-            let view = SettingsView().environmentObject(appState)
+            let view = SettingsView().environment(appState)
             let hosting = NSHostingController(rootView: view)
             let w = NSWindow(contentViewController: hosting)
             w.title = "Quick Capture Settings"

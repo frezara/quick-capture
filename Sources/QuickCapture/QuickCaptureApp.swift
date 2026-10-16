@@ -7,7 +7,7 @@ struct QuickCaptureApp: App {
     var body: some Scene {
         Settings {
             SettingsView()
-                .environmentObject(appDelegate.appState)
+                .environment(appDelegate.appState)
         }
         .commands {
             CommandGroup(replacing: .appSettings) {

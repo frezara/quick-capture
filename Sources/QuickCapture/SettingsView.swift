@@ -3,7 +3,14 @@ import SwiftUI
 import UniformTypeIdentifiers
 
 struct SettingsView: View {
-    @EnvironmentObject var appState: AppState
+    @Environment(AppState.self) private var appState
+    var body: some View { SettingsForm(appState: appState) }
+}
+
+/// Split from `SettingsView` so the form gets `@Bindable` access (`$appState.…`)
+/// to the environment's `AppState`.
+private struct SettingsForm: View {
+    @Bindable var appState: AppState
     @Environment(\.colorScheme) private var scheme
     @State private var loginEnabled = SMAppService.mainApp.status == .enabled
     private var t: Theme { scheme == .dark ? .dark : .light }
@@ -354,7 +361,7 @@ struct SettingsView: View {
 
 #Preview("Settings · long path") {
     SettingsView()
-        .environmentObject({
+        .environment({
             let s = AppState()
             s.captureFilePath = "/Users/fahadqazi/Documents/Notes/Personal/2024/quick-capture/inbox.md"
             return s
@@ -363,7 +370,7 @@ struct SettingsView: View {
 
 #Preview("Settings · short path") {
     SettingsView()
-        .environmentObject(AppState())
+        .environment(AppState())
 }
 
 // MARK: - Ghost button

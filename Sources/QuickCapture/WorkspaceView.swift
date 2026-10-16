@@ -2,7 +2,7 @@ import SwiftUI
 
 /// Native browsing surface; the existing editor remains the editing destination.
 struct WorkspaceView: View {
-    @ObservedObject var model: WorkspaceModel
+    @Bindable var model: WorkspaceModel
     let onCapture: () -> Void
     let onEditor: () -> Void
 

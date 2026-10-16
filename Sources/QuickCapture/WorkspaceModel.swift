@@ -166,16 +166,16 @@ struct WorkspaceProjection {
     }
 }
 
-@MainActor
-final class WorkspaceModel: ObservableObject {
-    @Published var destination: WorkspaceDestination = .todos { didSet { recompute() } }
-    @Published var calendarMode: WorkspaceCalendarMode = .month { didSet { recompute() } }
-    @Published var date = Date() { didSet { recompute() } }
-    @Published var project: String? { didSet { recompute() } }
-    @Published var selectedID: String?
-    @Published private(set) var items: [WorkspaceItem] = [] { didSet { recompute() } }
-    @Published private(set) var problem: String?
-    @Published private(set) var projection = WorkspaceProjection.empty
+@MainActor @Observable
+final class WorkspaceModel {
+    var destination: WorkspaceDestination = .todos { didSet { recompute() } }
+    var calendarMode: WorkspaceCalendarMode = .month { didSet { recompute() } }
+    var date = Date() { didSet { recompute() } }
+    var project: String? { didSet { recompute() } }
+    var selectedID: String?
+    private(set) var items: [WorkspaceItem] = [] { didSet { recompute() } }
+    private(set) var problem: String?
+    private(set) var projection = WorkspaceProjection.empty
     var visible: [WorkspaceItem] { projection.visible }
     var days: [Date] { projection.days }
     var captureFile: URL { appState.captureFileURL }

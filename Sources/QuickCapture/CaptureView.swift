@@ -2,7 +2,7 @@ import AppKit
 import SwiftUI
 
 struct CaptureView: View {
-    @ObservedObject var appState: AppState
+    let appState: AppState
     let onSubmit: (String, String?, [URL]) -> Bool
     let onClose: () -> Void
     let onToggleEditor: () -> Void
