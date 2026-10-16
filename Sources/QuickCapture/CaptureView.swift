@@ -155,12 +155,12 @@ struct CaptureView: View {
             submit()
             return .handled
         }
-        .onKeyPress(.upArrow)    { pickerOpen ? { movePicker(-1); return .handled }() : .ignored }
-        .onKeyPress(.downArrow)  { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
-        .onKeyPress(.leftArrow)  { pickerOpen ? { movePicker(-1); return .handled }() : .ignored }
-        .onKeyPress(.rightArrow) { pickerOpen ? { movePicker(1);  return .handled }() : .ignored }
+        .onKeyPress(.upArrow)    { pickerKey { movePicker(-1) } }
+        .onKeyPress(.downArrow)  { pickerKey { movePicker(1) } }
+        .onKeyPress(.leftArrow)  { pickerKey { movePicker(-1) } }
+        .onKeyPress(.rightArrow) { pickerKey { movePicker(1) } }
         // Space toggles the highlighted row's selection — multi-attach (#45).
-        .onKeyPress(.space)      { pickerOpen ? { toggleHighlighted(); return .handled }() : .ignored }
+        .onKeyPress(.space)      { pickerKey { toggleHighlighted() } }
         .onChange(of: tagText) { _, _ in
             // Typing reopens an Esc-dismissed dropdown and resets the
             // highlight — the filtered list under the cursor just changed.
@@ -186,8 +186,14 @@ struct CaptureView: View {
             pickerSelection = []
             pickerPreviews = [:]
         }
-        .onChange(of: appState.pendingAttachments) { _, newValue in
-            loadChipThumbnails(for: newValue)
+        // Keyed tasks rather than fire-and-forget dispatches: a newer set
+        // cancels in-flight decodes for the old one.
+        .task(id: appState.pendingAttachments) {
+            await loadThumbnails(for: appState.pendingAttachments, maxPixelSize: 256, into: \.chipThumbnails)
+        }
+        .task(id: pickerItemsKey) {
+            let urls = (appState.screenshotPickerItems ?? []).map(\.url)
+            await loadThumbnails(for: urls, maxPixelSize: 1000, into: \.pickerPreviews)
         }
         // The picker's item set changing (open, or ⌥⌘O re-query) resets the
         // highlight to the newest and (re)loads previews; opening also moves
@@ -203,16 +209,17 @@ struct CaptureView: View {
             // additive rather than a blank slate (#99).
             pickerSelection = Self.seededPickerSelection(
                 items: items.map(\.url), attached: appState.pendingAttachments)
-            loadPickerPreviews(items)
             // Defer focus a runloop — the focusable picker view is installed in
             // this same render pass, and focusing it synchronously can miss.
             DispatchQueue.main.async { focused = .picker }
         }
-        .onChange(of: appState.attachFeedback) { _, newValue in
-            guard newValue != nil else { return }
-            DispatchQueue.main.asyncAfter(deadline: .now() + 1.5) {
-                appState.attachFeedback = nil
-            }
+        // A newer notice restarts the clock instead of being cleared early by
+        // the previous notice's timer.
+        .task(id: appState.attachFeedback) {
+            guard appState.attachFeedback != nil else { return }
+            try? await Task.sleep(for: .seconds(1.5))
+            guard !Task.isCancelled else { return }
+            appState.attachFeedback = nil
         }
     }
 
@@ -746,11 +753,20 @@ struct CaptureView: View {
         return "\(datePart) at \(timePart) · \(formatDuration(event.duration))"
     }
 
-    private func posixFormatted(_ date: Date, _ format: String) -> String {
+    /// One formatter per pattern: picker rows and the `#cal` preview format on
+    /// every render, and a `DateFormatter` is expensive to build.
+    private static let posixFormatters: [String: DateFormatter] = Dictionary(
+        uniqueKeysWithValues: ["EEEE", "EEE, MMM d", "HH:mm", "h:mm a"].map { ($0, makePOSIXFormatter($0)) })
+
+    private static func makePOSIXFormatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()
         f.locale = Locale(identifier: "en_US_POSIX")
         f.dateFormat = format
-        return f.string(from: date)
+        return f
+    }
+
+    private func posixFormatted(_ date: Date, _ format: String) -> String {
+        (Self.posixFormatters[format] ?? Self.makePOSIXFormatter(format)).string(from: date)
     }
 
     private func formatDuration(_ seconds: TimeInterval) -> String {
@@ -779,17 +795,23 @@ struct CaptureView: View {
         return true
     }
 
-    private func loadChipThumbnails(for urls: [URL]) {
-        // Drop thumbnails for URLs no longer attached.
-        chipThumbnails = chipThumbnails.filter { urls.contains($0.key) }
-        for url in urls where chipThumbnails[url] == nil {
-            DispatchQueue.global(qos: .userInitiated).async {
-                // ~2× the 120pt tile so the larger preview stays crisp on Retina.
-                guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 256) else { return }
-                let image = NSImage(cgImage: cg, size: .zero)
-                DispatchQueue.main.async {
-                    if appState.pendingAttachments.contains(url) { chipThumbnails[url] = image }
-                }
+    /// Decodes thumbnails for `urls` off the main thread into the given cache,
+    /// dropping entries no longer in the set (a 6K Retina PNG decoded inline
+    /// would jank the summon). Each frame shows at once and its image fills in.
+    private func loadThumbnails(for urls: [URL], maxPixelSize: Int,
+                                into cache: ReferenceWritableKeyPath<CaptureView, [URL: NSImage]>) async {
+        let wanted = Set(urls)
+        let kept = self[keyPath: cache].filter { wanted.contains($0.key) }
+        if kept.count != self[keyPath: cache].count { self[keyPath: cache] = kept }
+        let missing = urls.filter { kept[$0] == nil }
+        guard !missing.isEmpty else { return }
+        await withTaskGroup(of: (URL, CGImage?).self) { group in
+            for url in missing {
+                group.addTask { (url, AttachmentStore.thumbnail(at: url, maxPixelSize: maxPixelSize)) }
+            }
+            for await (url, cg) in group {
+                guard !Task.isCancelled else { return }
+                if let cg { self[keyPath: cache][url] = NSImage(cgImage: cg, size: .zero) }
             }
         }
     }
@@ -797,6 +819,14 @@ struct CaptureView: View {
     // MARK: - Screenshot picker (⌥⌘O)
 
     private var pickerOpen: Bool { appState.screenshotPickerItems != nil }
+
+    /// The picker owns the arrows and Space while it's open; otherwise they
+    /// pass through to whatever has focus.
+    private func pickerKey(_ action: () -> Void) -> KeyPress.Result {
+        guard pickerOpen else { return .ignored }
+        action()
+        return .handled
+    }
 
     /// Stable identity for the current picker item set. Drives the focus /
     /// highlight / preview resets when the picker opens, closes, or is
@@ -1031,16 +1061,6 @@ struct CaptureView: View {
             urls = items.map(\.url).filter { pickerSelection.contains($0) }
         }
         onPickerAttach(urls)
-    }
-
-    private func loadPickerPreviews(_ items: [ScreenshotLocator.Screenshot]) {
-        for url in items.map(\.url) where pickerPreviews[url] == nil {
-            DispatchQueue.global(qos: .userInitiated).async {
-                guard let cg = AttachmentStore.thumbnail(at: url, maxPixelSize: 1000) else { return }
-                let image = NSImage(cgImage: cg, size: .zero)
-                DispatchQueue.main.async { pickerPreviews[url] = image }
-            }
-        }
     }
 
     private func screenshotTime(_ shot: ScreenshotLocator.Screenshot) -> String {
