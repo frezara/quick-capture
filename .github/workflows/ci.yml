@@ -72,3 +72,18 @@ jobs:
             CODE_SIGNING_REQUIRED=NO \
             CODE_SIGNING_ALLOWED=NO \
             test
+
+      # release.yml builds Release, which compiles out DEBUG-only code. A
+      # Debug-only CI let v0.5.0 tag a commit whose #Previews referenced a
+      # DEBUG-only helper; building Release here catches that before tagging.
+      - name: Build (Release, ad-hoc signed)
+        run: |
+          xcodebuild \
+            -project QuickCapture.xcodeproj \
+            -scheme QuickCapture \
+            -configuration Release \
+            -derivedDataPath build/ \
+            CODE_SIGN_IDENTITY="-" \
+            CODE_SIGNING_REQUIRED=NO \
+            CODE_SIGNING_ALLOWED=NO \
+            build
