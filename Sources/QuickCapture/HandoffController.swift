@@ -1,16 +1,16 @@
 import AppKit
 import SwiftUI
 
-@MainActor
-final class HandoffController: ObservableObject {
+@MainActor @Observable
+final class HandoffController {
     static let shared = HandoffController()
-    @Published var enabled: Bool { didSet { UserDefaults.standard.set(enabled, forKey: "organiser.enabled") } }
-    @Published var spoolPath: String { didSet { UserDefaults.standard.set(spoolPath, forKey: "organiser.spool") } }
-    @Published var workspace: String { didSet { UserDefaults.standard.set(workspace, forKey: "organiser.workspace") } }
-    @Published var records: [HandoffRecord] = []
-    @Published var pendingImports: [HandoffPendingImport] = []
-    @Published var status = "Organiser delivery history"
-    @Published var warnings: [String] = []
+    var enabled: Bool { didSet { UserDefaults.standard.set(enabled, forKey: "organiser.enabled") } }
+    var spoolPath: String { didSet { UserDefaults.standard.set(spoolPath, forKey: "organiser.spool") } }
+    var workspace: String { didSet { UserDefaults.standard.set(workspace, forKey: "organiser.workspace") } }
+    var records: [HandoffRecord] = []
+    var pendingImports: [HandoffPendingImport] = []
+    var status = "Organiser delivery history"
+    var warnings: [String] = []
     private let installation: String
     let store: HandoffStore
     private var worker: Task<Void, Never>?
@@ -152,7 +152,7 @@ final class HandoffController: ObservableObject {
 }
 
 struct HandoffSettingsView: View {
-    @ObservedObject var controller = HandoffController.shared
+    @Bindable var controller = HandoffController.shared
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
             Text("ORGANISER").font(.headline)
@@ -166,7 +166,7 @@ struct HandoffSettingsView: View {
     }
 }
 struct HandoffHistoryView: View {
-    @ObservedObject var controller: HandoffController
+    let controller: HandoffController
     var body: some View {
         VStack(alignment: .leading, spacing: 12) {
             Text(controller.status)

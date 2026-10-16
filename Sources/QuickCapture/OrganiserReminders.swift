@@ -20,11 +20,11 @@ struct OrganiserReminder: Equatable {
     }
 }
 
-@MainActor
-final class OrganiserReminders: NSObject, ObservableObject, UNUserNotificationCenterDelegate {
+@MainActor @Observable
+final class OrganiserReminders: NSObject, UNUserNotificationCenterDelegate {
     static let shared = OrganiserReminders()
-    @Published var status = "Enable notifications to receive reminders on this Mac."
-    @Published var enabled = UserDefaults.standard.bool(forKey: "organiser.reminders.enabled")
+    var status = "Enable notifications to receive reminders on this Mac."
+    var enabled = UserDefaults.standard.bool(forKey: "organiser.reminders.enabled")
     private let center = UNUserNotificationCenter.current()
     private override init() { super.init(); center.delegate = self }
 
@@ -85,7 +85,7 @@ final class OrganiserReminders: NSObject, ObservableObject, UNUserNotificationCe
 }
 
 struct OrganiserReminderSettings: View {
-    @ObservedObject private var reminders = OrganiserReminders.shared
+    private let reminders = OrganiserReminders.shared
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
             Text("REMINDER NOTIFICATIONS").font(.headline)

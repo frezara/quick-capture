@@ -6,7 +6,7 @@ enum ProjectTab: String, CaseIterable {
 }
 
 struct ProjectsView: View {
-    @ObservedObject private var store: ProjectStore
+    private let store: ProjectStore
     @State private var selected: String?
     @State private var tab = ProjectTab.overview
     @State private var content = ""
@@ -26,7 +26,7 @@ struct ProjectsView: View {
     @State private var board = false
     private var project: DiskProject? { selected.flatMap { store.project($0) } }
 
-    init(store: ProjectStore = .shared) { self.store = store }
+    @MainActor init(store: ProjectStore? = nil) { self.store = store ?? .shared }
 
     var body: some View {
         VStack(spacing: 0) {

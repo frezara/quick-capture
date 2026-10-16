@@ -1,7 +1,7 @@
 import SwiftUI
 
 struct NativeCalendarView: View {
-    @ObservedObject var model: WorkspaceModel
+    @Bindable var model: WorkspaceModel
     let onCapture: () -> Void
     @State private var selectedEvent: WorkspaceItem?
     private let hourHeight: CGFloat = 60

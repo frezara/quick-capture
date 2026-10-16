@@ -35,13 +35,13 @@ enum OrganiserCredentials {
     }
 }
 
-@MainActor
-final class OrganiserController: ObservableObject {
+@MainActor @Observable
+final class OrganiserController {
     static let shared = OrganiserController()
-    @Published var endpoint: String { didSet { UserDefaults.standard.set(endpoint, forKey: "organiser.api.endpoint") } }
-    @Published var enabled: Bool { didSet { UserDefaults.standard.set(enabled, forKey: "organiser.api.enabled") } }
-    @Published var status = "New captures are retained locally until an organiser connection is configured."
-    @Published var records: [OrganiserDelivery] = []
+    var endpoint: String { didSet { UserDefaults.standard.set(endpoint, forKey: "organiser.api.endpoint") } }
+    var enabled: Bool { didSet { UserDefaults.standard.set(enabled, forKey: "organiser.api.enabled") } }
+    var status = "New captures are retained locally until an organiser connection is configured."
+    var records: [OrganiserDelivery] = []
     let outbox: OrganiserOutbox
     private var worker: Task<Void, Never>?
     private var pollIndex = 0
@@ -234,7 +234,7 @@ final class OrganiserController: ObservableObject {
 }
 
 struct OrganiserSettingsView: View {
-    @ObservedObject var controller = OrganiserController.shared
+    @Bindable var controller = OrganiserController.shared
     @State private var key = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
