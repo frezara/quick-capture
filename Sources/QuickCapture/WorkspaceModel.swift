@@ -53,6 +53,14 @@ struct WorkspaceItem: Identifiable, Equatable {
     let starts: Date?
     let ends: Date?
     let url: URL?
+    /// 0-based line of the item in `file`.
+    var line = 0
+    /// Indent width of the item's line; 0 is top level.
+    var depth = 0
+    var reminder: Date?
+    /// Ticked and total task lines nested under the item.
+    var childTasksDone = 0
+    var childTasks = 0
     var title: String { text.components(separatedBy: "\n").first ?? text }
     var isTodo: Bool { kind == "capture" || kind == "task" }
     var projects: [String] { tags.filter { $0.hasPrefix("project/") }.map { String($0.dropFirst(8)) }.sorted() }
@@ -98,10 +106,14 @@ struct WorkspaceItem: Identifiable, Equatable {
                 if tags.contains("note") || ["note", "notes"].contains(section.lowercased()) { kind = "note" }
                 else if tags.contains("bookmark") || section.lowercased() == "bookmarks" { kind = "bookmark" }
             }
+            let childTasks = lines[(index + 1)..<end].filter { $0.range(of: #"^\s+[-*+] \[[ xX]\]"#, options: .regularExpression) != nil }
             result.append(WorkspaceItem(id: sourceID ?? "\(file.path):\(index)", text: body, section: section, file: file,
                 completed: line.range(of: #"^\s*[-*+] \[[xX]\]"#, options: .regularExpression) != nil,
                 priority: FileWriter.priorityBucket(for: first), tags: tags, kind: kind,
-                starts: date(meta?.starts_at), ends: date(meta?.ends_at), url: link))
+                starts: date(meta?.starts_at), ends: date(meta?.ends_at), url: link,
+                line: index, depth: FileWriter.indentWidth(line), reminder: date(meta?.reminder_at),
+                childTasksDone: childTasks.filter { $0.range(of: #"\[[xX]\]"#, options: .regularExpression) != nil }.count,
+                childTasks: childTasks.count))
         }
         return result
     }
