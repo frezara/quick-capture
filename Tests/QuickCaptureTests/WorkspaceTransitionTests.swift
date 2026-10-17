@@ -27,3 +27,43 @@ final class WorkspaceTransitionTests: XCTestCase {
         }
     }
 }
+
+/// Calendar keys sent through the window's real event dispatch (`sendEvent`),
+/// so a SwiftUI view swallowing an arrow or Return would fail here even though
+/// the key table itself is right.
+@MainActor
+final class CalendarKeyRoutingTests: XCTestCase {
+    private func press(_ panel: NSWindow, _ chars: String, _ code: UInt16) throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code))
+            panel.sendEvent(event)
+        }
+    }
+
+    func testArrowsLettersAndReturnReachTheCalendar() async throws {
+        let panel = MainPanel(appState: AppState(), onSubmit: { _, _, _ in true }, onDismiss: {})
+        defer { panel.orderOut(nil) }
+        panel.openWorkspace(.calendar)
+        try await Task.sleep(nanoseconds: 400_000_000)
+        let model = panel.workspaceModel
+        model.date = Date()
+        model.calendarMode = .month
+        let start = model.selectedDay
+
+        try press(panel, "\u{F703}", 124)            // →
+        XCTAssertEqual(Calendar.current.dateComponents([.day], from: start, to: model.selectedDay).day, 1)
+        try press(panel, "\u{F701}", 125)            // ↓ in month moves a week
+        XCTAssertEqual(Calendar.current.dateComponents([.day], from: start, to: model.selectedDay).day, 8)
+        try press(panel, "t", 17)
+        XCTAssertEqual(model.selectedDay, start)
+        try press(panel, "w", 13)
+        XCTAssertEqual(model.calendarMode, .week)
+        try press(panel, "m", 46)
+        XCTAssertEqual(model.calendarMode, .month)
+        try press(panel, "\r", 36)                   // Enter opens the selected day
+        XCTAssertEqual(model.calendarMode, .day)
+        XCTAssertTrue(panel.workspaceOpen)
+    }
+}

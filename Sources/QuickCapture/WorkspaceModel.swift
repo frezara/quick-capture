@@ -170,7 +170,17 @@ struct WorkspaceProjection {
 final class WorkspaceModel {
     var destination: WorkspaceDestination = .todos { didSet { recompute() } }
     var calendarMode: WorkspaceCalendarMode = .month { didSet { recompute() } }
-    var date = Date() { didSet { recompute() } }
+    /// The selected day — the calendar's keyboard cursor. The visible month,
+    /// week or day is whichever contains it, so moving it past an edge turns
+    /// the page.
+    var date = Date() {
+        didSet {
+            recompute()
+            if let id = selectedEventID, !eventsOnSelectedDay.contains(where: { $0.id == id }) { selectedEventID = nil }
+        }
+    }
+    /// The event the arrows have landed on (or that was clicked), if any.
+    var selectedEventID: String?
     var project: String? { didSet { recompute() } }
     var selectedID: String?
     private(set) var items: [WorkspaceItem] = [] { didSet { recompute() } }
@@ -259,6 +269,45 @@ final class WorkspaceModel {
     func shiftDate(_ direction: Int) {
         let component: Calendar.Component = calendarMode == .month ? .month : .day
         date = Calendar.current.date(byAdding: component, value: direction * (calendarMode == .week ? 7 : 1), to: date) ?? date
+    }
+
+    var selectedDay: Date { Calendar.current.startOfDay(for: date) }
+
+    /// All-day events first (they start at midnight), then by start time. The
+    /// selected day is always on screen, so the projection already holds it.
+    var eventsOnSelectedDay: [WorkspaceItem] { projection.eventsByDay[selectedDay] ?? [] }
+
+    var selectedEvent: WorkspaceItem? {
+        selectedEventID.flatMap { id in items.first { $0.id == id } }
+    }
+
+    func moveDays(_ offset: Int) {
+        date = Calendar.current.date(byAdding: .day, value: offset, to: date) ?? date
+    }
+
+    /// Steps the selection through the selected day's events. With nothing
+    /// selected, ↓ lands on the first and ↑ on the last; the ends don't wrap.
+    func stepEvent(_ offset: Int) {
+        let events = eventsOnSelectedDay
+        guard !events.isEmpty else { return }
+        guard let current = selectedEventID.flatMap({ id in events.firstIndex { $0.id == id } }) else {
+            selectedEventID = (offset > 0 ? events.first : events.last)?.id
+            return
+        }
+        selectedEventID = events[min(events.count - 1, max(0, current + offset))].id
+    }
+
+    func select(_ item: WorkspaceItem, on day: Date) {
+        date = day
+        selectedEventID = item.id
+    }
+
+    /// New event: the capture box opens with `cal` already in the tag field.
+    func prepareNewEvent() { appState.captureTagPrefill = "cal" }
+
+    /// The section's own hue when it has one; otherwise the calendar's teal.
+    func hue(for item: WorkspaceItem) -> TagPalette.Entry {
+        appState.tagHues.entry(for: item.section) ?? TagPalette.calendar
     }
 }
 
