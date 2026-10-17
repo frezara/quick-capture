@@ -102,7 +102,7 @@ crossfades between them.
   file, preserving the source's sections. Indented checked items are
   flattened to top level in the archive.
 
-- **Re-org / sweep** (`⌘'`) — moves checked items to the bottom of their
+- **Re-org / sweep** (`⌥⌘J`) — moves checked items to the bottom of their
   section, sorts unchecked items by priority bucket, and strips priority
   markers off checked items. "Re-org" and "sweep" are the same gesture.
 
@@ -128,6 +128,35 @@ crossfades between them.
 - **Source marker** — the trailing identifier a delivered item carries so the
   organiser recognises it across edits and reordering (ADR-0008). Never shown
   in the editor; it lives and dies with its line.
+
+- **Daily note** — a markdown file bound to one date, `daily/YYYY-MM-DD.md`
+  in a folder next to the capture file. Unlike an **inbox** (undated, worked
+  down, never finished), a daily note is a record of one day: it is current on
+  its date and rarely edited afterwards. Its H1 is the date. It always has a
+  `## Tasks` section (recreated if missing); `## Log`, for free writing, is
+  offered on creation but optional, and any other sections are free. Daily-note items stay local:
+  they are not delivered to the organiser.
+
+- **Rollover** — carrying unfinished items into a new day's **daily note**. It
+  happens once, when today's note is created, by **copying** every unticked
+  top-level item (with everything nested under it) from any section of the most
+  recent earlier daily note into `## Tasks`. A ticked item is closed along with
+  everything under it; plain bullets and prose never roll over. The earlier note
+  is never changed, so it still shows what was open when its day ended.
+
+- **Ticked parent** — an item whose own checkbox is ticked. Ticking a parent
+  ticks everything nested under it; unticking a child unticks its parent;
+  unticking a parent leaves its children as they are; ticking the last child
+  does not tick the parent. A ticked parent closes its whole subtree, even in a
+  file edited elsewhere where some children are still unticked.
+
+- **Today** — the workspace view for the current day: the day's schedule on the
+  left and the editor on its **daily note** on the right. The first view in the
+  rail and the one the workspace opens on.
+
+- **Agenda** — a workspace view, inspired by org-mode's agenda, that is
+  separate from **Today**. Named and placed second in the rail; its contents
+  are not yet defined.
 
 ## Organiser handoff language
 

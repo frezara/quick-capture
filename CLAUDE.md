@@ -121,7 +121,7 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   captures still classify correctly. Insertion in `FileWriter.insert` walks
   through a section and lands a new item just before the first task whose
   bucket is `>=` its own (so high-priority captures float to the top).
-- **Archive.** `FileWriter.archiveCompleted` moves every `- [x]` line to a
+- **Archive (`⌥⌘K`).** `FileWriter.archiveCompleted` moves every `- [x]` line to a
   sibling `<name>_archive.<ext>` file, preserving the source's H2 sections.
   Indented checked items are flattened to the top level in the archive.
 - **One panel, two mutually-exclusive modes (ADR-0004).** `MainPanel` keeps
@@ -208,7 +208,7 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
     walking back from the top of each visible range, since the viewport can
     start mid-section. Every rule reads its variable with a neutral fallback,
     so an unhued section (the untagged catch-all) renders as it always did.
-- **Re-org (`⌘'`).** Moves checked items to the bottom of their section
+- **Re-org (`⌥⌘J`).** Moves checked items to the bottom of their section
   (FLIP-animated, focus preserved), sorts unchecked items by priority bucket
   (`!!!` → `!!` → `!` → plain), and strips priority markers from checked
   items so they read as plain done items.
