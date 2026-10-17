@@ -7,9 +7,15 @@
     <style>
         /* Match Theme.surface (DesignSystem.swift) so there's no colour flash
            before the editor theme paints. */
-        html, body { margin: 0; padding: 0; height: 100%; background: #FAFCFB; -webkit-font-smoothing: antialiased; overflow: hidden; }
+        /* Recursive (SIL OFL 1.1, fonts/Recursive-OFL.txt), the app's typeface. */
+        @font-face {
+            font-family: "Recursive";
+            src: url("fonts/Recursive-VF.ttf") format("truetype");
+            font-weight: 300 1000;
+        }
+        html, body { margin: 0; padding: 0; height: 100%; background: #F8F9FB; -webkit-font-smoothing: antialiased; overflow: hidden; }
         @media (prefers-color-scheme: dark) {
-            html, body { background: #242C2A; }
+            html, body { background: #1B2132; }
         }
         #editor { height: 100vh; overflow: hidden; }
         .cm-editor { height: 100%; }
