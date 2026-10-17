@@ -99,7 +99,7 @@ enum ShortcutAction: String, CaseIterable {
     // mnemonic is spatial (one cluster), not per-letter; don't "fix" it back to
     // E/S/R. Avoid the system-claimed combos: ⌥⌘Esc (force quit), ⌥⌘H (Hide
     // Others), ⌥⌘D (Dock), ⌥⌘Space (Finder search).
-    case showToday, showTodos, showCalendar, showProjects, showNotes, showLinks
+    case showToday, showAgenda, showTodos, showCalendar, showProjects, showNotes, showLinks
     case toggleTodayFocus
     case toggleEditor
     case dismissPanel
@@ -126,9 +126,9 @@ enum ShortcutAction: String, CaseIterable {
 
     var chord: KeyChord {
         switch self {
-        // Numbered in rail order. ⌥⌘2 is held for Agenda, which is named but
-        // not yet defined (CONTEXT.md).
+        // Numbered in rail order.
         case .showToday: return KeyChord(key: "1", modifiers: [.command, .option])
+        case .showAgenda: return KeyChord(key: "2", modifiers: [.command, .option])
         case .showTodos: return KeyChord(key: "3", modifiers: [.command, .option])
         case .showCalendar: return KeyChord(key: "4", modifiers: [.command, .option])
         case .showProjects: return KeyChord(key: "5", modifiers: [.command, .option])
@@ -153,8 +153,8 @@ enum ShortcutAction: String, CaseIterable {
 
     var scope: ShortcutScope {
         switch self {
-        case .showToday, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor, .dismissPanel,
-             .toggleTodayFocus:
+        case .showToday, .showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor,
+             .dismissPanel, .toggleTodayFocus:
             return .anyMode
         case .attachScreenshot:
             // Both modes (#126): in capture it fills the box's chips, in the
@@ -169,8 +169,8 @@ enum ShortcutAction: String, CaseIterable {
 
     var isWindowIntercepted: Bool {
         switch self {
-        case .showToday, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor, .dismissPanel,
-             .attachScreenshot, .refile, .swallowReload, .toggleTodayFocus:
+        case .showToday, .showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor,
+             .dismissPanel, .attachScreenshot, .refile, .swallowReload, .toggleTodayFocus:
             return true
         case .readMode, .toggleTask, .save, .reorg, .archive, .imageSource, .nextSection, .prevSection:
             return false
@@ -184,6 +184,7 @@ enum ShortcutAction: String, CaseIterable {
     var menuTitle: String? {
         switch self {
         case .showToday: return "Today"
+        case .showAgenda: return "Agenda"
         case .toggleTodayFocus: return nil
         case .showCalendar: return "Calendar"
         case .showProjects: return "Projects"

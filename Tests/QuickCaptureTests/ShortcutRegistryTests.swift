@@ -219,11 +219,10 @@ final class ShortcutRegistryTests: XCTestCase {
         XCTAssertEqual(ShortcutRegistry.captureHints.map(\.glyphs), ["⌥⌘1", "⌥⌘I", "⌥⌘O"])
     }
 
-    /// Workspace views are numbered in rail order; ⌥⌘2 is held for Agenda.
+    /// Workspace views are numbered in rail order.
     func testWorkspaceViewsAreNumberedInRailOrder() {
-        let views: [ShortcutAction] = [.showToday, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks]
-        XCTAssertEqual(views.map(\.chord.displayGlyphs), ["⌥⌘1", "⌥⌘3", "⌥⌘4", "⌥⌘5", "⌥⌘6", "⌥⌘7"])
-        XCTAssertFalse(ShortcutAction.allCases.contains { $0.chord.displayGlyphs == "⌥⌘2" })
+        let views: [ShortcutAction] = [.showToday, .showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks]
+        XCTAssertEqual(views.map(\.chord.displayGlyphs), ["⌥⌘1", "⌥⌘2", "⌥⌘3", "⌥⌘4", "⌥⌘5", "⌥⌘6", "⌥⌘7"])
     }
 }
 
