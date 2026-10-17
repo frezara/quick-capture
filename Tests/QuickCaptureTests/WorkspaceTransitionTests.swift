@@ -185,3 +185,63 @@ final class AgendaKeyRoutingTests: XCTestCase {
         XCTAssertTrue(panel.editorOpen, "Enter opens the item in the editor")
     }
 }
+
+/// Todos' keys through real key events over a temp inbox.
+@MainActor
+final class TodosKeyRoutingTests: XCTestCase {
+    private func press(_ panel: NSWindow, _ chars: String, _ code: UInt16,
+                       _ modifiers: NSEvent.ModifierFlags = []) throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code))
+            panel.sendEvent(event)
+        }
+    }
+
+    private func waitFor(_ condition: () throws -> Bool) async throws {
+        for _ in 0..<40 where try !condition() { try await Task.sleep(nanoseconds: 50_000_000) }
+    }
+
+    func testSectionsTickPlanAndFilter() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TodosKeys-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let inbox = folder.appendingPathComponent("inbox.md")
+        try "# Inbox\n\n## Home\n- [ ] boiler\n- [ ] hinge !!!\n\n## Garden\n- [ ] bulbs\n".write(to: inbox, atomically: true, encoding: .utf8)
+        let read = { try String(contentsOf: inbox, encoding: .utf8) }
+
+        let panel = MainPanel(appState: AppState(), onSubmit: { _, _, _ in true }, onDismiss: {})
+        panel.dailyFolderOverride = folder.appendingPathComponent("daily")
+        defer { panel.orderOut(nil) }
+        panel.openWorkspace(.todos)
+        let model = panel.workspaceModel
+        model.useFixedItems(WorkspaceItem.parse(try read(), file: inbox, metadata: [:]), sources: [])
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(model.projection.groups.map(\.name), ["Home", "Garden"])
+        XCTAssertEqual(model.selectedItem?.title, "hinge !!!", "priority first within a section")
+        try press(panel, "\u{F701}", 125, .option)              // ⌥↓ to the next section
+        XCTAssertEqual(model.selectedItem?.title, "bulbs")
+        try press(panel, "\u{F700}", 126)                        // ↑
+        XCTAssertEqual(model.selectedItem?.title, "boiler")
+
+        try press(panel, "x", 7)
+        try await waitFor { try read().contains("- [x] boiler") }
+        XCTAssertTrue(try read().contains("- [x] boiler"), "X ticks in the file")
+        XCTAssertTrue(model.visible.contains { $0.title == "boiler" }, "a ticked todo stays until you leave")
+
+        model.useFixedItems(WorkspaceItem.parse(try read(), file: inbox, metadata: [:]), sources: [])
+        model.selectedID = model.visible.first { $0.title == "bulbs" }?.id
+        try press(panel, "p", 35)
+        let note = DailyNote.url(for: Date(), in: folder.appendingPathComponent("daily"))
+        try await waitFor { try FileManager.default.fileExists(atPath: note.path) && !read().contains("bulbs") }
+        XCTAssertFalse(try read().contains("bulbs"), "P moves the todo out of the inbox")
+        XCTAssertTrue(try String(contentsOf: note, encoding: .utf8).contains("- [ ] bulbs"), "into today's note")
+
+        try press(panel, "/", 44)
+        XCTAssertTrue(model.filterFocused)
+        model.libraryFilter = "hinge"
+        XCTAssertEqual(model.visible.map(\.title), ["hinge !!!"])
+    }
+}

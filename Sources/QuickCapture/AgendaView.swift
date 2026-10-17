@@ -21,7 +21,7 @@ struct AgendaView: View {
                     hints
                 }
                 t.border.frame(width: 1)
-                AgendaPreview(row: model.agendaSelectedRow, hue: model.agendaSelectedRow.flatMap(hue(for:)),
+                ItemPreview(row: model.agendaSelectedRow, hue: model.agendaSelectedRow.flatMap(hue(for:)),
                               onOpen: onOpen, onTick: onTick)
                     .frame(width: 300)
             }
@@ -120,23 +120,8 @@ struct AgendaView: View {
     }
 
     private var hints: some View {
-        HStack(spacing: 14) {
-            hint(["↑", "↓"], "move")
-            hint(["⌥↑", "⌥↓"], "day or group")
-            hint(["[", "]"], "week")
-            hint(["↵"], "open")
-            hint(["X"], "tick")
-            Spacer()
-        }
-        .font(TypeScale.meta).foregroundStyle(t.inkSecondary)
-        .padding(.horizontal, 26).padding(.vertical, 8)
-    }
-
-    private func hint(_ keys: [String], _ label: String) -> some View {
-        HStack(spacing: 4) {
-            ForEach(keys, id: \.self) { Keycap(text: $0, t: t) }
-            Text(label)
-        }
+        KeyHints(pairs: [(["↑", "↓"], "move"), (["⌥↑", "⌥↓"], "day or group"), (["[", "]"], "week"),
+                         (["↵"], "open"), (["X"], "tick")])
     }
 
     private static let dayMonth: DateFormatter = {
@@ -156,11 +141,15 @@ struct AgendaView: View {
 
 /// One row of the list. Plain values, so moving the selection redraws two
 /// rows rather than the whole list.
-private struct AgendaRowView: View, Equatable {
+struct AgendaRowView: View, Equatable {
     let row: AgendaRow
     let hue: TagPalette.Entry?
     let selected: Bool
     let now: Date
+    /// Todos drops the time column and, being grouped by section already,
+    /// the section name.
+    var showsTime = true
+    var showsSection = true
     @Environment(\.colorScheme) private var scheme
     private var t: Theme { scheme == .dark ? .dark : .light }
     private var dark: Bool { scheme == .dark }
@@ -171,7 +160,9 @@ private struct AgendaRowView: View, Equatable {
 
     var body: some View {
         HStack(spacing: 8) {
-            Text(time).font(Typeface.mono(12)).foregroundStyle(t.inkSecondary).frame(width: 52, alignment: .leading)
+            if showsTime {
+                Text(time).font(Typeface.mono(12)).foregroundStyle(t.inkSecondary).frame(width: 52, alignment: .leading)
+            }
             mark.frame(width: 16)
             HStack(spacing: 8) {
                 Text(row.item.title)
@@ -218,9 +209,10 @@ private struct AgendaRowView: View, Equatable {
             Image(systemName: "bell").font(.system(size: 11, weight: .medium))
                 .foregroundStyle(overdue == nil ? color : t.priHigh)
         case .todo:
+            // Edged in the section's hue, as in the editor.
             RoundedRectangle(cornerRadius: 3.5)
-                .strokeBorder(t.inkTertiary, lineWidth: 1.5)
-                .background(row.item.completed ? t.inkTertiary : .clear, in: RoundedRectangle(cornerRadius: 3.5))
+                .strokeBorder(color, lineWidth: 1.5)
+                .background(row.item.completed ? color : .clear, in: RoundedRectangle(cornerRadius: 3.5))
                 .frame(width: 13, height: 13)
         }
     }
@@ -245,8 +237,10 @@ private struct AgendaRowView: View, Equatable {
                     Text("\(row.item.childTasksDone)/\(row.item.childTasks)")
                         .font(Typeface.mono(12)).foregroundStyle(t.inkSecondary)
                 }
-                Text(row.item.section).font(TypeScale.meta)
-                    .foregroundStyle(hue?.label(dark: dark) ?? t.inkTertiary)
+                if showsSection {
+                    Text(row.item.section).font(TypeScale.meta)
+                        .foregroundStyle(hue?.label(dark: dark) ?? t.inkTertiary)
+                }
             }
         }
     }
@@ -272,12 +266,15 @@ private struct AgendaRowView: View, Equatable {
     }
 }
 
-/// The selected row in full: its children, images and where it lives.
-private struct AgendaPreview: View {
+/// The selected row in full: its children, images and where it lives. Shared
+/// by Agenda and Todos.
+struct ItemPreview: View {
     let row: AgendaRow?
     let hue: TagPalette.Entry?
     let onOpen: (AgendaRow) -> Void
     let onTick: (AgendaRow) -> Void
+    /// Todos offers "plan for today" here; Agenda doesn't.
+    var onPlan: ((AgendaRow) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     private var t: Theme { scheme == .dark ? .dark : .light }
 
@@ -293,6 +290,12 @@ private struct AgendaPreview: View {
                     }
                 }
                 .buttonStyle(GhostButtonStyle(t: t))
+                if let onPlan {
+                    Button { onPlan(row) } label: {
+                        HStack(spacing: 6) { Text("Plan for today"); Keycap(text: "P", t: t) }.frame(maxWidth: .infinity)
+                    }
+                    .buttonStyle(GhostButtonStyle(t: t))
+                }
             } else {
                 Text("Nothing selected").font(TypeScale.heading).foregroundStyle(t.ink)
                 Text("Events, reminders and open todos appear here as you move through the list.")
@@ -329,6 +332,15 @@ private struct AgendaPreview: View {
             VStack(alignment: .leading, spacing: 4) {
                 ForEach(Array(lines.enumerated()), id: \.offset) { _, line in childLine(line) }
             }
+        }
+        if let captured = row.item.captured {
+            field("Captured") {
+                Text(captured.formatted(.dateTime.day().month(.wide).hour().minute()))
+                    .font(Typeface.mono(12.5)).foregroundStyle(t.inkSecondary)
+            }
+        }
+        if row.item.sourceID != nil {
+            field("Organiser") { Text("Sent").font(Typeface.ui(13)).foregroundStyle(t.ink) }
         }
         field("From") {
             Text("\(row.item.file.lastPathComponent), \(row.item.section)")
@@ -400,5 +412,26 @@ private struct AgendaPreview: View {
         case .todo:
             return nil
         }
+    }
+}
+
+/// The key legend along the bottom of a workspace list.
+struct KeyHints: View {
+    let pairs: [([String], String)]
+    @Environment(\.colorScheme) private var scheme
+    private var t: Theme { scheme == .dark ? .dark : .light }
+
+    var body: some View {
+        HStack(spacing: 14) {
+            ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
+                HStack(spacing: 4) {
+                    ForEach(pair.0, id: \.self) { Keycap(text: $0, t: t) }
+                    Text(pair.1)
+                }
+            }
+            Spacer()
+        }
+        .font(TypeScale.meta).foregroundStyle(t.inkSecondary)
+        .padding(.horizontal, 26).padding(.vertical, 8)
     }
 }

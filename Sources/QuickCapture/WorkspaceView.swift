@@ -10,6 +10,9 @@ struct WorkspaceView: View {
     var onTodayDayChange: () -> Void = {}
     var onAgendaOpen: (AgendaRow) -> Void = { _ in }
     var onAgendaTick: (AgendaRow) -> Void = { _ in }
+    var onItemOpen: (WorkspaceItem) -> Void = { _ in }
+    var onItemTick: (WorkspaceItem) -> Void = { _ in }
+    var onItemPlan: (WorkspaceItem) -> Void = { _ in }
     @Environment(\.colorScheme) private var scheme
     private var t: Theme { scheme == .dark ? .dark : .light }
 
@@ -23,6 +26,9 @@ struct WorkspaceView: View {
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.destination == .agenda {
                 AgendaView(model: model, onOpen: onAgendaOpen, onTick: onAgendaTick)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.destination == .todos {
+                TodosView(model: model, onOpen: onItemOpen, onTick: onItemTick, onPlan: onItemPlan)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.destination == .projects {
                 ProjectsView()

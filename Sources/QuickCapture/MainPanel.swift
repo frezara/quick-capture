@@ -533,8 +533,11 @@ final class MainPanel: NSPanel {
                 onEditorSlot: { [weak self] slot in self?.todayEditorSlotDidChange(slot) },
                 onFocusSchedule: { [weak self] in self?.focusTodaySchedule() },
                 onTodayDayChange: { [weak self] in self?.reconcileEditorFile() },
-                onAgendaOpen: { [weak self] row in self?.openAgendaItem(row) },
-                onAgendaTick: { [weak self] row in self?.tickAgendaItem(row) }))
+                onAgendaOpen: { [weak self] row in self?.openItemInEditor(row.item) },
+                onAgendaTick: { [weak self] row in self?.tickItem(row.item) },
+                onItemOpen: { [weak self] item in self?.openItemInEditor(item) },
+                onItemTick: { [weak self] item in self?.tickItem(item) },
+                onItemPlan: { [weak self] item in self?.planItemForToday(item) }))
             host.frame = container.bounds
             host.autoresizingMask = [.width, .height]
             container.addSubview(host)
@@ -571,7 +574,7 @@ final class MainPanel: NSPanel {
         case (125, .option): model.jumpAgenda(1)
         case (36, []), (76, []):
             guard let row = model.agendaSelectedRow else { return false }
-            openAgendaItem(row)
+            openItemInEditor(row.item)
         default:
             guard flags.isEmpty else { return false }
             switch event.charactersIgnoringModifiers {
@@ -580,7 +583,7 @@ final class MainPanel: NSPanel {
             case "t": model.agendaStart = Date()
             case "x":
                 guard let row = model.agendaSelectedRow else { return false }
-                tickAgendaItem(row)
+                tickItem(row.item)
             default: return false
             }
         }
@@ -588,35 +591,102 @@ final class MainPanel: NSPanel {
     }
 
     /// Opens the item in the editor, in its own file, at its line.
-    private func openAgendaItem(_ row: AgendaRow) {
-        editorFileOverride = row.item.file == appState.captureFileURL ? nil : row.item.file
-        pendingRevealLine = row.item.line
+    private func openItemInEditor(_ item: WorkspaceItem) {
+        editorFileOverride = item.file == appState.captureFileURL ? nil : item.file
+        pendingRevealLine = item.line
         openEditor()
     }
 
     /// Ticks or unticks the item in its file with the ticked-parent rule. The
     /// line must still be the same item; anything else is left alone.
-    private func tickAgendaItem(_ row: AgendaRow) {
+    private func tickItem(_ item: WorkspaceItem) {
         let model = workspaceModel
         flushEditorSave { saved in
             guard saved else { return }
             do {
-                let file = row.item.file
-                let content = try FileWriter.read(file)
+                let content = try FileWriter.read(item.file)
                 let lines = content.components(separatedBy: "\n")
-                guard row.item.line < lines.count, Self.itemTitle(lines[row.item.line]) == row.item.title,
-                      let updated = TickCascade.apply(to: content, line: row.item.line, checked: !row.item.completed) else {
+                guard item.line < lines.count, Self.itemTitle(lines[item.line]) == item.title,
+                      let updated = TickCascade.apply(to: content, line: item.line, checked: !item.completed) else {
                     NSSound.beep(); model.refresh(); return
                 }
-                try FileWriter.write(Data(updated.utf8), to: file, ifStillMatching: content)
-                model.keepTicked(row.item.id)
+                try FileWriter.write(Data(updated.utf8), to: item.file, ifStillMatching: content)
+                model.keepTicked(item.id)
                 model.refresh()
             } catch {
-                NSLog("Agenda tick failed for \(row.item.file.path): \(error)")
+                NSLog("Tick failed for \(item.file.path): \(error)")
                 NSSound.beep()
                 model.refresh()
             }
         }
+    }
+
+    /// Todos' `P`: the same move as the ⌥⌘U "Today" entry, from the list.
+    private func planItemForToday(_ item: WorkspaceItem) {
+        let model = workspaceModel
+        flushEditorSave { [weak self] saved in
+            guard let self, saved else { return }
+            do {
+                let content = try FileWriter.read(item.file)
+                let lines = content.components(separatedBy: "\n")
+                guard item.line < lines.count, Self.itemTitle(lines[item.line]) == item.title,
+                      let range = FileWriter.subtreeRange(in: content, atLine: item.line) else {
+                    NSSound.beep(); model.refresh(); return
+                }
+                try PlanForToday.move(subtree: lines[range].joined(separator: "\n"), range: range,
+                                      from: item.file, dailyFolder: self.dailyFolder)
+                model.refresh()
+            } catch {
+                let alert = NSAlert()
+                alert.messageText = "Couldn’t plan this for today"
+                alert.informativeText = error.localizedDescription
+                alert.alertStyle = .warning
+                alert.runModal()
+            }
+        }
+    }
+
+    private var libraryActive: Bool {
+        workspaceOpen && [.todos, .notes, .links].contains(workspaceModel.destination)
+    }
+
+    /// Keys for Todos, Notes and Saved links. Letters are taken only while
+    /// the filter field isn't being typed in; arrows still move the list from
+    /// the field, and Esc clears the filter, then leaves it.
+    private func handleLibraryKey(_ event: NSEvent) -> Bool {
+        guard libraryActive else { return false }
+        let model = workspaceModel
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let textView = firstResponder as? NSTextView
+        let typing = textView?.isEditable == true
+        switch (event.keyCode, flags) {
+        case (126, []): model.stepLibrary(-1); return true
+        case (125, []): model.stepLibrary(1); return true
+        case (126, .option) where model.destination == .todos: model.jumpLibrarySection(-1); return true
+        case (125, .option) where model.destination == .todos: model.jumpLibrarySection(1); return true
+        case (53, []) where typing:
+            if model.libraryFilter.isEmpty { leaveFilter() } else { model.libraryFilter = "" }
+            return true
+        case (36, []) where typing, (76, []) where typing:
+            leaveFilter()
+            return true
+        default: break
+        }
+        guard !typing, flags.isEmpty else { return false }
+        if event.charactersIgnoringModifiers == "/" { model.filterFocused = true; return true }
+        guard let item = model.selectedItem else { return false }
+        switch (event.keyCode, event.charactersIgnoringModifiers, model.destination) {
+        case (36, _, _), (76, _, _): openItemInEditor(item)
+        case (_, "x", .todos): tickItem(item)
+        case (_, "p", .todos): planItemForToday(item)
+        default: return false
+        }
+        return true
+    }
+
+    private func leaveFilter() {
+        workspaceModel.filterFocused = false
+        makeFirstResponder(workspaceHost)
     }
 
     /// An item line as `WorkspaceItem.title` reads it: no checkbox, no marker.
@@ -1238,6 +1308,7 @@ final class MainPanel: NSPanel {
     override func keyDown(with event: NSEvent) {
         if handleTodayKey(event) { return }
         if handleAgendaKey(event) { return }
+        if handleLibraryKey(event) { return }
         if handleCalendarViewKey(event) { return }
         super.keyDown(with: event)
     }
@@ -1251,6 +1322,7 @@ final class MainPanel: NSPanel {
         }
         if handleTodayKey(event) { return true }
         if handleAgendaKey(event) { return true }
+        if handleLibraryKey(event) { return true }
         if handleCalendarViewKey(event) { return true }
         // Also handle the summon chord locally while the workspace owns focus.
         // Carbon remains responsible for summoning from other applications.
