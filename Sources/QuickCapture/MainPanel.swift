@@ -92,6 +92,16 @@ final class MainPanel: NSPanel {
     /// ignore our own writes instead of looping them back as external changes.
     private var lastSyncedContent = ""
     private var editorFileLoaded = false
+    /// The loaded file is a daily note shown in Today.
+    private var loadedIsDaily = false
+    /// A daily note on screen that doesn't exist yet (a past or future day):
+    /// the scaffold shown in its place, written only once you type.
+    private var unsavedDailyScaffold: String?
+    /// Editor cursor and scroll per file, as the JSON `qcEditor.viewState()`
+    /// returns, so switching files returns to where you were.
+    private var editorViewStates: [URL: String] = [:]
+    /// Where Today wants the editor; set by `TodayView`'s slot.
+    private weak var todayEditorSlot: NSView?
     private var exitPending = false
     private var webViewReady = false
     private var fileWatcher: FileWatcher?
@@ -314,6 +324,7 @@ final class MainPanel: NSPanel {
     /// kept as the direct summon-into-editor entry point.)
     func showInEditor(animated: Bool = false) {
         recordPreviousApp()   // before promote/activate steals frontmost from it
+        editorContainer.adopt(webView)
         editorOpen = true
         isMovableByWindowBackground = false
         promoteToRegular()
@@ -369,6 +380,7 @@ final class MainPanel: NSPanel {
         workspaceHost?.isHidden = true
         captureHost.isHidden = false
         workspaceOpen = false
+        editorContainer.adopt(webView)
         editorOpen = true
         // The picker is a capture-surface affordance; ⌥⌘I into the editor closes
         // it. editorOpen is set first so the capture re-measure this triggers is
@@ -504,7 +516,10 @@ final class MainPanel: NSPanel {
         if workspaceHost == nil {
             let host = NSHostingView(rootView: WorkspaceView(model: workspaceModel,
                 onCapture: { [weak self] in self?.closeWorkspace() },
-                onEditor: { [weak self] in self?.openEditor() }))
+                onEditor: { [weak self] in self?.openEditor() },
+                onEditorSlot: { [weak self] slot in self?.todayEditorSlotDidChange(slot) },
+                onFocusSchedule: { [weak self] in self?.focusTodaySchedule() },
+                onTodayDayChange: { [weak self] in self?.reconcileEditorFile() }))
             host.frame = container.bounds
             host.autoresizingMask = [.width, .height]
             container.addSubview(host)
@@ -521,6 +536,108 @@ final class MainPanel: NSPanel {
         NSApp.activate(ignoringOtherApps: true)
         makeKeyAndOrderFront(nil)
         makeFirstResponder(workspaceHost)
+        if destination == .today { enterToday() }
+    }
+
+    // MARK: - Today
+
+    private var todayActive: Bool { workspaceOpen && workspaceModel.destination == .today }
+
+    /// The file the editor should hold right now: the selected day's note in
+    /// Today, the capture file everywhere else.
+    private var editorTargetURL: URL {
+        guard todayActive else { return appState.captureFileURL }
+        let folder = dailyFolderOverride ?? DailyNote.folder(forCaptureFile: appState.captureFileURL)
+        return DailyNote.url(for: workspaceModel.date, in: folder)
+    }
+
+    /// Tests point Today at a temp folder so it never creates notes beside the
+    /// real capture file.
+    var dailyFolderOverride: URL?
+
+    /// Where the editor's web view currently lives, for tests.
+    var editorIsInToday: Bool { webView.superview != nil && webView.superview === todayEditorSlot }
+    var editorHasKeyFocus: Bool { editorHasFocus }
+
+    private var editorHasFocus: Bool { (firstResponder as? NSView)?.isDescendant(of: webView) == true }
+
+    /// Today opens on the editor (CONTEXT.md). Crossing midnight moves a Today
+    /// that was showing today on to the new day.
+    private func enterToday() {
+        workspaceModel.rollToTodayIfNeeded()
+        workspaceModel.scheduleFocused = false
+        if let slot = todayEditorSlot { place(webViewIn: slot) }
+        reconcileEditorFile()
+        focusTodayEditor()
+    }
+
+    private func todayEditorSlotDidChange(_ slot: NSView?) {
+        todayEditorSlot = slot
+        if let slot, todayActive {
+            place(webViewIn: slot)
+            reconcileEditorFile()
+            if !workspaceModel.scheduleFocused { focusTodayEditor() }
+        } else if slot == nil {
+            editorContainer.adopt(webView)
+        }
+    }
+
+    private func place(webViewIn slot: NSView) {
+        guard webView.superview !== slot else { return }
+        webView.removeFromSuperview()
+        webView.frame = slot.bounds
+        webView.autoresizingMask = [.width, .height]
+        slot.addSubview(webView)
+    }
+
+    private func focusTodayEditor() {
+        workspaceModel.scheduleFocused = false
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.todayActive, self.webView.superview === self.todayEditorSlot else { return }
+            self.makeFirstResponder(self.webView)
+            self.webView.evaluateJavaScript("window.qcEditor && window.qcEditor.focus && window.qcEditor.focus()",
+                                            completionHandler: nil)
+        }
+    }
+
+    private func focusTodaySchedule() {
+        guard todayActive else { return }
+        let model = workspaceModel
+        model.scheduleFocused = true
+        if model.selectedEventID == nil {
+            let now = Date()
+            model.selectedEventID = (model.eventsOnSelectedDay.first { ($0.ends ?? $0.starts ?? now) > now }
+                                     ?? model.eventsOnSelectedDay.first)?.id
+        }
+        makeFirstResponder(workspaceHost)
+    }
+
+    /// The schedule panel's keys. They only apply while it has focus, so
+    /// typing in the editor beside it never reaches them.
+    private func handleTodayKey(_ event: NSEvent) -> Bool {
+        guard todayActive, workspaceModel.scheduleFocused, !editorHasFocus,
+              event.modifierFlags.intersection([.command, .option, .control]).isEmpty else { return false }
+        let model = workspaceModel
+        switch event.keyCode {
+        case 126: model.stepEvent(-1); return true
+        case 125: model.stepEvent(1); return true
+        case 36, 76:
+            guard model.selectedEvent != nil else { return false }
+            model.calendarMode = .day
+            openWorkspace(.calendar)
+            return true
+        case 53:
+            focusTodayEditor()
+            return true
+        default: break
+        }
+        switch event.charactersIgnoringModifiers {
+        case "[": model.moveDays(-1)
+        case "]": model.moveDays(1)
+        case "t": model.date = Date()
+        default: return false
+        }
+        return true
     }
 
     private func closeWorkspace() {
@@ -1031,6 +1148,7 @@ final class MainPanel: NSPanel {
     }
 
     override func keyDown(with event: NSEvent) {
+        if handleTodayKey(event) { return }
         if handleCalendarViewKey(event) { return }
         super.keyDown(with: event)
     }
@@ -1042,6 +1160,7 @@ final class MainPanel: NSPanel {
             onSettings()
             return true
         }
+        if handleTodayKey(event) { return true }
         if handleCalendarViewKey(event) { return true }
         // Also handle the summon chord locally while the workspace owns focus.
         // Carbon remains responsible for summoning from other applications.
@@ -1062,7 +1181,8 @@ final class MainPanel: NSPanel {
             if event.keyCode == 123 { workspaceModel.shiftDate(-1); return true }
             if event.keyCode == 124 { workspaceModel.shiftDate(1); return true }
         }
-        if workspaceOpen, event.keyCode == 53 { closeWorkspace(); return true }
+        // In Today's editor, Escape belongs to vim (ADR-0004).
+        if workspaceOpen, event.keyCode == 53, !(todayActive && editorHasFocus) { closeWorkspace(); return true }
         if let action = ShortcutRegistry.interceptedAction(for: event, editorOpen: editorOpen) {
             perform(shortcut: action)
             return true
@@ -1087,6 +1207,10 @@ final class MainPanel: NSPanel {
     /// so this arm only runs for the Editor menu items.
     func perform(shortcut action: ShortcutAction) {
         switch action {
+        case .showToday: openWorkspace(.today)
+        case .toggleTodayFocus:
+            guard todayActive else { break }
+            if editorHasFocus { focusTodaySchedule() } else { focusTodayEditor() }
         case .showCalendar: openWorkspace(.calendar)
         case .showProjects: openWorkspace(.projects)
         case .showTodos: openWorkspace(.todos)
@@ -1141,6 +1265,11 @@ final class MainPanel: NSPanel {
         restorePreviousApp(weHeldFocus: heldFocus)
     }
 
+    override func becomeKey() {
+        super.becomeKey()
+        if todayActive { workspaceModel.rollToTodayIfNeeded() }
+    }
+
     override func resignKey() {
         super.resignKey()
         guard canDismissOnBlur, !editorOpen, !workspaceOpen, !appState.captureSubmissionActive else { return }
@@ -1183,7 +1312,7 @@ final class MainPanel: NSPanel {
         }
         // Unconditional: a fresh web view starts with an empty map, so it needs
         // the push even when nothing was newly allocated.
-        appState.assignHues(inContent: text)
+        assignHues(inContent: text)
         pushTagHues()
         pushContent(text)
         startWatching()
@@ -1191,6 +1320,7 @@ final class MainPanel: NSPanel {
         // finished loading (e.g. "Open Editor…" at cold launch), focus it now.
         // Otherwise leave focus with the capture input.
         if editorOpen { focusEditor() }
+        if todayActive { reconcileEditorFile(); focusTodayEditor() }
     }
 
     /// Push the current vim setting into the editor. Safe before the view
@@ -1325,21 +1455,54 @@ final class MainPanel: NSPanel {
         }
     }
 
-    /// Re-point the editor at the current capture file if it changed (path edit
-    /// in Settings). When the file is unchanged this is a no-op.
+    /// Re-point the editor at the file it should hold: the selected day's note
+    /// in Today, otherwise the capture file (which may have moved in Settings).
+    /// Flushes the old file first and remembers where you were in it. When the
+    /// file is unchanged this is a no-op.
     private func reconcileEditorFile() {
-        let url = appState.captureFileURL
-        guard url != loadedFileURL, webViewReady else { return }
+        guard editorTargetURL != loadedFileURL, webViewReady else { return }
         flushEditorSave { [weak self] saved in
             guard let self, saved else { return }
-            do {
-                let text = try FileWriter.read(url, allowingMissing: true)
-                self.stopWatching()
-                self.loadedFileURL = url
-                self.editorFileLoaded = true
-                self.pushContent(text)
-                self.startWatching()
-            } catch { self.reportSaveError("Couldn’t open the file: " + error.localizedDescription) }
+            // Read the target again: the day may have moved while saving.
+            let url = self.editorTargetURL
+            let daily = self.todayActive
+            let date = self.workspaceModel.date
+            guard url != self.loadedFileURL else { return }
+            self.webView.evaluateJavaScript("JSON.stringify(window.qcEditor.viewState())") { [weak self] state, _ in
+                guard let self else { return }
+                if let state = state as? String, state != "null" { self.editorViewStates[self.loadedFileURL] = state }
+                guard url == self.editorTargetURL else { return self.reconcileEditorFile() }
+                do {
+                    var text: String
+                    var scaffold: String?
+                    if daily {
+                        let folder = url.deletingLastPathComponent()
+                        if Calendar.current.isDateInToday(date) { try DailyNote.ensureNote(for: date, in: folder) }
+                        if FileManager.default.fileExists(atPath: url.path) {
+                            text = try FileWriter.read(url)
+                        } else {
+                            text = DailyNote.scaffold(for: date, carrying: [])
+                            scaffold = text
+                        }
+                    } else {
+                        text = try FileWriter.read(url, allowingMissing: true)
+                    }
+                    self.stopWatching()
+                    self.loadedFileURL = url
+                    self.loadedIsDaily = daily
+                    self.unsavedDailyScaffold = scaffold
+                    self.editorFileLoaded = true
+                    self.webView.evaluateJavaScript("window.qcEditor.setDailyNote(\(daily))", completionHandler: nil)
+                    self.pushContent(text)
+                    if let state = self.editorViewStates[url] {
+                        self.webView.evaluateJavaScript("window.qcEditor.restoreViewState(\(state))", completionHandler: nil)
+                    } else if daily {
+                        self.webView.evaluateJavaScript(
+                            "window.qcEditor.cursorToSectionEnd(\"\(DailyNote.tasksSection)\")", completionHandler: nil)
+                    }
+                    self.startWatching()
+                } catch { self.reportSaveError("Couldn’t open the file: " + error.localizedDescription) }
+            }
         }
     }
 
@@ -1350,9 +1513,20 @@ final class MainPanel: NSPanel {
             guard editorFileLoaded else {
                 throw CocoaError(.fileReadUnknown)
             }
-            try FileWriter.write(Data(content.utf8), to: loadedFileURL, ifStillMatching: expected)
-            lastSyncedContent = content
-            appState.assignHues(inContent: content)
+            if let scaffold = unsavedDailyScaffold, expected == scaffold,
+               !FileManager.default.fileExists(atPath: loadedFileURL.path) {
+                // A past or future day's note is created by the first edit.
+                try FileManager.default.createDirectory(at: loadedFileURL.deletingLastPathComponent(),
+                                                        withIntermediateDirectories: true)
+                try FileWriter.write(Data(content.utf8), to: loadedFileURL, ifStillMatching: "")
+                unsavedDailyScaffold = nil
+                lastSyncedContent = content
+                startWatching()
+            } else {
+                try FileWriter.write(Data(content.utf8), to: loadedFileURL, ifStillMatching: expected)
+                lastSyncedContent = content
+            }
+            assignHues(inContent: content)
         } catch FileWriter.ArchiveError.contentDrifted {
             failure = "The file changed elsewhere. Your unsaved edits are still here. Choose which version to keep."
             disk = try? FileWriter.read(loadedFileURL, allowingMissing: true)
@@ -1367,6 +1541,7 @@ final class MainPanel: NSPanel {
     }
 
     fileprivate func archive() {
+        guard !loadedIsDaily else { return }
         do {
             try FileWriter.archiveCompleted(at: loadedFileURL)
         } catch FileWriter.ArchiveError.contentDrifted {
@@ -1426,13 +1601,20 @@ final class MainPanel: NSPanel {
         lastSyncedContent = text
         // The single choke point for editor <- disk, so it covers the initial
         // load, a capture-file switch, and a watcher-driven reload.
-        appState.assignHues(inContent: text)
+        assignHues(inContent: text)
         guard let encoded = String(data: try! JSONEncoder().encode(text), encoding: .utf8) else { return }
         webView.evaluateJavaScript("window.qcEditor.setContent(\(encoded))", completionHandler: nil)
         // Keep the editor's status-bar filename in step with the loaded file.
         if let name = String(data: try! JSONEncoder().encode(loadedFileURL.lastPathComponent), encoding: .utf8) {
             webView.evaluateJavaScript("window.qcEditor.setFilename(\(name))", completionHandler: nil)
         }
+    }
+
+    /// A daily note's own Tasks and Log stay neutral and take no hue.
+    private func assignHues(inContent text: String) {
+        let neutral: Set<String> = loadedIsDaily
+            ? [DailyNote.tasksSection.lowercased(), DailyNote.logSection.lowercased()] : []
+        appState.assignHues(inContent: text, neutral: neutral)
     }
 
     // MARK: - File watching
@@ -1572,6 +1754,14 @@ private final class EditorContainerView: NSView {
         self.web = web
         addSubview(web)
         applyChrome()
+        needsLayout = true
+    }
+
+    /// Take the web view back from Today's slot.
+    func adopt(_ web: NSView) {
+        guard web.superview !== self else { return }
+        web.removeFromSuperview()
+        addSubview(web)
         needsLayout = true
     }
 

@@ -129,9 +129,10 @@ final class AppState {
     /// so a `## section` typed straight into the editor gets its hue without
     /// waiting for the next summon. Returns true when anything was allocated.
     @discardableResult
-    func assignHues(inContent content: String) -> Bool {
+    func assignHues(inContent content: String, neutral: Set<String> = []) -> Bool {
         var updated = tagHues
-        guard updated.assign(Self.sectionNames(in: content)) else { return false }
+        let names = Self.sectionNames(in: content).filter { !neutral.contains($0.lowercased()) }
+        guard updated.assign(names) else { return false }
         tagHues = updated
         return true
     }

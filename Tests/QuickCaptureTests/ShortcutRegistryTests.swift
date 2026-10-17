@@ -201,11 +201,11 @@ final class ShortcutRegistryTests: XCTestCase {
         XCTAssertEqual(KeyChord(key: "ArrowUp", modifiers: [.command, .option]).displayGlyphs, "⌥⌘↑")
     }
 
-    func testCaptureHintsIncludeNativeCalendar() {
+    func testCaptureHintsLeadWithToday() {
         XCTAssertEqual(ShortcutRegistry.captureHints.map(\.action),
-                       [.showCalendar, .toggleEditor, .attachScreenshot])
+                       [.showToday, .toggleEditor, .attachScreenshot])
         XCTAssertEqual(ShortcutRegistry.captureHints.map(\.label),
-                       ["Calendar", "Editor", "Screenshots"])
+                       ["Today", "Editor", "Screenshots"])
     }
 
     /// Why the bar sources chords from the registry: rename/remove an action or
@@ -217,6 +217,13 @@ final class ShortcutRegistryTests: XCTestCase {
         }
         // Pins today's bindings (U-I-O-P cluster, #92) so a regression is loud.
         XCTAssertEqual(ShortcutRegistry.captureHints.map(\.glyphs), ["⌥⌘1", "⌥⌘I", "⌥⌘O"])
+    }
+
+    /// Workspace views are numbered in rail order; ⌥⌘2 is held for Agenda.
+    func testWorkspaceViewsAreNumberedInRailOrder() {
+        let views: [ShortcutAction] = [.showToday, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks]
+        XCTAssertEqual(views.map(\.chord.displayGlyphs), ["⌥⌘1", "⌥⌘3", "⌥⌘4", "⌥⌘5", "⌥⌘6", "⌥⌘7"])
+        XCTAssertFalse(ShortcutAction.allCases.contains { $0.chord.displayGlyphs == "⌥⌘2" })
     }
 }
 

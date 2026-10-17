@@ -67,3 +67,62 @@ final class CalendarKeyRoutingTests: XCTestCase {
         XCTAssertTrue(panel.workspaceOpen)
     }
 }
+
+/// Today's schedule keys only apply while the schedule has focus, so typing in
+/// the editor beside it never moves the day (the bug calendar keys had inside
+/// the web view). Real key events through `sendEvent`.
+@MainActor
+final class TodayKeyRoutingTests: XCTestCase {
+    private func press(_ panel: NSWindow, _ chars: String, _ code: UInt16,
+                       _ modifiers: NSEvent.ModifierFlags = []) throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code))
+            // AppKit offers modified keys to the window as key equivalents
+            // before dispatching them; sendEvent alone skips that step.
+            if modifiers.isEmpty || type == .keyUp || !panel.performKeyEquivalent(with: event) { panel.sendEvent(event) }
+        }
+    }
+
+    func testFocusChordSwitchesPanesAndScheduleKeysStayOutOfTheEditor() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("TodayKeys-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        let panel = MainPanel(appState: AppState(), onSubmit: { _, _, _ in true }, onDismiss: {})
+        panel.dailyFolderOverride = folder
+        defer { panel.orderOut(nil) }
+        panel.openWorkspace(.today)
+        let note = DailyNote.url(for: Date(), in: folder)
+        for _ in 0..<80 where !(panel.editorIsInToday && panel.editorHasKeyFocus
+                                && FileManager.default.fileExists(atPath: note.path)) {
+            try await Task.sleep(nanoseconds: 100_000_000)
+        }
+        let model = panel.workspaceModel
+        XCTAssertTrue(panel.editorIsInToday, "the editor moves into Today's right panel")
+        XCTAssertTrue(panel.editorHasKeyFocus, "Today opens on the editor")
+        XCTAssertFalse(model.scheduleFocused)
+        let start = model.selectedDay
+
+        try press(panel, "]", 30)
+        XCTAssertEqual(model.selectedDay, start, "] typed in the editor must not change the day")
+
+        try press(panel, ";", 41, [.command, .option])
+        XCTAssertTrue(model.scheduleFocused)
+        XCTAssertFalse(panel.editorHasKeyFocus)
+        try press(panel, "]", 30)
+        XCTAssertEqual(Calendar.current.dateComponents([.day], from: start, to: model.selectedDay).day, 1)
+        try press(panel, "[", 33)
+        try press(panel, "[", 33)
+        XCTAssertEqual(Calendar.current.dateComponents([.day], from: start, to: model.selectedDay).day, -1)
+        try press(panel, "t", 17)
+        XCTAssertEqual(model.selectedDay, start)
+
+        try press(panel, "\u{1B}", 53)             // Esc goes back to the note, not out of Today
+        XCTAssertFalse(model.scheduleFocused)
+        XCTAssertTrue(panel.workspaceOpen)
+        for _ in 0..<20 where !panel.editorHasKeyFocus { try await Task.sleep(nanoseconds: 50_000_000) }
+        XCTAssertTrue(panel.editorHasKeyFocus)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: note.path), "opening Today creates today's note")
+    }
+}
