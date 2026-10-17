@@ -98,7 +98,35 @@ enum DailyNote {
         return target
     }
 
-    private static func stripSourceMarkers(_ line: String) -> String {
+    /// Appends `subtree` to the end of `## Tasks`, recreating the section
+    /// under the date heading if it was deleted.
+    static func insertUnderTasks(_ subtree: String, in content: String) -> String {
+        var lines = content.components(separatedBy: "\n")
+        let heading = "## \(tasksSection)"
+        guard let h = lines.firstIndex(where: {
+            $0.trimmingCharacters(in: .whitespaces).caseInsensitiveCompare(heading) == .orderedSame
+        }) else {
+            let at = lines.firstIndex { $0.hasPrefix("# ") }.map { $0 + 1 } ?? 0
+            var block = [heading, "", subtree]
+            if at > 0 { block.insert("", at: 0) }
+            if at < lines.count, !lines[at].trimmingCharacters(in: .whitespaces).isEmpty { block.append("") }
+            lines.insert(contentsOf: block, at: at)
+            return lines.joined(separator: "\n")
+        }
+        var end = h + 1
+        while end < lines.count, !lines[end].hasPrefix("#") { end += 1 }
+        var last = end - 1
+        while last > h, lines[last].trimmingCharacters(in: .whitespaces).isEmpty { last -= 1 }
+        if last == h {
+            // An empty section: one blank line either side of the new item.
+            lines.replaceSubrange((h + 1)..<end, with: ["", subtree, ""])
+        } else {
+            lines.insert(subtree, at: last + 1)
+        }
+        return lines.joined(separator: "\n")
+    }
+
+    static func stripSourceMarkers(_ line: String) -> String {
         line.replacingOccurrences(of: #"\s*<!--(?:qc:|qc-source:)[^>]*-->"#, with: "", options: .regularExpression)
     }
 
