@@ -19,14 +19,14 @@ Project hand-off doc for Claude Code. Read this first.
    file-watcher reload. The editor is headerless — its bottom status bar carries
    the filename, vim mode, and item count. `⌥⌘I` crossfades back to the capture
    box.
-3. **Workspace** — native SwiftUI views behind an icon rail, `⌥⌘1`–`⌥⌘6` in
-   rail order: **Agenda** (seven days of events and reminders, then open todos
-   from every inbox), Todos, Calendar, Projects, Notes, Saved links. Each is a
-   keyboard-driven list with a preview; ↵ opens the item in the editor.
+3. **Workspace** — two native SwiftUI views behind an icon rail: **Agenda**
+   (`⌥⌘1`: seven days of events and reminders, then open todos from every
+   inbox, with a preview; ↵ opens an item in the editor) and **Calendar**
+   (`⌥⌘2`: month, week and day).
 
 They are **mutually-exclusive modes** — only one surface is ever on screen
 (see ADR-0004). One window. Editor mode opens the capture file, or an item's
-own file (a project inbox, a daily note) when opened from a workspace view
+own file (a project inbox, a daily note) when opened from Agenda
 (`CONTEXT.md`). The editor's web view stays warm across mode switches, so
 toggling is instant and preserves cursor/scroll (remembered per file). Typed-but-unsaved capture text is preserved when you ⌥⌘I into the
 editor and back; it's only cleared on a full dismiss.
@@ -65,8 +65,7 @@ Sources/QuickCapture/
   WorkspaceModel.swift             Workspace destinations, item parsing, calendar/Agenda state
   WorkspaceView.swift              Icon rail + the destination views
   NativeCalendarView.swift         Calendar month/week/day; CalendarLayout.swift holds its key map
-  AgendaView.swift                 Agenda list, plus the shared row, preview and key-legend views
-  LibraryViews.swift               Todos, Notes and Saved links, and their filter field
+  AgendaView.swift                 Agenda list, row, preview and key legend
   Agenda.swift                     AgendaSource (which inboxes) + AgendaProjection (the list)
   DailyNote.swift                  daily/YYYY-MM-DD.md: scaffold, copy-forward rollover, ## Tasks insert
   PlanForToday.swift               ⌥⌘U "Today": move an inbox subtree into today's note (refile order)
@@ -162,7 +161,7 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   screenshot picker (both press-again toggles), ⌥⌘U refile — and the global
   summon ⌥⌘P. The summon shares the namespace visually but is a separate Carbon
   hotkey (`HotKeyConfig`), not a registry entry. (The pre-#92 ⌥⌘E/⌥⌘S/⌥⌘R are
-  unbound.) Workspace views are `⌥⌘1`–`⌥⌘6` in rail order.
+  unbound.) Agenda is `⌥⌘1`, Calendar `⌥⌘2`.
   `MainPanel.performKeyEquivalent` is a generic
   registry lookup; editor-local bindings are pushed into CodeMirror via
   `qcEditor.setKeymap` on boot. Adding a shortcut = one registry case + a
@@ -178,12 +177,14 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   old file and loads the new one. A daily note puts the editor in daily mode
   (`qcEditor.setDailyNote`): archive and organiser send off, Tasks/Log unhued.
   Each view's keys are handled in `MainPanel` (`handleAgendaKey`,
-  `handleLibraryKey`, `handleProjectsKey`, `handleCalendarViewKey`) and must not
-  take plain keys while a text field is being edited. Tests must set
-  `MainPanel.dailyFolderOverride`, `WorkspaceModel.useFixedItems`,
-  `WorkspaceModel.projectStore` and `MainPanel.pasteboard` so they never touch
-  the real inbox, projects, daily notes or clipboard. (A Today view that put
-  the editor beside a schedule was built and then removed, 17 October 2026.)
+  `handleCalendarViewKey`) and must not take plain keys while a text field is
+  being edited. Tests must set `MainPanel.dailyFolderOverride`,
+  `WorkspaceModel.useFixedItems` and `WorkspaceModel.projectStore` so they never
+  touch the real inbox, projects or daily notes. On 17 October 2026 the
+  workspace was cut to Agenda and Calendar: Today, Todos, Projects, Notes and
+  Saved links were built and then removed. Project inboxes still sync
+  (`ProjectStore`, started at launch) and still feed Agenda; there is no screen
+  for adding projects or resolving their sync conflicts.
 - **Mode-aware dismiss.** `resignKey` only self-dismisses (click-away) in
   capture mode — the editor must survive losing focus so you can copy from
   other apps. `canBecomeMain` is true only in editor mode.

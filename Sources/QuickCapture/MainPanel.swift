@@ -524,13 +524,7 @@ final class MainPanel: NSPanel {
                 onCapture: { [weak self] in self?.closeWorkspace() },
                 onEditor: { [weak self] in self?.openEditor() },
                 onAgendaOpen: { [weak self] row in self?.openItemInEditor(row.item) },
-                onAgendaTick: { [weak self] row in self?.tickItem(row.item) },
-                onItemOpen: { [weak self] item in self?.openItemInEditor(item) },
-                onItemTick: { [weak self] item in self?.tickItem(item) },
-                onItemPlan: { [weak self] item in self?.planItemForToday(item) },
-                onItemCopy: { [weak self] item in self?.copyItem(item) },
-                onLinkOpen: { [weak self] item in self?.openLink(item) },
-                onFileOpen: { [weak self] url in self?.openFileInEditor(url) }))
+                onAgendaTick: { [weak self] row in self?.tickItem(row.item) }))
             host.frame = container.bounds
             host.autoresizingMask = [.width, .height]
             container.addSubview(host)
@@ -584,37 +578,9 @@ final class MainPanel: NSPanel {
 
     /// Opens the item in the editor, in its own file, at its line.
     private func openItemInEditor(_ item: WorkspaceItem) {
-        openFileInEditor(item.file, line: item.line)
-    }
-
-    private func openFileInEditor(_ url: URL, line: Int? = nil) {
-        editorFileOverride = url == appState.captureFileURL ? nil : url
-        pendingRevealLine = line
+        editorFileOverride = item.file == appState.captureFileURL ? nil : item.file
+        pendingRevealLine = item.line
         openEditor()
-    }
-
-    /// Projects: ↑ ↓ choose a project, 1 2 3 its tab, ↵ opens its inbox.md in
-    /// the editor. Nothing is taken while a field or the Markdown tab has the
-    /// keyboard.
-    private func handleProjectsKey(_ event: NSEvent) -> Bool {
-        guard workspaceOpen, workspaceModel.destination == .projects,
-              (firstResponder as? NSTextView)?.isEditable != true,
-              event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
-        let model = workspaceModel
-        let projects = model.projectStore.projects
-        switch event.keyCode {
-        case 126: model.stepProject(-1, ids: projects.map(\.id)); return true
-        case 125: model.stepProject(1, ids: projects.map(\.id)); return true
-        case 36, 76:
-            guard let project = projects.first(where: { $0.id == model.projectSelection }) else { return false }
-            openFileInEditor(project.file)
-            return true
-        default: break
-        }
-        guard let digit = event.charactersIgnoringModifiers.flatMap(Int.init), (1...ProjectTab.allCases.count).contains(digit)
-        else { return false }
-        model.projectTab = ProjectTab.allCases[digit - 1]
-        return true
     }
 
     /// Ticks or unticks the item in its file with the ticked-parent rule. The
@@ -639,100 +605,6 @@ final class MainPanel: NSPanel {
                 model.refresh()
             }
         }
-    }
-
-    /// Todos' `P`: the same move as the ⌥⌘U "Today" entry, from the list.
-    private func planItemForToday(_ item: WorkspaceItem) {
-        let model = workspaceModel
-        flushEditorSave { [weak self] saved in
-            guard let self, saved else { return }
-            do {
-                let content = try FileWriter.read(item.file)
-                let lines = content.components(separatedBy: "\n")
-                guard item.line < lines.count, Self.itemTitle(lines[item.line]) == item.title,
-                      let range = FileWriter.subtreeRange(in: content, atLine: item.line) else {
-                    NSSound.beep(); model.refresh(); return
-                }
-                try PlanForToday.move(subtree: lines[range].joined(separator: "\n"), range: range,
-                                      from: item.file, dailyFolder: self.dailyFolder)
-                model.refresh()
-            } catch {
-                let alert = NSAlert()
-                alert.messageText = "Couldn’t plan this for today"
-                alert.informativeText = error.localizedDescription
-                alert.alertStyle = .warning
-                alert.runModal()
-            }
-        }
-    }
-
-    private var libraryActive: Bool {
-        workspaceOpen && [.todos, .notes, .links].contains(workspaceModel.destination)
-    }
-
-    /// Keys for Todos, Notes and Saved links. Letters are taken only while
-    /// the filter field isn't being typed in; arrows still move the list from
-    /// the field, and Esc clears the filter, then leaves it.
-    private func handleLibraryKey(_ event: NSEvent) -> Bool {
-        guard libraryActive else { return false }
-        let model = workspaceModel
-        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
-        let textView = firstResponder as? NSTextView
-        let typing = textView?.isEditable == true
-        switch (event.keyCode, flags) {
-        case (126, []): model.stepLibrary(-1); return true
-        case (125, []): model.stepLibrary(1); return true
-        case (126, .option) where model.destination == .todos: model.jumpLibrarySection(-1); return true
-        case (125, .option) where model.destination == .todos: model.jumpLibrarySection(1); return true
-        case (53, []) where typing:
-            if model.libraryFilter.isEmpty { leaveFilter() } else { model.libraryFilter = "" }
-            return true
-        case (36, []) where typing, (76, []) where typing:
-            leaveFilter()
-            return true
-        default: break
-        }
-        guard !typing else { return false }
-        if flags == .command, event.charactersIgnoringModifiers == "c", model.destination == .notes,
-           let item = model.selectedItem {
-            copyItem(item)
-            return true
-        }
-        guard flags.isEmpty else { return false }
-        if event.charactersIgnoringModifiers == "/" { model.filterFocused = true; return true }
-        guard let item = model.selectedItem else { return false }
-        switch (event.keyCode, event.charactersIgnoringModifiers, model.destination) {
-        case (36, _, .links), (76, _, .links): openLink(item)
-        case (36, _, _), (76, _, _): openItemInEditor(item)
-        case (_, "x", .todos): tickItem(item)
-        case (_, "p", .todos): planItemForToday(item)
-        case (_, "c", .links): copyItem(item)
-        case (_, "e", .links): openItemInEditor(item)
-        default: return false
-        }
-        return true
-    }
-
-    /// Tests copy into their own pasteboard, never the user's clipboard.
-    var pasteboard = NSPasteboard.general
-
-    /// A link copies its URL; a note its text without the checkbox.
-    private func copyItem(_ item: WorkspaceItem) {
-        let text = workspaceModel.destination == .links ? (item.url?.absoluteString ?? item.title)
-            : FileWriter.dedent(item.text)
-        pasteboard.clearContents()
-        pasteboard.setString(text, forType: .string)
-    }
-
-    /// Only web links open; anything else would hand a file path to Finder.
-    private func openLink(_ item: WorkspaceItem) {
-        guard let url = item.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { NSSound.beep(); return }
-        NSWorkspace.shared.open(url)
-    }
-
-    private func leaveFilter() {
-        workspaceModel.filterFocused = false
-        makeFirstResponder(workspaceHost)
     }
 
     /// An item line as `WorkspaceItem.title` reads it: no checkbox, no marker.
@@ -1265,8 +1137,6 @@ final class MainPanel: NSPanel {
 
     override func keyDown(with event: NSEvent) {
         if handleAgendaKey(event) { return }
-        if handleLibraryKey(event) { return }
-        if handleProjectsKey(event) { return }
         if handleCalendarViewKey(event) { return }
         super.keyDown(with: event)
     }
@@ -1279,8 +1149,6 @@ final class MainPanel: NSPanel {
             return true
         }
         if handleAgendaKey(event) { return true }
-        if handleLibraryKey(event) { return true }
-        if handleProjectsKey(event) { return true }
         if handleCalendarViewKey(event) { return true }
         // Also handle the summon chord locally while the workspace owns focus.
         // Carbon remains responsible for summoning from other applications.
@@ -1328,10 +1196,6 @@ final class MainPanel: NSPanel {
         switch action {
         case .showAgenda: openWorkspace(.agenda)
         case .showCalendar: openWorkspace(.calendar)
-        case .showProjects: openWorkspace(.projects)
-        case .showTodos: openWorkspace(.todos)
-        case .showNotes: openWorkspace(.notes)
-        case .showLinks: openWorkspace(.links)
         case .toggleEditor:
             toggleEditor()
         case .dismissPanel:

@@ -3,36 +3,24 @@ import SwiftUI
 
 /// Native destinations share one panel. Saved filters are deferred.
 enum WorkspaceDestination: String, CaseIterable, Identifiable {
-    case agenda, todos, calendar, projects, notes, links
+    case agenda, calendar
     var id: String { rawValue }
     var title: String {
         switch self {
         case .agenda: return "Agenda"
-        case .todos: return "Todos"
         case .calendar: return "Calendar"
-        case .projects: return "Projects"
-        case .notes: return "Notes"
-        case .links: return "Saved links"
         }
     }
     var symbol: String {
         switch self {
         case .agenda: return "list.bullet.indent"
-        case .todos: return "checklist"
         case .calendar: return "calendar"
-        case .projects: return "folder"
-        case .notes: return "note.text"
-        case .links: return "bookmark"
         }
     }
     var action: ShortcutAction {
         switch self {
         case .agenda: return .showAgenda
-        case .todos: return .showTodos
         case .calendar: return .showCalendar
-        case .projects: return .showProjects
-        case .notes: return .showNotes
-        case .links: return .showLinks
         }
     }
 }
@@ -67,7 +55,6 @@ struct WorkspaceItem: Identifiable, Equatable {
     var childTasks = 0
     var title: String { text.components(separatedBy: "\n").first ?? text }
     var isTodo: Bool { kind == "capture" || kind == "task" }
-    var projects: [String] { tags.filter { $0.hasPrefix("project/") }.map { String($0.dropFirst(8)) }.sorted() }
 
     static func date(_ value: String?) -> Date? {
         guard let value else { return nil }
@@ -144,60 +131,21 @@ struct WorkspaceItem: Identifiable, Equatable {
 /// Everything the workspace views derive from the loaded items, computed once
 /// per change of input rather than on each read — the month grid used to
 /// re-filter and re-sort every item for each of its ~35 day cells.
-struct LibraryGroup: Equatable {
-    let name: String
-    let items: [WorkspaceItem]
-}
-
 struct WorkspaceProjection {
     let visible: [WorkspaceItem]
     let days: [Date]
     /// Dated items keyed by the start of each day they touch, in start order.
     let eventsByDay: [Date: [WorkspaceItem]]
-    /// Todos by section, in the order sections first appear in the files.
-    let groups: [LibraryGroup]
 
-    static let empty = WorkspaceProjection(visible: [], days: [], eventsByDay: [:], groups: [])
+    static let empty = WorkspaceProjection(visible: [], days: [], eventsByDay: [:])
 
-    private init(visible: [WorkspaceItem], days: [Date], eventsByDay: [Date: [WorkspaceItem]], groups: [LibraryGroup]) {
-        self.visible = visible; self.days = days; self.eventsByDay = eventsByDay; self.groups = groups
+    private init(visible: [WorkspaceItem], days: [Date], eventsByDay: [Date: [WorkspaceItem]]) {
+        self.visible = visible; self.days = days; self.eventsByDay = eventsByDay
     }
 
-    /// `filter` narrows Todos, Notes and Saved links to items containing it.
-    /// `kept` holds items ticked during this visit, which stay on screen.
-    init(items: [WorkspaceItem], destination: WorkspaceDestination, project: String?,
-         date: Date, mode: WorkspaceCalendarMode, filter: String = "", kept: Set<String> = [],
-         calendar: Calendar = .current) {
-        let query = filter.trimmingCharacters(in: .whitespaces)
-        let matched = items.filter { item in
-            switch destination {
-            case .todos: return item.isTodo && item.depth == 0 && (!item.completed || kept.contains(item.id))
-            case .notes: return item.kind == "note" && item.depth == 0
-            case .links: return (item.kind == "bookmark" || item.url != nil) && item.depth == 0
-            case .projects: return project.map { item.projects.contains($0) } ?? !item.projects.isEmpty
-            case .calendar: return item.starts != nil && !item.completed
-            case .agenda: return false
-            }
-        }.filter { query.isEmpty || $0.text.localizedCaseInsensitiveContains(query) || $0.section.localizedCaseInsensitiveContains(query) }
-        switch destination {
-        case .todos:
-            var order: [String: Int] = [:]
-            for item in items where order[item.section] == nil { order[item.section] = order.count }
-            groups = Dictionary(grouping: matched, by: \.section)
-                .sorted { order[$0.key, default: .max] < order[$1.key, default: .max] }
-                .map { LibraryGroup(name: $0.key, items: $0.value.sorted { ($0.priority, $0.line) < ($1.priority, $1.line) }) }
-            visible = groups.flatMap(\.items)
-        case .notes, .links:
-            // Newest first: by capture stamp, then later in the file first.
-            let position = Dictionary(items.enumerated().map { ($1.id, $0) }, uniquingKeysWith: { a, _ in a })
-            visible = matched.sorted {
-                ($0.captured ?? .distantPast, position[$0.id] ?? 0) > ($1.captured ?? .distantPast, position[$1.id] ?? 0)
-            }
-            groups = []
-        default:
-            visible = matched.sorted { $0.priority == $1.priority ? $0.id < $1.id : $0.priority < $1.priority }
-            groups = []
-        }
+    init(items: [WorkspaceItem], destination: WorkspaceDestination,
+         date: Date, mode: WorkspaceCalendarMode, calendar: Calendar = .current) {
+        visible = destination == .calendar ? items.filter { $0.starts != nil && !$0.completed } : []
         days = Self.days(around: date, mode: mode, calendar: calendar)
         guard destination == .calendar else { eventsByDay = [:]; return }
         let dated = visible.sorted { ($0.starts ?? .distantPast, $0.id) < ($1.starts ?? .distantPast, $1.id) }
@@ -230,7 +178,7 @@ struct WorkspaceProjection {
 
 @MainActor @Observable
 final class WorkspaceModel {
-    var destination: WorkspaceDestination = .todos { didSet { recompute() } }
+    var destination: WorkspaceDestination = .agenda { didSet { recompute() } }
     var calendarMode: WorkspaceCalendarMode = .month { didSet { recompute() } }
     /// The selected day — the calendar's keyboard cursor. The visible month,
     /// week or day is whichever contains it, so moving it past an edge turns
@@ -243,8 +191,6 @@ final class WorkspaceModel {
     }
     /// The event the arrows have landed on (or that was clicked), if any.
     var selectedEventID: String?
-    var project: String? { didSet { recompute() } }
-    var selectedID: String?
     private(set) var items: [WorkspaceItem] = [] { didSet { recompute() } }
     private(set) var problem: String?
     private(set) var projection = WorkspaceProjection.empty
@@ -268,24 +214,10 @@ final class WorkspaceModel {
     var agendaSelectedID: String?
     /// Items ticked during this visit, kept on screen struck through.
     private(set) var keptTicked: Set<String> = []
-    /// Todos, Notes and Saved links: the text the list is narrowed to.
-    var libraryFilter = "" { didSet { recompute() } }
-    /// True while the filter field has focus.
-    var filterFocused = false
+
     private(set) var agendaSources: [AgendaSource] = []
-    /// Projects: the selected project and tab, here so keys can drive them.
-    var projectSelection: String?
     /// The project registry; tests use one in a temp folder.
     @ObservationIgnored var projectStore = ProjectStore.shared
-    var projectTab = ProjectTab.overview
-
-    /// ↑ ↓ through `ids` (the project list, in order).
-    func stepProject(_ offset: Int, ids: [String]) {
-        guard !ids.isEmpty else { return }
-        let current = ids.firstIndex { $0 == projectSelection } ?? (offset > 0 ? -1 : ids.count)
-        projectSelection = ids[min(ids.count - 1, max(0, current + offset))]
-    }
-
     /// Where daily notes live; tests point it at a temp folder.
     var dailyFolder: URL?
     private var effectiveDailyFolder: URL { dailyFolder ?? DailyNote.folder(forCaptureFile: appState.captureFileURL) }
@@ -359,11 +291,7 @@ final class WorkspaceModel {
     }
 
     private func recompute() {
-        projection = WorkspaceProjection(items: items, destination: destination, project: project,
-                                         date: date, mode: calendarMode, filter: libraryFilter, kept: keptTicked)
-        if [.todos, .notes, .links].contains(destination), selectedID == nil || !visible.contains(where: { $0.id == selectedID }) {
-            selectedID = visible.first?.id
-        }
+        projection = WorkspaceProjection(items: items, destination: destination, date: date, mode: calendarMode)
         recomputeAgenda()
     }
 
@@ -408,35 +336,9 @@ final class WorkspaceModel {
 
     func keepTicked(_ id: String) { keptTicked.insert(id); recompute() }
 
-    // MARK: Todos, Notes and Saved links
-
-    var selectedItem: WorkspaceItem? { visible.first { $0.id == selectedID } }
-
-    /// ↑ ↓ through the list; the ends don't wrap.
-    func stepLibrary(_ offset: Int) {
-        let rows = visible
-        guard !rows.isEmpty else { return }
-        let current = rows.firstIndex { $0.id == selectedID } ?? (offset > 0 ? -1 : rows.count)
-        selectedID = rows[min(rows.count - 1, max(0, current + offset))].id
-    }
-
-    /// ⌥↑ ⌥↓ in Todos: the top of the current section, then the previous or
-    /// next section.
-    func jumpLibrarySection(_ direction: Int) {
-        let sections = projection.groups.map(\.items)
-        guard !sections.isEmpty else { return }
-        let current = sections.firstIndex { $0.contains { $0.id == selectedID } } ?? (direction > 0 ? -1 : sections.count)
-        if direction < 0, current < sections.count, sections[current].first?.id != selectedID {
-            selectedID = sections[current].first?.id
-        } else {
-            selectedID = sections[min(sections.count - 1, max(0, current + direction))].first?.id
-        }
-    }
-
-    var projects: [String] { Array(Set(items.flatMap(\.projects))).sorted() }
     func navigate(_ destination: WorkspaceDestination) {
-        if destination != self.destination { keptTicked = []; libraryFilter = "" }
-        self.destination = destination; selectedID = nil; refresh()
+        if destination != self.destination { keptTicked = [] }
+        self.destination = destination; refresh()
     }
     func shiftDate(_ direction: Int) {
         let component: Calendar.Component = calendarMode == .month ? .month : .day
