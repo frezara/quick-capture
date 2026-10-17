@@ -286,7 +286,7 @@ struct OrganiserSettingsView: View {
     @State private var key = ""
     var body: some View {
         VStack(alignment: .leading, spacing: 10) {
-            Text("AUTOMATIC ORGANISER DELIVERY").font(.headline)
+            Text("Automatic organiser delivery").font(Typeface.ui(13, .bold))
             Toggle("Deliver captures and synchronise changes", isOn: $controller.enabled)
             TextField("Organiser URL", text: $controller.endpoint)
             SecureField("Access key", text: $key)

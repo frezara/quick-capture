@@ -35,6 +35,13 @@ struct RefileTarget: Codable, Equatable, Identifiable {
         return result
     }
 
+    /// Moves `id` to where `destination` sits (a drag dropped on that row).
+    static func moving(_ id: String, to destination: String, in targets: [RefileTarget]) -> [RefileTarget] {
+        guard let from = targets.firstIndex(where: { $0.id == id }),
+              let to = targets.firstIndex(where: { $0.id == destination }), from != to else { return targets }
+        return moving(id, by: to - from, in: targets)
+    }
+
     /// The folder URL, with `~` expanded.
     var folderURL: URL {
         URL(fileURLWithPath: (path as NSString).expandingTildeInPath)

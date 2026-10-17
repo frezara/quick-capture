@@ -100,4 +100,11 @@ final class RefileTargetTests: XCTestCase {
         try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
         return dir
     }
+
+    func testMovingOntoAnotherTargetTakesItsPlace() {
+        let targets = ["/a", "/b", "/c"].map { RefileTarget(path: $0, label: nil) }
+        XCTAssertEqual(RefileTarget.moving("/c", to: "/a", in: targets).map(\.path), ["/c", "/a", "/b"])
+        XCTAssertEqual(RefileTarget.moving("/a", to: "/c", in: targets).map(\.path), ["/b", "/c", "/a"])
+        XCTAssertEqual(RefileTarget.moving("/a", to: "/a", in: targets).map(\.path), ["/a", "/b", "/c"])
+    }
 }
