@@ -124,7 +124,7 @@ const darkPalette: Palette = {
 // Swift side exists, so headings render without their dot there.
 type TagHuePair = { light: string; dark: string };
 let tagHues: Record<string, TagHuePair> = {};
-/// True while the editor holds a daily note (Today). Daily notes stay local
+/// True while the editor holds a daily note. Daily notes stay local
 /// (ADR-0010) and keep their done items as the day's record, so archive and
 /// organiser sends are off.
 let dailyNote = false;
@@ -772,11 +772,6 @@ function makeTheme() {
         paddingBottom: "33px",
         boxSizing: "border-box",
     },
-    // A daily note shown in Today: the panel around it is the native Today
-    // view, so the editor drops its own header, section list and inspector.
-    "&.qc-daily": { paddingTop: "0" },
-    "&.qc-daily .qc-workspace-header, &.qc-daily .qc-navigation, &.qc-daily .qc-inspector": { display: "none" },
-    "&.qc-daily .cm-scroller": { marginLeft: "0", marginRight: "0", width: "100%" },
     ".qc-workspace-header": { position: "absolute", top: "0", left: "0", right: "0", height: "50px", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: palette.surfaceRail, borderBottom: `1px solid ${palette.borderSoft}`, fontFamily: sansFamily, fontSize: "12px" },
     ".qc-workspace-header button, .qc-navigation button, .qc-inspector button": { fontFamily: sansFamily, fontSize: "12px", color: palette.soft, background: "transparent", border: "none", borderRadius: "6px", padding: "6px 10px", cursor: "pointer", textAlign: "left" },
     ".qc-workspace-header button:hover, .qc-navigation button:hover, .qc-inspector button:hover": { background: palette.surfaceField },
@@ -1372,7 +1367,6 @@ declare global {
             setDailyNote: (on: boolean) => void;
             viewState: () => { anchor: number; head: number; scrollTop: number } | null;
             restoreViewState: (s: { anchor: number; head: number; scrollTop: number }) => void;
-            cursorToSectionEnd: (name: string) => void;
             setFilename: (name: string) => void;
             setVimEnabled: (on: boolean) => void;
             flushSave: () => Promise<boolean>;
@@ -2671,7 +2665,6 @@ function mount(content: string) {
     });
 
     view = new EditorView({ state, parent });
-    view.dom.classList.toggle("qc-daily", dailyNote);
     attachVimModeListener(view);
     updateBadge(view);
     ensureSidebar(view);
@@ -2707,12 +2700,9 @@ window.qcEditor = {
     },
     getContent: () => view ? fileText(view.state) : "",
     focus: () => view?.focus(),
-    setDailyNote: (on: boolean) => {
-        dailyNote = on;
-        view?.dom.classList.toggle("qc-daily", on);
-    },
-    // Swift keeps one of these per file, so switching between the inbox and a
-    // daily note returns to where you were in each.
+    setDailyNote: (on: boolean) => { dailyNote = on; },
+    // Swift keeps one of these per file, so switching between the inbox and
+    // another file returns to where you were in each.
     viewState: () => view ? {
         anchor: view.state.selection.main.anchor,
         head: view.state.selection.main.head,
@@ -2723,24 +2713,6 @@ window.qcEditor = {
         const max = view.state.doc.length;
         view.dispatch({ selection: { anchor: Math.min(s.anchor, max), head: Math.min(s.head, max) } });
         view.scrollDOM.scrollTop = s.scrollTop;
-    },
-    // Puts the cursor on the last non-blank line of `## <name>`, at its end.
-    cursorToSectionEnd: (name: string) => {
-        if (!view) return;
-        const doc = view.state.doc;
-        let heading = 0;
-        for (let n = 1; n <= doc.lines && !heading; n++) {
-            if (new RegExp(`^##\\s+${name}\\s*$`).test(doc.line(n).text)) heading = n;
-        }
-        if (!heading) return;
-        let last = heading;
-        for (let n = heading + 1; n <= doc.lines; n++) {
-            const text = doc.line(n).text;
-            if (/^#{1,2}\s/.test(text)) break;
-            if (text.trim() !== "") last = n;
-        }
-        const pos = doc.line(last).to;
-        view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
     },
     setFilename: (name: string) => {
         filename = name || "inbox.md";

@@ -99,8 +99,7 @@ enum ShortcutAction: String, CaseIterable {
     // mnemonic is spatial (one cluster), not per-letter; don't "fix" it back to
     // E/S/R. Avoid the system-claimed combos: ⌥⌘Esc (force quit), ⌥⌘H (Hide
     // Others), ⌥⌘D (Dock), ⌥⌘Space (Finder search).
-    case showToday, showAgenda, showTodos, showCalendar, showProjects, showNotes, showLinks
-    case toggleTodayFocus
+    case showAgenda, showTodos, showCalendar, showProjects, showNotes, showLinks
     case toggleEditor
     case dismissPanel
     case attachScreenshot
@@ -127,14 +126,12 @@ enum ShortcutAction: String, CaseIterable {
     var chord: KeyChord {
         switch self {
         // Numbered in rail order.
-        case .showToday: return KeyChord(key: "1", modifiers: [.command, .option])
-        case .showAgenda: return KeyChord(key: "2", modifiers: [.command, .option])
-        case .showTodos: return KeyChord(key: "3", modifiers: [.command, .option])
-        case .showCalendar: return KeyChord(key: "4", modifiers: [.command, .option])
-        case .showProjects: return KeyChord(key: "5", modifiers: [.command, .option])
-        case .showNotes: return KeyChord(key: "6", modifiers: [.command, .option])
-        case .showLinks: return KeyChord(key: "7", modifiers: [.command, .option])
-        case .toggleTodayFocus: return KeyChord(key: ";", modifiers: [.command, .option])
+        case .showAgenda: return KeyChord(key: "1", modifiers: [.command, .option])
+        case .showTodos: return KeyChord(key: "2", modifiers: [.command, .option])
+        case .showCalendar: return KeyChord(key: "3", modifiers: [.command, .option])
+        case .showProjects: return KeyChord(key: "4", modifiers: [.command, .option])
+        case .showNotes: return KeyChord(key: "5", modifiers: [.command, .option])
+        case .showLinks: return KeyChord(key: "6", modifiers: [.command, .option])
         case .toggleEditor:     return KeyChord(key: "i", modifiers: [.command, .option])
         case .dismissPanel:     return KeyChord(key: "w", modifiers: .command)
         case .attachScreenshot: return KeyChord(key: "o", modifiers: [.command, .option])
@@ -153,8 +150,8 @@ enum ShortcutAction: String, CaseIterable {
 
     var scope: ShortcutScope {
         switch self {
-        case .showToday, .showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor,
-             .dismissPanel, .toggleTodayFocus:
+        case .showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor,
+             .dismissPanel:
             return .anyMode
         case .attachScreenshot:
             // Both modes (#126): in capture it fills the box's chips, in the
@@ -169,8 +166,8 @@ enum ShortcutAction: String, CaseIterable {
 
     var isWindowIntercepted: Bool {
         switch self {
-        case .showToday, .showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor,
-             .dismissPanel, .attachScreenshot, .refile, .swallowReload, .toggleTodayFocus:
+        case .showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks, .toggleEditor,
+             .dismissPanel, .attachScreenshot, .refile, .swallowReload:
             return true
         case .readMode, .toggleTask, .save, .reorg, .archive, .imageSource, .nextSection, .prevSection:
             return false
@@ -183,9 +180,7 @@ enum ShortcutAction: String, CaseIterable {
     /// (`.accessory`).
     var menuTitle: String? {
         switch self {
-        case .showToday: return "Today"
         case .showAgenda: return "Agenda"
-        case .toggleTodayFocus: return nil
         case .showCalendar: return "Calendar"
         case .showProjects: return "Projects"
         case .showTodos: return "Todos"
@@ -222,7 +217,7 @@ enum ShortcutRegistry {
     /// Hints shown in the capture-mode hint bar, in display order. The two
     /// capture-reachable panel actions today; ordered so more can be appended.
     static let captureHints: [CaptureHint] = [
-        CaptureHint(action: .showToday, label: "Today"),
+        CaptureHint(action: .showAgenda, label: "Agenda"),
         CaptureHint(action: .toggleEditor,     label: "Editor"),
         CaptureHint(action: .attachScreenshot, label: "Screenshots"),
     ]
