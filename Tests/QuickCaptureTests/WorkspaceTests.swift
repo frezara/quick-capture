@@ -115,6 +115,28 @@ final class WorkspaceProjectionTests: XCTestCase {
         WorkspaceProjection(items: items, destination: destination, project: nil, date: at(date), mode: mode, calendar: calendar)
     }
 
+    func testTodosGroupBySectionInFileOrderAndKeepTicksMadeThisVisit() {
+        func todo(_ id: String, _ section: String, line: Int, priority: Int = 3, done: Bool = false, depth: Int = 0) -> WorkspaceItem {
+            WorkspaceItem(id: id, text: id, section: section, file: URL(fileURLWithPath: "/tmp/test"), completed: done,
+                          priority: priority, tags: [], kind: "capture", starts: nil, ends: nil, url: nil, line: line, depth: depth)
+        }
+        let items = [todo("boiler", "Home", line: 3), todo("hinge", "Home", line: 4, priority: 0),
+                     todo("child", "Home", line: 5, depth: 2), todo("drill", "Home", line: 6, done: true),
+                     todo("bulbs", "Garden", line: 9)]
+        let p = WorkspaceProjection(items: items, destination: .todos, project: nil, date: at("2026-10-15T12:00:00Z"),
+                                    mode: .month, kept: ["drill"], calendar: calendar)
+        XCTAssertEqual(p.groups.map(\.name), ["Home", "Garden"])
+        XCTAssertEqual(p.groups[0].items.map(\.id), ["hinge", "boiler", "drill"])
+        let filtered = WorkspaceProjection(items: items, destination: .todos, project: nil, date: at("2026-10-15T12:00:00Z"),
+                                           mode: .month, filter: "BULB", calendar: calendar)
+        XCTAssertEqual(filtered.visible.map(\.id), ["bulbs"])
+    }
+
+    func testCapturedStampIsRead() {
+        XCTAssertNotNil(WorkspaceItem.capturedDate("- [ ] milk ➕ 2026-10-14 09:12"))
+        XCTAssertNil(WorkspaceItem.capturedDate("- [ ] milk"))
+    }
+
     func testTodayProjectsJustTheSelectedDayWhateverTheCalendarMode() {
         let p = projection([item("a", start: "2026-10-15T09:00:00Z", end: "2026-10-15T10:00:00Z"),
                             item("b", start: "2026-10-16T09:00:00Z")], destination: .today, mode: .month)
