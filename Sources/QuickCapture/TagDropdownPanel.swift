@@ -182,14 +182,14 @@ struct TagDropdownContent: View {
             if isCal {
                 Image(systemName: "calendar")
                     .font(.system(size: 11, weight: .semibold))
-                    .foregroundStyle(theme.inkTertiary)
+                    .foregroundStyle(TagPalette.calendar.label(dark: isDark))
             } else if let hue {
                 Circle()
                     .fill(hue.dot(dark: isDark))
                     .frame(width: 7, height: 7)
             } else {
                 Circle()
-                    .fill(theme.inkTertiary.opacity(0.35))
+                    .fill(theme.border)
                     .frame(width: 7, height: 7)
             }
             Text(name)
@@ -197,7 +197,7 @@ struct TagDropdownContent: View {
                 .lineLimit(1)
             Spacer(minLength: 0)
         }
-        .font(TypeScale.chip)
+        .font(highlighted ? Typeface.ui(12.5, .semibold) : TypeScale.chip)
         .padding(.horizontal, 9)
         .padding(.vertical, 6)
         .background(

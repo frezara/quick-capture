@@ -112,3 +112,29 @@ final class CalendarTagSubmissionTests: XCTestCase {
         XCTAssertEqual(CaptureView.submissionAction(typed: "ca", suggestion: nil, explicitlySelected: false), .save("ca"))
     }
 }
+
+final class CalendarPreviewTests: XCTestCase {
+    func testWhenLineGivesTheAbsoluteDayAndTheTimeRange() {
+        var parts = DateComponents()
+        (parts.year, parts.month, parts.day, parts.hour) = (2026, 10, 17, 14)
+        let start = Calendar.current.date(from: parts)!
+        let event = CalendarEvent(title: "Call the council", start: start, duration: 30 * 60)
+        XCTAssertEqual(CaptureView.calendarPreviewWhen(event), "Saturday 17 October, 14:00 to 14:30")
+    }
+}
+
+/// With nothing typed no row is highlighted, so the first arrow lands on an
+/// end of the list instead of stepping past the top row (the pinned `cal`).
+final class TagArrowTests: XCTestCase {
+    func testDownIntoAnUnhighlightedListLandsOnTheFirstRow() {
+        XCTAssertEqual(CaptureView.arrowedTagIndex(from: 0, shown: false, count: 3, down: true), 0)
+    }
+    func testUpIntoAnUnhighlightedListLandsOnTheLastRow() {
+        XCTAssertEqual(CaptureView.arrowedTagIndex(from: 0, shown: false, count: 3, down: false), 2)
+    }
+    func testArrowsStepAndStopAtTheEndsOnceHighlighted() {
+        XCTAssertEqual(CaptureView.arrowedTagIndex(from: 0, shown: true, count: 3, down: true), 1)
+        XCTAssertEqual(CaptureView.arrowedTagIndex(from: 2, shown: true, count: 3, down: true), 2)
+        XCTAssertEqual(CaptureView.arrowedTagIndex(from: 0, shown: true, count: 3, down: false), 0)
+    }
+}

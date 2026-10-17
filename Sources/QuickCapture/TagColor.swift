@@ -16,13 +16,13 @@ extension Color {
 /// (#102). The editor no longer carries a copy of this palette either: Swift
 /// resolves the hue and pushes it over the bridge.
 enum TagPalette {
-    struct Entry {
+    struct Entry: Equatable {
         let lightHex: UInt32
         let darkHex: UInt32
 
         func dot(dark: Bool) -> Color   { Color(hex: dark ? darkHex : lightHex) }
         func label(dark: Bool) -> Color { Color(hex: dark ? darkHex : lightHex) }
-        func tint(dark: Bool) -> Color  { Color(hex: dark ? darkHex : lightHex, opacity: dark ? 0.16 : 0.11) }
+        func tint(dark: Bool) -> Color  { Color(hex: dark ? darkHex : lightHex, opacity: dark ? 0.18 : 0.12) }
 
         /// CSS form, for the pair pushed into the editor.
         var lightCSS: String { String(format: "#%06X", lightHex) }
@@ -31,17 +31,23 @@ enum TagPalette {
 
     /// Seven hues, in the order they are handed out. Slate was retired in #102:
     /// a grey gives a section no identity, which is the one job the hue has.
-    /// Blue stays — at the heading mix it renders as a dark navy, well clear of
-    /// the system accent.
+    ///
+    /// Assignments persist as indices, so the Highlighter retune (THEME.md)
+    /// kept each slot's family — coral→rust, magenta→plum, blue→slate-blue,
+    /// amber→ochre, indigo→violet — and a section keeps a recognisable colour.
     static let entries: [Entry] = [
-        .init(lightHex: 0xAF553D, darkHex: 0xEDAC95), // coral
-        .init(lightHex: 0x247B69, darkHex: 0x83CDB5), // teal
-        .init(lightHex: 0x9D4286, darkHex: 0xE4A0CB), // magenta
-        .init(lightHex: 0x527346, darkHex: 0xB0CEA0), // green
-        .init(lightHex: 0x486D91, darkHex: 0xA1BFDF), // blue
-        .init(lightHex: 0x90651F, darkHex: 0xDEC187), // amber
-        .init(lightHex: 0x69608E, darkHex: 0xBEB2DE), // indigo
+        .init(lightHex: 0xA1452B, darkHex: 0xF2A88B), // rust
+        .init(lightHex: 0x1F6F74, darkHex: 0x8AD2D5), // teal
+        .init(lightHex: 0x8A3B5C, darkHex: 0xE7A3C1), // plum
+        .init(lightHex: 0x3B7337, darkHex: 0xA1CF95), // green
+        .init(lightHex: 0x3F5F86, darkHex: 0xA9C1E0), // slate-blue
+        .init(lightHex: 0x94561C, darkHex: 0xE6B37E), // ochre
+        .init(lightHex: 0x6650A0, darkHex: 0xC6B8F0), // violet
     ]
+
+    /// The `cal` command's colour: the calendar wears teal wherever it shows
+    /// (tag field, event preview, dropdown glyph), so accent stays interaction.
+    static let calendar = entries[1]
 
     static var count: Int { entries.count }
 

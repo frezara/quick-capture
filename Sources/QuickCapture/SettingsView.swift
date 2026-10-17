@@ -99,7 +99,7 @@ private struct SettingsForm: View {
             // as a second setting (#116).
             settingsRow(label: "Input font", symbol: "textformat") {
                 Text("What needs doing?")
-                    .font(.system(size: 13, design: appState.captureFontDesign.design))
+                    .font(appState.captureFontDesign.font(size: 13))
                     .foregroundStyle(t.inkSecondary)
             } control: {
                 Picker("", selection: $appState.captureFontDesign) {

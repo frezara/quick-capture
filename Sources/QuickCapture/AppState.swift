@@ -19,10 +19,10 @@ enum CaptureFontDesign: String, CaseIterable, Identifiable {
 
     var label: String {
         switch self {
-        case .system:     return "System"
+        case .system:     return "Recursive"
         case .rounded:    return "Rounded"
         case .serif:      return "Serif (New York)"
-        case .monospaced: return "Monospaced (SF Mono)"
+        case .monospaced: return "Recursive Mono"
         }
     }
 
@@ -173,6 +173,9 @@ final class AppState {
     /// indented `![…]` child line under the captured todo. Deduped by path so
     /// the same screenshot can't attach twice.
     var pendingAttachments: [URL] = []
+    /// A tag for the capture box to start with, set by the calendar's New event
+    /// (N) so the box opens on `cal`. CaptureView consumes and clears it.
+    var captureTagPrefill: String?
     /// When non-nil, the ⌥⌘O screenshot picker is open over the capture box,
     /// offering these recent screenshots (newest first). Cleared on attach,
     /// Esc, mode switch, and full dismiss.
