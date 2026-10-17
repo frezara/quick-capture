@@ -3,11 +3,12 @@ import SwiftUI
 
 /// Native destinations share one panel. Saved filters are deferred.
 enum WorkspaceDestination: String, CaseIterable, Identifiable {
-    case today, todos, calendar, projects, notes, links
+    case today, agenda, todos, calendar, projects, notes, links
     var id: String { rawValue }
     var title: String {
         switch self {
         case .today: return "Today"
+        case .agenda: return "Agenda"
         case .todos: return "Todos"
         case .calendar: return "Calendar"
         case .projects: return "Projects"
@@ -18,6 +19,7 @@ enum WorkspaceDestination: String, CaseIterable, Identifiable {
     var symbol: String {
         switch self {
         case .today: return "sun.max"
+        case .agenda: return "list.bullet.indent"
         case .todos: return "checklist"
         case .calendar: return "calendar"
         case .projects: return "folder"
@@ -28,6 +30,7 @@ enum WorkspaceDestination: String, CaseIterable, Identifiable {
     var action: ShortcutAction {
         switch self {
         case .today: return .showToday
+        case .agenda: return .showAgenda
         case .todos: return .showTodos
         case .calendar: return .showCalendar
         case .projects: return .showProjects
@@ -149,6 +152,7 @@ struct WorkspaceProjection {
             case .links: return item.kind == "bookmark" || item.url != nil
             case .projects: return project.map { item.projects.contains($0) } ?? !item.projects.isEmpty
             case .calendar, .today: return item.starts != nil && !item.completed
+            case .agenda: return false
             }
         }.sorted { $0.priority == $1.priority ? $0.id < $1.id : $0.priority < $1.priority }
         days = Self.days(around: date, mode: destination == .today ? .day : mode, calendar: calendar)
@@ -218,6 +222,19 @@ final class WorkspaceModel {
     private var pendingRefresh: Task<Void, Never>?
     /// Previews hold fixed items and never read the real inboxes.
     @ObservationIgnored private var frozen = false
+
+    // MARK: Agenda state
+
+    /// The first of the seven days Agenda shows.
+    var agendaStart = Date() { didSet { recomputeAgenda() } }
+    private(set) var agenda = AgendaProjection.empty
+    var agendaSelectedID: String?
+    /// Items ticked during this visit, kept on screen struck through.
+    private(set) var agendaKept: Set<String> = []
+    private(set) var agendaSources: [AgendaSource] = []
+    /// Where daily notes live; tests point it at a temp folder.
+    var dailyFolder: URL?
+    private var effectiveDailyFolder: URL { dailyFolder ?? DailyNote.folder(forCaptureFile: appState.captureFileURL) }
     init(appState: AppState) {
         self.appState = appState
         recompute()
@@ -231,7 +248,16 @@ final class WorkspaceModel {
             if record.state == "pending", let operation = try? controller.outbox.operation(record) { metadata[record.id] = operation.item }
             else { metadata[record.id] = record.baseline?.item }
         }
-        let files = [appState.captureFileURL] + appState.effectiveRefileTargets.map { $0.folderURL.appendingPathComponent("inbox.md") }
+        var files = [appState.captureFileURL] + appState.effectiveRefileTargets.map { $0.folderURL.appendingPathComponent("inbox.md") }
+        if destination == .agenda {
+            let today = DailyNote.url(for: Date(), in: effectiveDailyFolder)
+            agendaSources = AgendaSource.list(
+                dailyNote: FileManager.default.fileExists(atPath: today.path) ? today : nil,
+                captureFile: appState.captureFileURL,
+                projects: ProjectStore.shared.projects.map { (name: $0.name, file: $0.file) },
+                targets: appState.effectiveRefileTargets.map { (name: $0.displayName, file: $0.folderURL.appendingPathComponent("inbox.md")) })
+            for source in agendaSources where !files.contains(source.file) { files.append(source.file) }
+        }
         watch(files)
         loadGeneration += 1
         // The first load is synchronous so the workspace never opens on a
@@ -281,10 +307,53 @@ final class WorkspaceModel {
     private func recompute() {
         projection = WorkspaceProjection(items: items, destination: destination, project: project,
                                          date: date, mode: calendarMode)
+        recomputeAgenda()
     }
+
+    private func recomputeAgenda() {
+        guard destination == .agenda else { return }
+        agenda = AgendaProjection(items: items, sources: agendaSources, start: agendaStart, now: Date(), kept: agendaKept)
+        let rows = agenda.rows
+        if agendaSelectedID == nil || !rows.contains(where: { $0.id == agendaSelectedID }) {
+            let today = Calendar.current.startOfDay(for: Date())
+            agendaSelectedID = (rows.first { $0.day == today } ?? rows.first)?.id
+        }
+    }
+
+    var agendaSelectedRow: AgendaRow? { agenda.rows.first { $0.id == agendaSelectedID } }
+
+    /// ↑ ↓: one row; the ends don't wrap.
+    func stepAgenda(_ offset: Int) {
+        let rows = agenda.rows
+        guard !rows.isEmpty else { return }
+        let current = rows.firstIndex { $0.id == agendaSelectedID } ?? (offset > 0 ? -1 : rows.count)
+        agendaSelectedID = rows[min(rows.count - 1, max(0, current + offset))].id
+    }
+
+    /// ⌥↑ ⌥↓: the first row of the previous or next day or todo group.
+    func jumpAgenda(_ direction: Int) {
+        let sections = agenda.days.map(\.rows).filter { !$0.isEmpty } + agenda.groups.map(\.rows)
+        guard !sections.isEmpty else { return }
+        let current = sections.firstIndex { $0.contains { $0.id == agendaSelectedID } }
+            ?? (direction > 0 ? -1 : sections.count)
+        let target = min(sections.count - 1, max(0, current + direction))
+        // ⌥↑ inside a section first goes to that section's top.
+        if direction < 0, current < sections.count, sections[current].first?.id != agendaSelectedID {
+            agendaSelectedID = sections[current].first?.id
+        } else {
+            agendaSelectedID = sections[target].first?.id
+        }
+    }
+
+    func moveAgendaWeek(_ offset: Int) {
+        agendaStart = Calendar.current.date(byAdding: .day, value: 7 * offset, to: agendaStart) ?? agendaStart
+    }
+
+    func keepTicked(_ id: String) { agendaKept.insert(id) }
 
     var projects: [String] { Array(Set(items.flatMap(\.projects))).sorted() }
     func navigate(_ destination: WorkspaceDestination) {
+        if destination != .agenda { agendaKept = [] }
         self.destination = destination; selectedID = nil; refresh()
     }
     func shiftDate(_ direction: Int) {
@@ -340,6 +409,9 @@ final class WorkspaceModel {
     /// New event: the capture box opens with `cal` already in the tag field.
     func prepareNewEvent() { appState.captureTagPrefill = "cal" }
 
+    /// The section's own hue, if it has one.
+    func sectionHue(for item: WorkspaceItem) -> TagPalette.Entry? { appState.tagHues.entry(for: item.section) }
+
     /// The section's own hue when it has one; otherwise the calendar's teal.
     func hue(for item: WorkspaceItem) -> TagPalette.Entry {
         appState.tagHues.entry(for: item.section) ?? TagPalette.calendar
@@ -357,10 +429,11 @@ extension WorkspaceModel {
         let today = Calendar.current.startOfDay(for: Date())
         func hours(_ h: Double, from day: Date = today) -> Date { day.addingTimeInterval(h * 3600) }
         func item(_ id: String, _ text: String, section: String, priority: Int = 3, kind: String = "capture",
-                  starts: Date? = nil, ends: Date? = nil) -> WorkspaceItem {
+                  starts: Date? = nil, ends: Date? = nil, reminder: Date? = nil) -> WorkspaceItem {
             WorkspaceItem(id: id, text: text, section: section, file: file, completed: false, priority: priority,
-                          tags: [], kind: kind, starts: starts, ends: ends, url: nil)
+                          tags: [], kind: kind, starts: starts, ends: ends, url: nil, line: Int(id) ?? 0, reminder: reminder)
         }
+        model.agendaSources = [AgendaSource(name: "Inbox", file: file)]
         model.items = [
             item("1", "Renew passport", section: "Admin", priority: 0),
             item("2", "Order seeds for the spring beds", section: "Garden", priority: 2),
@@ -369,8 +442,17 @@ extension WorkspaceModel {
             item("5", "Standup", section: "Calendar", kind: "event", starts: hours(9.5), ends: hours(9.75)),
             item("6", "Seb's birthday", section: "Calendar", kind: "event", starts: hours(24), ends: hours(48)),
             item("7", "Call the council", section: "Calendar", kind: "event", starts: hours(24 * 3 + 14), ends: hours(24 * 3 + 14.5)),
+            item("8", "Bins out", section: "Home", reminder: hours(19)),
         ]
         return model
+    }
+
+    /// Tests drive a real panel over fixed items, never the real inboxes.
+    func useFixedItems(_ items: [WorkspaceItem], sources: [AgendaSource]) {
+        frozen = true
+        loadGeneration += 1   // a load already in flight must not land over these
+        agendaSources = sources
+        self.items = items
     }
 }
 #endif

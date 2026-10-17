@@ -126,3 +126,62 @@ final class TodayKeyRoutingTests: XCTestCase {
         XCTAssertTrue(FileManager.default.fileExists(atPath: note.path), "opening Today creates today's note")
     }
 }
+
+/// Agenda's keys through real key events, over fixed items in temp files so
+/// nothing touches the real inboxes.
+@MainActor
+final class AgendaKeyRoutingTests: XCTestCase {
+    private func press(_ panel: NSWindow, _ chars: String, _ code: UInt16,
+                       _ modifiers: NSEvent.ModifierFlags = []) throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code))
+            panel.sendEvent(event)
+        }
+    }
+
+    func testArrowsWeeksTickAndOpen() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("AgendaKeys-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let inbox = folder.appendingPathComponent("project/inbox.md")
+        try FileManager.default.createDirectory(at: inbox.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try "# Inbox\n\n## Home\n- [ ] parent\n  - [ ] child\n- [ ] second\n".write(to: inbox, atomically: true, encoding: .utf8)
+
+        let panel = MainPanel(appState: AppState(), onSubmit: { _, _, _ in true }, onDismiss: {})
+        panel.dailyFolderOverride = folder.appendingPathComponent("daily")
+        defer { panel.orderOut(nil) }
+        panel.openWorkspace(.agenda)
+        let model = panel.workspaceModel
+        let items = WorkspaceItem.parse(try String(contentsOf: inbox, encoding: .utf8), file: inbox, metadata: [:])
+        model.useFixedItems(items, sources: [AgendaSource(name: "Project", file: inbox)])
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertTrue(FileManager.default.fileExists(atPath: DailyNote.url(for: Date(), in: folder.appendingPathComponent("daily")).path),
+                      "opening Agenda creates today's note")
+        XCTAssertEqual(model.agenda.groups.map(\.name), ["Project"])
+        XCTAssertEqual(model.agendaSelectedRow?.item.title, "parent", "nothing is scheduled, so the first todo is selected")
+        try press(panel, "\u{F701}", 125)                      // ↓
+        XCTAssertEqual(model.agendaSelectedRow?.item.title, "second")
+        try press(panel, "\u{F700}", 126, .option)             // ⌥↑ to the group's top
+        XCTAssertEqual(model.agendaSelectedRow?.item.title, "parent")
+
+        let start = Calendar.current.startOfDay(for: model.agendaStart)
+        try press(panel, "]", 30)
+        XCTAssertEqual(Calendar.current.dateComponents([.day], from: start, to: Calendar.current.startOfDay(for: model.agendaStart)).day, 7)
+        try press(panel, "t", 17)
+        XCTAssertEqual(Calendar.current.startOfDay(for: model.agendaStart), Calendar.current.startOfDay(for: Date()))
+
+        try press(panel, "x", 7)
+        for _ in 0..<40 {
+            if try String(contentsOf: inbox, encoding: .utf8).contains("- [x] parent") { break }
+            try await Task.sleep(nanoseconds: 50_000_000)
+        }
+        XCTAssertEqual(try String(contentsOf: inbox, encoding: .utf8),
+                       "# Inbox\n\n## Home\n- [x] parent\n  - [x] child\n- [ ] second\n", "X ticks the item and its children")
+
+        try press(panel, "\r", 36)
+        XCTAssertTrue(panel.editorOpen, "Enter opens the item in the editor")
+    }
+}

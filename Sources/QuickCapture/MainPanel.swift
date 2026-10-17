@@ -100,6 +100,11 @@ final class MainPanel: NSPanel {
     /// Editor cursor and scroll per file, as the JSON `qcEditor.viewState()`
     /// returns, so switching files returns to where you were.
     private var editorViewStates: [URL: String] = [:]
+    /// A file other than the capture file that editor mode should show: an
+    /// item opened from Agenda. Cleared when the editor closes.
+    private var editorFileOverride: URL?
+    /// The line to put the cursor on once the editor holds the opened file.
+    private var pendingRevealLine: Int?
     /// Where Today wants the editor; set by `TodayView`'s slot.
     private weak var todayEditorSlot: NSView?
     private var exitPending = false
@@ -425,6 +430,7 @@ final class MainPanel: NSPanel {
         // crossfade below owns the alphas, so this only clears state.
         cancelPickerOverEditor()
         editorOpen = false
+        editorFileOverride = nil
         isCollapsing = true
         isMovableByWindowBackground = true
 
@@ -503,6 +509,7 @@ final class MainPanel: NSPanel {
                 guard saved else { return }
                 self.cancelPickerOverEditor()
                 self.editorOpen = false
+                self.editorFileOverride = nil
                 self.openWorkspace(destination)
             }
             return
@@ -512,6 +519,12 @@ final class MainPanel: NSPanel {
         attachLookupGeneration += 1
         appState.screenshotPickerItems = nil
         canDismissOnBlur = false
+        // Agenda lists today's note, so opening it creates the note (and rolls
+        // over) just as Today does (CONTEXT.md, **Rollover**).
+        if destination == .agenda {
+            do { try DailyNote.ensureNote(for: Date(), in: dailyFolder) }
+            catch { NSLog("Agenda couldn't create today's note: \(error)") }
+        }
         workspaceModel.navigate(destination)
         if workspaceHost == nil {
             let host = NSHostingView(rootView: WorkspaceView(model: workspaceModel,
@@ -519,7 +532,9 @@ final class MainPanel: NSPanel {
                 onEditor: { [weak self] in self?.openEditor() },
                 onEditorSlot: { [weak self] slot in self?.todayEditorSlotDidChange(slot) },
                 onFocusSchedule: { [weak self] in self?.focusTodaySchedule() },
-                onTodayDayChange: { [weak self] in self?.reconcileEditorFile() }))
+                onTodayDayChange: { [weak self] in self?.reconcileEditorFile() },
+                onAgendaOpen: { [weak self] row in self?.openAgendaItem(row) },
+                onAgendaTick: { [weak self] row in self?.tickAgendaItem(row) }))
             host.frame = container.bounds
             host.autoresizingMask = [.width, .height]
             container.addSubview(host)
@@ -539,6 +554,77 @@ final class MainPanel: NSPanel {
         if destination == .today { enterToday() }
     }
 
+    // MARK: - Agenda
+
+    private var agendaActive: Bool { workspaceOpen && workspaceModel.destination == .agenda }
+
+    /// Agenda's keys (CONTEXT.md). The view has no text fields, so plain
+    /// letters are safe to take.
+    private func handleAgendaKey(_ event: NSEvent) -> Bool {
+        guard agendaActive else { return false }
+        let flags = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        let model = workspaceModel
+        switch (event.keyCode, flags) {
+        case (126, []): model.stepAgenda(-1)
+        case (125, []): model.stepAgenda(1)
+        case (126, .option): model.jumpAgenda(-1)
+        case (125, .option): model.jumpAgenda(1)
+        case (36, []), (76, []):
+            guard let row = model.agendaSelectedRow else { return false }
+            openAgendaItem(row)
+        default:
+            guard flags.isEmpty else { return false }
+            switch event.charactersIgnoringModifiers {
+            case "[": model.moveAgendaWeek(-1)
+            case "]": model.moveAgendaWeek(1)
+            case "t": model.agendaStart = Date()
+            case "x":
+                guard let row = model.agendaSelectedRow else { return false }
+                tickAgendaItem(row)
+            default: return false
+            }
+        }
+        return true
+    }
+
+    /// Opens the item in the editor, in its own file, at its line.
+    private func openAgendaItem(_ row: AgendaRow) {
+        editorFileOverride = row.item.file == appState.captureFileURL ? nil : row.item.file
+        pendingRevealLine = row.item.line
+        openEditor()
+    }
+
+    /// Ticks or unticks the item in its file with the ticked-parent rule. The
+    /// line must still be the same item; anything else is left alone.
+    private func tickAgendaItem(_ row: AgendaRow) {
+        let model = workspaceModel
+        flushEditorSave { saved in
+            guard saved else { return }
+            do {
+                let file = row.item.file
+                let content = try FileWriter.read(file)
+                let lines = content.components(separatedBy: "\n")
+                guard row.item.line < lines.count, Self.itemTitle(lines[row.item.line]) == row.item.title,
+                      let updated = TickCascade.apply(to: content, line: row.item.line, checked: !row.item.completed) else {
+                    NSSound.beep(); model.refresh(); return
+                }
+                try FileWriter.write(Data(updated.utf8), to: file, ifStillMatching: content)
+                model.keepTicked(row.item.id)
+                model.refresh()
+            } catch {
+                NSLog("Agenda tick failed for \(row.item.file.path): \(error)")
+                NSSound.beep()
+                model.refresh()
+            }
+        }
+    }
+
+    /// An item line as `WorkspaceItem.title` reads it: no checkbox, no marker.
+    static func itemTitle(_ line: String) -> String {
+        line.replacingOccurrences(of: #" ?<!--qc-source:[0-9a-fA-F-]{36}-->"#, with: "", options: .regularExpression)
+            .replacingOccurrences(of: #"^\s*[-*+] \[[ xX]\] "#, with: "", options: .regularExpression)
+    }
+
     // MARK: - Today
 
     private var todayActive: Bool { workspaceOpen && workspaceModel.destination == .today }
@@ -546,14 +632,16 @@ final class MainPanel: NSPanel {
     /// The file the editor should hold right now: the selected day's note in
     /// Today, the capture file everywhere else.
     private var editorTargetURL: URL {
+        if editorOpen, let editorFileOverride { return editorFileOverride }
         guard todayActive else { return appState.captureFileURL }
-        let folder = dailyFolderOverride ?? DailyNote.folder(forCaptureFile: appState.captureFileURL)
-        return DailyNote.url(for: workspaceModel.date, in: folder)
+        return DailyNote.url(for: workspaceModel.date, in: dailyFolder)
     }
 
-    /// Tests point Today at a temp folder so it never creates notes beside the
-    /// real capture file.
-    var dailyFolderOverride: URL?
+    private var dailyFolder: URL { dailyFolderOverride ?? DailyNote.folder(forCaptureFile: appState.captureFileURL) }
+
+    /// Tests point Today and Agenda at a temp folder so they never create
+    /// notes beside the real capture file.
+    var dailyFolderOverride: URL? { didSet { workspaceModel.dailyFolder = dailyFolderOverride } }
 
     /// Where the editor's web view currently lives, for tests.
     var editorIsInToday: Bool { webView.superview != nil && webView.superview === todayEditorSlot }
@@ -1149,6 +1237,7 @@ final class MainPanel: NSPanel {
 
     override func keyDown(with event: NSEvent) {
         if handleTodayKey(event) { return }
+        if handleAgendaKey(event) { return }
         if handleCalendarViewKey(event) { return }
         super.keyDown(with: event)
     }
@@ -1161,6 +1250,7 @@ final class MainPanel: NSPanel {
             return true
         }
         if handleTodayKey(event) { return true }
+        if handleAgendaKey(event) { return true }
         if handleCalendarViewKey(event) { return true }
         // Also handle the summon chord locally while the workspace owns focus.
         // Carbon remains responsible for summoning from other applications.
@@ -1208,6 +1298,7 @@ final class MainPanel: NSPanel {
     func perform(shortcut action: ShortcutAction) {
         switch action {
         case .showToday: openWorkspace(.today)
+        case .showAgenda: openWorkspace(.agenda)
         case .toggleTodayFocus:
             guard todayActive else { break }
             if editorHasFocus { focusTodaySchedule() } else { focusTodayEditor() }
@@ -1481,12 +1572,14 @@ final class MainPanel: NSPanel {
     /// Flushes the old file first and remembers where you were in it. When the
     /// file is unchanged this is a no-op.
     private func reconcileEditorFile() {
-        guard editorTargetURL != loadedFileURL, webViewReady else { return }
+        guard webViewReady else { return }
+        guard editorTargetURL != loadedFileURL else { return revealPendingLine() }
         flushEditorSave { [weak self] saved in
             guard let self, saved else { return }
             // Read the target again: the day may have moved while saving.
             let url = self.editorTargetURL
-            let daily = self.todayActive
+            let daily = self.todayActive || url.deletingLastPathComponent().standardizedFileURL
+                == self.dailyFolder.standardizedFileURL
             let date = self.workspaceModel.date
             guard url != self.loadedFileURL else { return }
             self.webView.evaluateJavaScript("JSON.stringify(window.qcEditor.viewState())") { [weak self] state, _ in
@@ -1498,7 +1591,7 @@ final class MainPanel: NSPanel {
                     var scaffold: String?
                     if daily {
                         let folder = url.deletingLastPathComponent()
-                        if Calendar.current.isDateInToday(date) { try DailyNote.ensureNote(for: date, in: folder) }
+                        if self.todayActive, Calendar.current.isDateInToday(date) { try DailyNote.ensureNote(for: date, in: folder) }
                         if FileManager.default.fileExists(atPath: url.path) {
                             text = try FileWriter.read(url)
                         } else {
@@ -1516,7 +1609,9 @@ final class MainPanel: NSPanel {
                     self.webView.evaluateJavaScript("window.qcEditor.setDailyNote(\(daily))", completionHandler: nil)
                     self.pushContent(text)
                     self.pushRefileTargets()
-                    if let state = self.editorViewStates[url] {
+                    if self.pendingRevealLine != nil {
+                        self.revealPendingLine()
+                    } else if let state = self.editorViewStates[url] {
                         self.webView.evaluateJavaScript("window.qcEditor.restoreViewState(\(state))", completionHandler: nil)
                     } else if daily {
                         self.webView.evaluateJavaScript(
@@ -1526,6 +1621,12 @@ final class MainPanel: NSPanel {
                 } catch { self.reportSaveError("Couldn’t open the file: " + error.localizedDescription) }
             }
         }
+    }
+
+    private func revealPendingLine() {
+        guard let line = pendingRevealLine else { return }
+        pendingRevealLine = nil
+        webView.evaluateJavaScript("window.qcEditor && window.qcEditor.revealLine(\(line))", completionHandler: nil)
     }
 
     fileprivate func write(_ content: String, expected: String, id: Int) {
