@@ -106,4 +106,64 @@ final class DailyNoteTests: XCTestCase {
         XCTAssertEqual(DailyNote.mostRecentNote(before: day(17), in: folder, calendar: calendar)?.lastPathComponent,
                        "2026-10-15.md")
     }
+
+    // MARK: - Plan for today
+
+    func testInsertUnderTasksAppendsAfterTheLastItem() {
+        let note = "# Day\n\n## Tasks\n\n- [ ] one\n  - child\n\n## Log\n\nwords\n"
+        XCTAssertEqual(DailyNote.insertUnderTasks("- [ ] two", in: note),
+                       "# Day\n\n## Tasks\n\n- [ ] one\n  - child\n- [ ] two\n\n## Log\n\nwords\n")
+    }
+
+    func testInsertUnderAnEmptyTasksSection() {
+        XCTAssertEqual(DailyNote.insertUnderTasks("- [ ] two", in: "# Day\n\n## Tasks\n\n## Log\n"),
+                       "# Day\n\n## Tasks\n\n- [ ] two\n\n## Log\n")
+        XCTAssertEqual(DailyNote.insertUnderTasks("- [ ] two", in: "# Day\n\n## Tasks\n"),
+                       "# Day\n\n## Tasks\n\n- [ ] two\n")
+    }
+
+    func testInsertRecreatesADeletedTasksSectionUnderTheDate() {
+        XCTAssertEqual(DailyNote.insertUnderTasks("- [ ] two", in: "# Day\n## Log\n\nwords\n"),
+                       "# Day\n\n## Tasks\n\n- [ ] two\n\n## Log\n\nwords\n")
+    }
+
+    func testPlanForTodayMovesTheSubtreeAndItsImageIntoTodaysNote() throws {
+        let root = folder.deletingLastPathComponent()
+        let inbox = root.appendingPathComponent("inbox.md")
+        try FileManager.default.createDirectory(at: root.appendingPathComponent("attachments"), withIntermediateDirectories: true)
+        try "img".write(to: root.appendingPathComponent("attachments/a.png"), atomically: true, encoding: .utf8)
+        try """
+        # Inbox
+
+        ## Home
+        - [ ] keep
+        - [ ] fix the hinge <!--qc-source:0f0e0d0c-0b0a-0908-0706-050403020100-->
+          ![shot](attachments/a.png)
+        """.write(to: inbox, atomically: true, encoding: .utf8)
+        try write("# Friday\n\n## Tasks\n\n- [ ] carried\n", on: day(16))
+
+        let subtree = "- [ ] fix the hinge <!--qc-source:0f0e0d0c-0b0a-0908-0706-050403020100-->\n  ![shot](attachments/a.png)"
+        let note = try PlanForToday.move(subtree: subtree, range: 4..<6, from: inbox, dailyFolder: folder,
+                                         today: day(17), calendar: calendar)
+
+        XCTAssertEqual(try read(day(17)),
+                       "# Saturday 17 October 2026\n\n## Tasks\n\n- [ ] carried\n- [ ] fix the hinge\n  ![shot](attachments/a.png)\n\n## Log\n",
+                       "today's note is created with rollover, then gains the item without its marker")
+        XCTAssertEqual(try String(contentsOf: inbox, encoding: .utf8), "# Inbox\n\n## Home\n- [ ] keep")
+        XCTAssertEqual(try String(contentsOf: note.deletingLastPathComponent().appendingPathComponent("attachments/a.png"),
+                                  encoding: .utf8), "img")
+        XCTAssertFalse(FileManager.default.fileExists(atPath: root.appendingPathComponent("attachments/a.png").path))
+    }
+
+    func testPlanForTodayLeavesTheInboxAloneWhenItDrifted() throws {
+        let root = folder.deletingLastPathComponent()
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let inbox = root.appendingPathComponent("inbox.md")
+        let original = "# Inbox\n\n## Home\n- [ ] changed elsewhere\n"
+        try original.write(to: inbox, atomically: true, encoding: .utf8)
+        XCTAssertThrowsError(try PlanForToday.move(subtree: "- [ ] fix the hinge", range: 3..<4, from: inbox,
+                                                   dailyFolder: folder, today: day(17), calendar: calendar))
+        XCTAssertEqual(try String(contentsOf: inbox, encoding: .utf8), original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: DailyNote.url(for: day(17), in: folder, calendar: calendar).path))
+    }
 }

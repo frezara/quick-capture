@@ -1368,9 +1368,11 @@ final class MainPanel: NSPanel {
     /// user actually picked, or to nothing.
     private func pushRefileTargets() {
         guard webViewReady else { return }
-        let targets = appState.effectiveRefileTargets.map {
+        var targets = appState.effectiveRefileTargets.map {
             RefileTargetDTO(id: $0.id, name: $0.displayName)
         }
+        // "Plan for today" leads the list wherever the editor holds the inbox.
+        if !loadedIsDaily { targets.insert(RefileTargetDTO(id: PlanForToday.targetID, name: "Today"), at: 0) }
         guard let json = try? JSONEncoder().encode(targets),
               let jsonString = String(data: json, encoding: .utf8) else { return }
         webView.evaluateJavaScript(
@@ -1422,6 +1424,7 @@ final class MainPanel: NSPanel {
     }
 
     fileprivate func refile(targetID: String, fromLine: Int, toLine: Int, subtree: String) {
+        if targetID == PlanForToday.targetID { return planForToday(fromLine: fromLine, toLine: toLine, subtree: subtree) }
         do {
             // Resolved by identity, not position: the effective list is
             // recomputed here and may have shrunk since the dropdown was
@@ -1449,6 +1452,24 @@ final class MainPanel: NSPanel {
             OrganiserController.shared.outbox.cancelMove(ids: SourceIdentity.ids(in: subtree))
             let alert = NSAlert()
             alert.messageText = "Couldn’t refile"
+            alert.informativeText = error.localizedDescription
+            alert.alertStyle = .warning
+            alert.runModal()
+        }
+    }
+
+    /// Moves the subtree into today's note. A delivered item leaves the
+    /// organiser: its marker is dropped because daily notes stay local
+    /// (ADR-0010).
+    private func planForToday(fromLine: Int, toLine: Int, subtree: String) {
+        do {
+            let folder = dailyFolderOverride ?? DailyNote.folder(forCaptureFile: appState.captureFileURL)
+            try PlanForToday.move(subtree: subtree, range: fromLine..<toLine, from: loadedFileURL, dailyFolder: folder)
+            webView.evaluateJavaScript("window.qcEditor && window.qcEditor.toast(\"Planned for today\")",
+                                       completionHandler: nil)
+        } catch {
+            let alert = NSAlert()
+            alert.messageText = "Couldn’t plan this for today"
             alert.informativeText = error.localizedDescription
             alert.alertStyle = .warning
             alert.runModal()
@@ -1494,6 +1515,7 @@ final class MainPanel: NSPanel {
                     self.editorFileLoaded = true
                     self.webView.evaluateJavaScript("window.qcEditor.setDailyNote(\(daily))", completionHandler: nil)
                     self.pushContent(text)
+                    self.pushRefileTargets()
                     if let state = self.editorViewStates[url] {
                         self.webView.evaluateJavaScript("window.qcEditor.restoreViewState(\(state))", completionHandler: nil)
                     } else if daily {
