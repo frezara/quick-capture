@@ -1,0 +1,289 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE · Todo rollover</title>
+<!-- PROTOTYPE, throwaway (branch prototype/today-view). Question: when a todo isn't done on its day, should it be
+     shown again (org-agenda), moved (org-journal carryover) or copied with a mark (bullet-journal migration)? -->
+<link href="https://fonts.googleapis.com/css2?family=Recursive:wght,MONO@300..800,0..1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --surface:#F8F9FB; --rail:#EDEFF4; --field:#EEF0F5; --border:#D6DAE5; --hair:#E2E5EE;
+    --ink:#1C2233; --ink2:#545C72; --ink3:#80879C; --accent:#2B3FA0; --soft:rgba(43,63,160,.08);
+    --now:#FFE45C; --late:#B03A2A; --done:#2F6B3E;
+  }
+  * { box-sizing: border-box; }
+  body { margin:0; background:var(--rail); color:var(--ink); font:14px/1.45 Recursive, -apple-system, system-ui, sans-serif; }
+  .mono { font-variation-settings:'MONO' 1; }
+  main { max-width:1280px; margin:0 auto; padding:28px 20px 60px; }
+  h1 { font-size:28px; margin:0 0 4px; letter-spacing:-.4px; }
+  .lede { color:var(--ink2); max-width:78ch; margin:0 0 20px; }
+  .panel { background:var(--surface); border:1px solid var(--border); border-radius:12px; padding:16px 18px; }
+  .bar { display:flex; flex-wrap:wrap; gap:8px; align-items:center; }
+  button { font:inherit; font-size:13px; border:1px solid var(--border); background:var(--surface); color:var(--ink); border-radius:8px; padding:6px 12px; cursor:pointer; }
+  button.primary { background:var(--accent); color:#fff; border-color:var(--accent); font-weight:600; }
+  button:focus-visible, input:focus-visible { outline:3px solid rgba(43,63,160,.35); outline-offset:1px; }
+  input[type=text] { font:inherit; font-size:13px; padding:6px 10px; border:1px solid var(--border); border-radius:8px; background:#fff; min-width:220px; }
+  .today { font-weight:700; background:var(--now); border-radius:4px; padding:1px 6px; }
+  .tabs { display:flex; gap:4px; margin:22px 0 0; flex-wrap:wrap; }
+  .tabs button[aria-selected=true] { background:var(--soft); color:var(--accent); border-color:var(--accent); font-weight:600; }
+  .steps { display:flex; flex-wrap:wrap; gap:6px; margin-top:10px; }
+  .steps button.next { background:var(--accent); color:#fff; border-color:var(--accent); }
+  .steps button:disabled { opacity:.45; cursor:default; }
+  .steps button.doneStep { color:var(--ink3); text-decoration:line-through; }
+  .models { display:grid; grid-template-columns:repeat(2, minmax(0,1fr)); gap:14px; margin-top:18px; }
+  @media (max-width:900px){ .models { grid-template-columns:1fr; } }
+  .model h2 { font-size:16px; margin:0; }
+  .model .how { color:var(--ink2); font-size:12.5px; margin:2px 0 12px; min-height:3.6em; }
+  .model h3 { font-size:12px; font-weight:700; color:var(--ink2); margin:14px 0 6px; }
+  ul { list-style:none; margin:0; padding:0; }
+  li { display:flex; gap:8px; align-items:baseline; padding:3px 6px; border-radius:6px; }
+  li.changed { background:#FFF6C7; }
+  li .box { width:14px; height:14px; flex:none; border-radius:50%; border:1.5px solid var(--ink3); background:none; padding:0; cursor:pointer; transform:translateY(2px); }
+  li.done .box { background:var(--done); border-color:var(--done); }
+  li.done .t { color:var(--ink3); text-decoration:line-through; }
+  li.migrated .t { color:var(--ink3); }
+  .tag { font-size:11.5px; color:var(--ink2); white-space:nowrap; }
+  .tag.late { color:var(--late); font-weight:600; }
+  .file { background:var(--field); border-radius:8px; padding:8px 10px; margin-bottom:8px; }
+  .file .name { font-size:11.5px; color:var(--ink2); margin-bottom:2px; }
+  .file li { font-size:12.5px; padding:1px 4px; }
+  .stats { display:flex; gap:14px; font-size:12px; color:var(--ink2); margin-top:12px; border-top:1px solid var(--hair); padding-top:8px; }
+  .stats b { color:var(--ink); }
+  .warn { color:var(--late); font-weight:600; }
+  .changedNote { font-size:12.5px; color:var(--ink2); margin-top:10px; }
+  .empty { color:var(--ink3); font-size:12.5px; padding:3px 6px; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Todo rollover: four ways</h1>
+  <p class="lede"><strong>Question:</strong> when a todo isn't ticked off on its day, what should the Today view do the next morning? Every button below is applied to all four models at once, so you can watch them diverge. Tick boxes in <em>Today</em> or in an old day's <em>file</em> to complete things. Changed lines are highlighted in yellow.</p>
+
+  <section class="panel" aria-label="Free play">
+    <div class="bar">
+      <span>Today is <span class="today" id="todayLabel"></span></span>
+      <span class="tag" id="last" aria-live="polite"></span>
+      <span style="flex:1"></span>
+      <label for="text" class="tag">New todo</label>
+      <input id="text" type="text" value="Reply to the landlord">
+      <button class="primary" data-act="add">Add for today</button>
+      <button data-act="addLater">Plan it for 2 days' time</button>
+      <button data-act="next">Next morning (I open the app)</button>
+      <button data-act="away">Away 3 days (app not opened)</button>
+      <button data-act="reset">Start over</button>
+    </div>
+    <div class="tabs" role="tablist" aria-label="Walkthroughs" id="tabs"></div>
+    <div id="walk" style="margin-top:10px"></div>
+  </section>
+
+  <div class="models" id="models"></div>
+</main>
+
+<script>
+/* ============================================================================
+   Pure rollover module — no DOM. Each model is a reducer: (state, action) => state.
+   A todo: { id, text, home (day the line lives in), planned (day it's for),
+             status: 'open' | 'done' | 'migrated', doneOn, from (id it was copied from) }
+   Days are integers (0 = Monday 12 October 2026).
+   ========================================================================== */
+const Rollover = (() => {
+  const initial = () => ({ today: 0, todos: [], nextId: 1 });
+
+  const MODELS = {
+    keep: {
+      name: 'Copy forward, leave yesterday alone (research pick)',
+      how: "On the first open of a new day, open todos from the most recent earlier day's file are copied into today's. Earlier files are never edited, so each stays a true record of how its day ended.",
+      open: (s) => {
+        const earlier = s.todos.filter(t => t.home < s.today).map(t => t.home);
+        if (!earlier.length) return s;
+        const last = Math.max(...earlier);
+        let nextId = s.nextId; const added = [];
+        for (const t of s.todos) {
+          // From the newest earlier note; or anything that has only now come due.
+          const due = t.status === 'open' && t.home < s.today && t.planned <= s.today && (t.home === last || t.planned > last);
+          if (due) added.push({ id: nextId++, text: t.text, home: s.today, planned: t.planned, status: 'open', from: t.id });
+        }
+        return { ...s, nextId, todos: [...s.todos, ...added] };
+      },
+      todayList: (s) => s.todos.filter(t => t.home === s.today && t.planned <= s.today),
+    },
+    show: {
+      name: 'Show again (org-agenda)',
+      how: 'Nothing moves. Each todo stays in the file of the day it was written; Today lists every open todo planned for today or earlier, marked with how many days it has been missed.',
+      // Opening a new day changes nothing on disk.
+      open: (s) => s,
+      todayList: (s) => s.todos.filter(t => t.planned <= s.today && (t.status === 'open' || t.doneOn === s.today)),
+    },
+    move: {
+      name: 'Move forward (org-journal carryover)',
+      how: "On the first open of a new day, open todos are cut from earlier days' files and pasted into today's. History only keeps what was finished there.",
+      open: (s) => ({ ...s, todos: s.todos.map(t =>
+        t.status === 'open' && t.home < s.today && t.planned <= s.today ? { ...t, home: s.today } : t) }),
+      todayList: (s) => s.todos.filter(t => t.home === s.today && t.planned <= s.today),
+    },
+    copy: {
+      name: 'Copy with a mark (bullet-journal migration)',
+      how: 'On the first open of a new day, each open todo from an earlier day is marked migrated (>) where it was and a fresh copy is written into today.',
+      open: (s) => {
+        let nextId = s.nextId; const added = [];
+        const todos = s.todos.map(t => {
+          if (t.status !== 'open' || t.home >= s.today || t.planned > s.today) return t;
+          added.push({ id: nextId++, text: t.text, home: s.today, planned: t.planned, status: 'open', from: t.id });
+          return { ...t, status: 'migrated' };
+        });
+        return { ...s, nextId, todos: [...todos, ...added] };
+      },
+      todayList: (s) => s.todos.filter(t => t.home === s.today && t.planned <= s.today),
+    },
+  };
+
+  function reduce(modelKey, s, a) {
+    const m = MODELS[modelKey];
+    switch (a.type) {
+      case 'add': {
+        const t = { id: s.nextId, text: a.text, home: s.today, planned: s.today + (a.inDays || 0), status: 'open' };
+        return { ...s, nextId: s.nextId + 1, todos: [...s.todos, t] };
+      }
+      case 'advance': // the app is next opened `days` later; rollover runs once, on that open
+        return m.open({ ...s, today: s.today + a.days });
+      case 'completeToday': {
+        const target = m.todayList(s).find(t => t.text === a.text && t.status === 'open');
+        return target ? complete(s, target.id) : s;
+      }
+      case 'completeInFile': {
+        // In the editor you can tick any line, including a migrated `- [>]` one.
+        const target = s.todos.find(t => t.home === a.day && t.text === a.text && t.status !== 'done');
+        return target ? complete(s, target.id) : s;
+      }
+      default: return s;
+    }
+  }
+  const complete = (s, id) => ({ ...s, todos: s.todos.map(t => t.id === id ? { ...t, status: 'done', doneOn: s.today } : t) });
+
+  /** Lines on disk, grouped by the day's file. */
+  function files(s) {
+    const days = [...new Set(s.todos.map(t => t.home))].sort((a, b) => a - b);
+    return days.map(day => ({ day, lines: s.todos.filter(t => t.home === day) }));
+  }
+  /** Open todos whose text appears open more than once in today's or earlier files. */
+  function duplicates(s) {
+    const open = s.todos.filter(t => t.status === 'open' && t.planned <= s.today).map(t => t.text);
+    return [...new Set(open.filter((x, i) => open.indexOf(x) !== i))];
+  }
+  /** Todos that are done in one file but still open in another. */
+  function conflicts(s) {
+    const open = new Set(s.todos.filter(t => t.status === 'open').map(t => t.text));
+    return [...new Set(s.todos.filter(t => t.status === 'done' && open.has(t.text)).map(t => t.text))];
+  }
+  return { initial, reduce, files, duplicates, conflicts, MODELS, keys: Object.keys(MODELS) };
+})();
+
+/* ============================================================================
+   Page shell (throwaway)
+   ========================================================================== */
+const DAY0 = new Date(2026, 9, 12);
+const dayLabel = d => { const x = new Date(DAY0); x.setDate(x.getDate() + d);
+  return x.toLocaleDateString('en-GB', { weekday: 'short', day: 'numeric', month: 'short' }); };
+
+let states, prev, lastNote = '';
+function reset() { states = Object.fromEntries(Rollover.keys.map(k => [k, Rollover.initial()])); prev = states; lastNote = 'Fresh start. Monday morning.'; }
+function dispatch(action, note) {
+  prev = states;
+  states = Object.fromEntries(Rollover.keys.map(k => [k, Rollover.reduce(k, states[k], action)]));
+  lastNote = note; render();
+}
+
+const SCENARIOS = [
+  { title: 'An ordinary day',
+    about: "Two todos on Monday; one gets done, one doesn't. Watch what each model does with the leftover on Tuesday morning.",
+    steps: [['Add “Renew passport”', { type: 'add', text: 'Renew passport' }],
+            ['Add “Call the council”', { type: 'add', text: 'Call the council' }],
+            ['Tick “Renew passport”', { type: 'completeToday', text: 'Renew passport' }],
+            ['Tuesday morning', { type: 'advance', days: 1 }]] },
+  { title: 'Away for the weekend',
+    about: "A todo from Friday, then the app isn't opened Saturday or Sunday. Rollover can only happen when the app opens, so watch where it ends up on Monday and how much trace Friday keeps.",
+    steps: [['Friday morning', { type: 'advance', days: 4 }],
+            ['Add “Order seeds”', { type: 'add', text: 'Order seeds' }],
+            ['Away until Monday', { type: 'advance', days: 3 }]] },
+  { title: 'Ticked in an old note',
+    about: "You carry a todo forward, then open Monday's file in the editor and tick it there. In one model that just works; in one the line isn't there any more; in one you end up done in Monday but still open today.",
+    steps: [['Add “Book a chimney sweep”', { type: 'add', text: 'Book a chimney sweep' }],
+            ['Tuesday morning', { type: 'advance', days: 1 }],
+            ["Tick it in Monday's file", { type: 'completeInFile', day: 0, text: 'Book a chimney sweep' }]] },
+  { title: 'Planned for later',
+    about: 'A todo written on Monday for Wednesday. It should stay out of Today until Wednesday, and should not count as missed before then.',
+    steps: [['Add “Prep for dentist” for Wednesday', { type: 'add', text: 'Prep for dentist', inDays: 2 }],
+            ['Tuesday morning', { type: 'advance', days: 1 }],
+            ['Wednesday morning', { type: 'advance', days: 1 }],
+            ['Thursday morning (missed it)', { type: 'advance', days: 1 }]] },
+];
+let tab = 0, stepAt = 0;
+
+function renderTabs() {
+  document.getElementById('tabs').innerHTML = SCENARIOS.map((s, i) =>
+    `<button role="tab" aria-selected="${i === tab}" data-tab="${i}">${s.title}</button>`).join('');
+  const s = SCENARIOS[tab];
+  document.getElementById('walk').innerHTML = `<p class="changedNote" style="margin:0">${s.about}</p>
+    <div class="steps">${s.steps.map(([label], i) =>
+      `<button data-step="${i}" class="${i < stepAt ? 'doneStep' : i === stepAt ? 'next' : ''}" ${i !== stepAt ? 'disabled' : ''}>${i + 1}. ${label}</button>`).join('')}
+      <button data-restart>Restart this walkthrough</button></div>`;
+}
+
+function render() {
+  document.getElementById('todayLabel').textContent = dayLabel(states.show.today);
+  document.getElementById('models').innerHTML = Rollover.keys.map(k => {
+    const s = states[k], p = prev[k], M = Rollover.MODELS[k];
+    const before = new Map(p.todos.map(t => [t.id, t]));
+    const changed = t => { const b = before.get(t.id); return !b || b.home !== t.home || b.status !== t.status; };
+    const today = M.todayList(s);
+    const later = s.todos.filter(t => t.status === 'open' && t.planned > s.today);
+    const line = (t, where) => {
+      const missed = s.today - t.planned;
+      const tags = [];
+      if (k === 'show' && where === 'today' && t.status === 'open' && missed > 0) tags.push(`<span class="tag late">missed ${missed} day${missed > 1 ? 's' : ''}</span>`);
+      if (where === 'today' && k !== 'show' && t.status === 'open' && missed > 0) tags.push(`<span class="tag">since ${dayLabel(t.planned)}</span>`);
+      if (where === 'file' && t.planned !== t.home) tags.push(`<span class="tag mono">⏳ ${dayLabel(t.planned)}</span>`);
+      if (t.status === 'migrated') tags.push('<span class="tag mono">&gt; moved on</span>');
+      const box = t.status === 'migrated'
+        ? `<button class="box mono" style="border:0;font-size:11px;transform:none" aria-label="Tick ${t.text} in this old file" data-tickfile="${encodeURIComponent(t.text)}" data-day="${t.home}">&gt;</button>`
+        : `<button class="box" aria-label="${t.status === 'done' ? 'Done' : 'Tick'} ${t.text}" data-${where === 'today' ? 'tick' : 'tickfile'}="${encodeURIComponent(t.text)}" data-day="${t.home}"></button>`;
+      return `<li class="${t.status}${changed(t) ? ' changed' : ''}">${box}<span class="t">${t.text}</span>${tags.join(' ')}</li>`;
+    };
+    const dups = Rollover.duplicates(s);
+    const lines = s.todos.length;
+    return `<section class="panel model" aria-label="${M.name}">
+      <h2>${M.name}</h2><p class="how">${M.how}</p>
+      <h3>Today</h3><ul>${today.length ? today.map(t => line(t, 'today')).join('') : '<li class="empty">Nothing for today</li>'}</ul>
+      ${later.length ? `<h3>Coming up</h3><ul>${later.map(t => `<li><span class="t">${t.text}</span><span class="tag">${dayLabel(t.planned)}</span></li>`).join('')}</ul>` : ''}
+      <h3>Files on disk</h3>${Rollover.files(s).map(f => `<div class="file"><div class="name mono">daily/${dayLabel(f.day)}.md</div><ul>${f.lines.map(t => line(t, 'file')).join('')}</ul></div>`).join('') || '<div class="empty">No files yet</div>'}
+      <div class="stats"><span>Lines on disk <b>${lines}</b></span><span>Open todos <b>${s.todos.filter(t => t.status === 'open').length}</b></span>
+        ${dups.length ? `<span class="warn">Unticked in more than one file: ${dups.join(', ')}</span>` : ''}
+        ${Rollover.conflicts(s).length ? `<span class="warn">Done in one file, open in another: ${Rollover.conflicts(s).join(', ')}</span>` : ''}
+        ${!dups.length && !Rollover.conflicts(s).length ? '<span>No duplicates or conflicts</span>' : ''}</div>
+    </section>`;
+  }).join('');
+  document.getElementById('last').textContent = lastNote;
+  renderTabs();
+}
+
+document.addEventListener('click', e => {
+  const b = e.target.closest('button'); if (!b) return;
+  const text = () => document.getElementById('text').value.trim() || 'Untitled';
+  if (b.dataset.act === 'add') dispatch({ type: 'add', text: text() }, 'Added for today.');
+  if (b.dataset.act === 'addLater') dispatch({ type: 'add', text: text(), inDays: 2 }, 'Planned for two days from now.');
+  if (b.dataset.act === 'next') dispatch({ type: 'advance', days: 1 }, 'Next morning; the app opens.');
+  if (b.dataset.act === 'away') dispatch({ type: 'advance', days: 3 }, 'Three days later; first open since.');
+  if (b.dataset.act === 'reset') { reset(); stepAt = 0; render(); }
+  if (b.dataset.tick) dispatch({ type: 'completeToday', text: decodeURIComponent(b.dataset.tick) }, 'Ticked in Today.');
+  if (b.dataset.tickfile) dispatch({ type: 'completeInFile', day: +b.dataset.day, text: decodeURIComponent(b.dataset.tickfile) }, 'Ticked in an old file.');
+  if (b.dataset.tab) { tab = +b.dataset.tab; reset(); stepAt = 0; render(); }
+  if (b.dataset.restart !== undefined) { reset(); stepAt = 0; render(); }
+  if (b.dataset.step) { const [label, action] = SCENARIOS[tab].steps[+b.dataset.step]; stepAt++; dispatch(action, label); }
+});
+
+reset(); render();
+</script>
+</body>
+</html>

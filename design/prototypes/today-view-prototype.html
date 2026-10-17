@@ -1,0 +1,211 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>PROTOTYPE · Today view</title>
+<!-- PROTOTYPE, throwaway (branch prototype/today-view).
+     Three structurally different Today views, switchable via ?variant=A|B|C and the floating bar (← → too).
+     Question: what should Today look like when the right side is an editor, not a todo list? -->
+<link href="https://fonts.googleapis.com/css2?family=Recursive:wght,MONO@300..800,0..1&display=swap" rel="stylesheet">
+<style>
+  :root {
+    --surface:#F8F9FB; --rail:#EDEFF4; --sunken:#F2F4F8; --field:#EEF0F5; --keycap:#E2E5EE; --border:#D6DAE5; --hair:#E2E5EE;
+    --ink:#1C2233; --ink2:#545C72; --ink3:#80879C; --accent:#2B3FA0; --soft:rgba(43,63,160,.08); --ring:rgba(43,63,160,.28);
+    --now:#FFE45C; --nowLine:#E8C21E; --late:#B03A2A; --warn:#8A5F12;
+    --teal:#1F6F74; --green:#3B7337; --plum:#8A3B5C; --ochre:#94561C; --slate:#3F5F86;
+  }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; background:#C9CED9; font:14px/1.45 Recursive, -apple-system, system-ui, sans-serif; color:var(--ink);
+         display:flex; align-items:flex-start; justify-content:center; padding:28px 16px 90px; }
+  .mono { font-variation-settings:'MONO' 1; }
+  .win { width:1100px; max-width:100%; height:700px; display:flex; background:var(--surface); border:1px solid var(--border); border-radius:12px; overflow:hidden; }
+  .rail { width:64px; flex:none; background:var(--rail); border-right:1px solid var(--border); display:flex; flex-direction:column; align-items:center; gap:6px; padding:22px 0 14px; }
+  .rail i { width:40px; height:40px; border-radius:10px; display:block; }
+  .rail i.on { background:var(--soft); }
+  .rail svg { width:20px; height:20px; margin:10px; stroke:var(--ink2); fill:none; stroke-width:1.6; stroke-linecap:round; stroke-linejoin:round; }
+  .rail i.on svg { stroke:var(--accent); }
+  .title { font-size:28px; font-weight:750; letter-spacing:-.5px; margin:0; }
+  .meta { font-size:12.5px; color:var(--ink2); }
+  .label { font-size:13px; font-weight:700; margin:0 0 6px; }
+  .key { font-variation-settings:'MONO' 1; font-size:10.5px; font-weight:500; background:var(--keycap); border-radius:4px; padding:0 4px; color:var(--ink); }
+  .ev { display:grid; grid-template-columns:46px 8px 1fr; column-gap:10px; padding:6px 0; align-items:baseline; }
+  .ev time { font-variation-settings:'MONO' 1; font-size:12px; color:var(--ink2); }
+  .ev i { width:8px; height:8px; border-radius:50%; display:block; transform:translateY(-1px); }
+  .ev b { font-weight:600; font-size:13.5px; }
+  .ev .sub { grid-column:3; font-size:12px; color:var(--ink2); }
+  .ev.past { opacity:.5; }
+  .nowrow { display:grid; grid-template-columns:46px 1fr; column-gap:10px; align-items:center; margin:4px 0; }
+  .nowrow time { font-variation-settings:'MONO' 1; font-size:11.5px; font-weight:700; background:var(--now); border-radius:3px; padding:0 4px; justify-self:start; }
+  .nowrow span { height:2px; background:var(--nowLine); }
+  .allday { font-size:12.5px; font-weight:600; color:#175A5E; background:rgba(31,111,116,.12); border-radius:6px; padding:3px 8px; margin-bottom:8px; }
+  .todo { display:flex; gap:9px; align-items:baseline; padding:5px 8px; margin:0 -8px; border-radius:8px; font-size:13.5px; }
+  .todo .box { width:14px; height:14px; border-radius:50%; border:1.5px solid var(--ink3); flex:none; transform:translateY(2px); }
+  .todo .late { margin-left:auto; font-size:11.5px; color:var(--late); font-weight:600; white-space:nowrap; }
+  .todo .sec { margin-left:auto; font-size:11.5px; font-weight:600; white-space:nowrap; }
+  .todo .late + .sec { margin-left:8px; }
+  .selrow { background:var(--soft); box-shadow:inset 0 0 0 1.5px var(--accent); }
+  .todo.sel { background:var(--soft); box-shadow:inset 0 0 0 1.5px var(--accent); }
+  /* the editor stand-in: same look as the CodeMirror editor's live preview */
+  .editor { flex:1; min-width:0; display:flex; flex-direction:column; background:var(--surface); }
+  .ed { flex:1; overflow:auto; padding:22px 30px; font-variation-settings:'MONO' 1; font-size:13.5px; line-height:1.75; outline:none; white-space:pre-wrap; }
+  .ed:focus { box-shadow:inset 0 0 0 2px var(--ring); }
+  .ed .h1 { font-size:20px; font-weight:700; font-variation-settings:'MONO' 0; display:block; margin-bottom:6px; }
+  .ed .h2 { display:block; font-weight:700; font-variation-settings:'MONO' 0; font-size:13px; margin-top:12px; }
+  .ed .h2.fixed::after { content:'  always present'; font-weight:400; font-size:11px; color:var(--ink3); }
+  .ed .h3 { display:block; font-weight:600; color:var(--ink2); margin-top:8px; }
+  .ed .cb { display:inline-block; width:13px; height:13px; border:1.5px solid var(--ink3); border-radius:50%; vertical-align:-1px; margin-right:6px; }
+  .ed .cb.x { background:var(--green); border-color:var(--green); }
+  .ed .done { color:var(--ink3); text-decoration:line-through; }
+  .ed .bang { color:var(--late); font-weight:700; }
+  .ed .muted { color:var(--ink3); }
+  .ed .hint { color:var(--ink3); font-style:italic; }
+  .status { display:flex; gap:14px; align-items:center; padding:6px 16px; border-top:1px solid var(--hair); background:var(--rail); font-size:11.5px; color:var(--ink2); }
+  .status .mode { font-weight:700; color:var(--accent); }
+  .tag { font-size:11.5px; color:var(--ink2); }
+  /* floating switcher: deliberately not part of the design */
+  .switcher { position:fixed; bottom:18px; left:50%; transform:translateX(-50%); display:flex; align-items:center; gap:4px; background:#111827; color:#fff; border-radius:999px; padding:6px; box-shadow:0 10px 30px rgba(0,0,0,.35); font:13px system-ui, sans-serif; z-index:10; }
+  .switcher button { background:transparent; color:#fff; border:0; font:inherit; font-size:16px; width:34px; height:34px; border-radius:50%; cursor:pointer; }
+  .switcher button:hover { background:rgba(255,255,255,.12); }
+  .switcher span { padding:0 12px; min-width:300px; text-align:center; }
+  .question { position:fixed; top:8px; left:50%; transform:translateX(-50%); font:12px system-ui, sans-serif; color:#374151; background:rgba(255,255,255,.8); padding:3px 10px; border-radius:6px; }
+</style>
+</head>
+<body>
+<div class="question">PROTOTYPE: what should Today look like with an editor on the right? Use the bar or ← → to switch.</div>
+<div id="app"></div>
+<nav class="switcher" aria-label="Prototype variants">
+  <button id="prev" aria-label="Previous variant">←</button><span id="label"></span><button id="next" aria-label="Next variant">→</button>
+</nav>
+
+<script>
+const icons = {
+  plus:'<circle cx="10" cy="10" r="7.5"/><path d="M10 6.5v7M6.5 10h7"/>',
+  sun:'<circle cx="10" cy="10" r="4"/><path d="M10 1.5v2.5M10 16v2.5M1.5 10H4M16 10h2.5M4 4l1.7 1.7M14.3 14.3L16 16M4 16l1.7-1.7M14.3 5.7L16 4"/>',
+  cal:'<rect x="3" y="4" width="14" height="13" rx="2"/><path d="M3 8h14M7 2.5v3M13 2.5v3"/>',
+  folder:'<path d="M2.5 6V15a1.5 1.5 0 0 0 1.5 1.5h12a1.5 1.5 0 0 0 1.5-1.5V7.5A1.5 1.5 0 0 0 16 6H9.5L8 4H4A1.5 1.5 0 0 0 2.5 5.5z"/>',
+  list:'<circle cx="5" cy="6" r="2"/><circle cx="5" cy="14" r="2"/><path d="M9.5 6h7M9.5 14h7"/>',
+  note:'<path d="M5 2.5h7l3.5 3.5v11.5h-10.5z"/><path d="M8 10h5M8 13h5"/>',
+  pen:'<path d="M4 16l1-4L13.5 3.5l3 3L8 15z"/>',
+};
+const rail = (on) => `<nav class="rail" aria-label="Workspace">
+  <i><svg viewBox="0 0 20 20" style="stroke:var(--accent)">${icons.plus}</svg></i>
+  <div style="width:28px;height:1px;background:var(--border);margin:4px 0"></div>
+  ${['sun','cal','folder','list','note'].map(k => `<i class="${k===on?'on':''}" title="${{sun:'Today ⌥⌘0',cal:'Calendar ⌥⌘1',folder:'Projects ⌥⌘2',list:'Todos ⌥⌘3',note:'Notes ⌥⌘4'}[k]}"><svg viewBox="0 0 20 20">${icons[k]}</svg></i>`).join('')}
+  <div style="flex:1"></div><i><svg viewBox="0 0 20 20">${icons.pen}</svg></i></nav>`;
+
+const schedule = `
+  <div class="allday">Seb's birthday · all day</div>
+  <div class="ev past"><time>09:00</time><i style="background:var(--plum)"></i><b>Swim</b></div>
+  <div class="nowrow"><time>10:20</time><span></span></div>
+  <div class="ev"><time>10:30</time><i style="background:var(--teal)"></i><b>Brunch with Sam</b><div class="sub">Until 12:00</div></div>
+  <div class="ev"><time>14:00</time><i style="background:var(--green)"></i><b>Garden centre for bulbs</b><div class="sub">Until 15:00</div></div>
+  <div class="ev"><time>18:00</time><i style="background:var(--plum)"></i><b>Pick up the cake</b></div>`;
+
+const status = (file, mode) => `<div class="status"><span class="mono">${file}</span><span class="mode">${mode}</span><span style="flex:1"></span><span>⌥⌘0 Today</span><span>⌥⌘I Inbox</span><span>⌥⌘; agenda ⇄ editor</span></div>`;
+
+/* ---------- Variant A (research pick): agenda + today's daily note, ## Tasks / ## Notes ---------- */
+function VariantA() {
+  return `<div class="win">${rail('sun')}
+  <section style="width:330px;flex:none;border-right:1px solid var(--border);background:var(--sunken);padding:26px 22px;overflow:auto">
+    <h1 class="title" style="font-size:26px">Saturday 17 October</h1>
+    <p class="meta" style="margin:4px 0 18px">3 events left</p>
+    <p class="label">Schedule</p>${schedule}
+    <p class="tag" style="margin-top:22px">The left side is only the day's schedule. Tasks live in the note; two were carried over from Friday's note this morning, which is left as it was.</p>
+    <p class="tag"><span class="key">⌥⌘;</span> moves focus here, then <span class="key">↑</span> <span class="key">↓</span> step events and <span class="key">Enter</span> opens one.</p>
+  </section>
+  <div class="editor">
+    <div class="ed" contenteditable="true" spellcheck="false" id="ed" aria-label="Today's note"><span class="h1"># Saturday 17 October 2026</span><span class="h2 fixed">## Tasks</span><span class="cb"></span>Send the self-assessment figures to Priya <span class="bang">!!</span>  <span class="muted">from Fri</span>
+<span class="cb"></span>Call the council about the bins  <span class="muted">from Fri</span>
+<span class="cb"></span>Order seeds for the spring beds <span class="bang">!</span>  <span class="muted">planned from the inbox</span>
+<span class="cb"></span>Wrap Seb's present
+<span class="cb x"></span><span class="done">Pay the plumber's invoice</span>
+<span class="h2">## Notes</span>Brunch with Sam: he can lend the ladder next weekend.
+Bulbs: tulips for the north bed, alliums by the shed.
+</div>
+    ${status('daily/2026-10-17.md', 'NORMAL · cursor at end of ## Tasks')}
+  </div></div>`;
+}
+
+/* ---------- Variant B: agenda + the inbox itself (permanent ## Today, ## Journal datetree) ---------- */
+function VariantB() {
+  return `<div class="win">${rail('sun')}
+  <section style="width:320px;flex:none;border-right:1px solid var(--border);background:var(--sunken);padding:26px 22px;overflow:auto">
+    <h1 class="title" style="font-size:24px">Saturday 17 October</h1>
+    <p class="meta" style="margin:4px 0 18px">3 events left</p>
+    <p class="label">Schedule</p>${schedule}
+    <p class="tag" style="margin-top:22px">No separate daily files: Today is a section of the inbox, so a todo stays there until it's done or refiled. Nothing has to roll over.</p>
+  </section>
+  <div class="editor">
+    <div class="ed" contenteditable="true" spellcheck="false" aria-label="Inbox"><span class="h1"># Inbox</span><span class="h2 fixed">## Today</span><span class="cb"></span>Send the self-assessment figures to Priya <span class="bang">!!</span>  <span class="muted">➕ 2026-10-16</span>
+<span class="cb"></span>Call the council about the bins  <span class="muted">➕ 2026-10-15</span>
+<span class="cb"></span>Order seeds for the spring beds <span class="bang">!</span>
+<span class="cb"></span>Wrap Seb's present
+<span class="cb x"></span><span class="done">Pay the plumber's invoice</span>
+<span class="h2 fixed">## Journal</span><span class="h3">### 2026-10-17 Saturday</span>Brunch with Sam: he can lend the ladder next weekend.
+<span class="muted">09:55</span> Swam 1.5k
+<span class="h3">### 2026-10-16 Friday</span><span class="muted">Dentist was fine. Next check-up in April.</span>
+<span class="h2">## Quick capture</span><span class="cb"></span>Look up cold frames
+<span class="h2">## Garden</span><span class="cb"></span>Fix the shed door hinge
+</div>
+    ${status('~/QuickCapture/inbox.md', 'NORMAL')}
+  </div></div>`;
+}
+
+/* ---------- Variant C: org-style text agenda first, editor on demand ---------- */
+function VariantC() {
+  const row = (t, cls = '') => `<div class="mono ${cls}" style="padding:3px 8px;border-radius:6px;font-size:13px;white-space:pre">${t}</div>`;
+  return `<div class="win">${rail('sun')}
+  <div style="flex:1;min-width:0;display:flex;flex-direction:column">
+    <header style="padding:24px 28px 12px;display:flex;align-items:baseline;gap:12px">
+      <h1 class="title">Today</h1><span class="meta">Saturday 17 October · week 42</span>
+      <span style="flex:1"></span><span class="tag"><span class="key">J</span> today's note  <span class="key">Enter</span> open  <span class="key">S</span> reschedule  <span class="key">Space</span> done</span>
+    </header>
+    <div style="flex:1;overflow:auto;padding:0 20px">
+      ${row('Saturday 17 October 2026', 'label')}
+      ${row("  all day     Seb's birthday                                  <span style='color:var(--teal)'>Calendar</span>")}
+      ${row("  09:00       <span class='muted' style='color:var(--ink3)'>Swim</span>")}
+      ${row("  10:20 ···· <span style='background:var(--now);font-weight:700;padding:0 3px'>now</span> ··········································")}
+      ${row("  10:30-12:00 Brunch with Sam                                 <span style='color:var(--teal)'>Calendar</span>", 'selrow')}
+      ${row("  14:00-15:00 Garden centre for bulbs                         <span style='color:var(--green)'>Garden</span>")}
+      ${row("  18:00       Pick up the cake                                <span style='color:var(--plum)'>Personal</span>")}
+      ${row("  <span style='color:var(--late);font-weight:600'>Sched.3x:</span>   ○ Call the council about the bins              <span style='color:var(--ochre)'>Home</span>")}
+      ${row("  <span style='color:var(--late);font-weight:600'>Sched.2x:</span>   ○ Send the self-assessment figures to Priya !! <span style='color:var(--plum)'>Admin</span>")}
+      ${row("  Scheduled:  ○ Order seeds for the spring beds !            <span style='color:var(--green)'>Garden</span>")}
+      ${row('')}
+      ${row('Sunday 18 October', 'label')}
+      ${row("  In 2 d.:    ○ Renew passport (deadline Mon)               <span style='color:var(--plum)'>Admin</span>")}
+    </div>
+    <div style="border-top:1px solid var(--border);height:200px;display:flex;flex-direction:column">
+      <div class="ed" style="padding:14px 28px" aria-label="Note for the selected item"><span class="hint">Brunch with Sam · notes appear here when you press Enter.
+Press J to write in today's note instead.</span></div>
+      ${status('agenda', 'AGENDA')}
+    </div>
+  </div></div>`;
+}
+
+const VARIANTS = [
+  ['A', 'Agenda + today\'s note: research pick', VariantA],
+  ['B', 'Agenda + inbox (## Today and ## Journal)', VariantB],
+  ['C', 'Org-style agenda first, editor on demand', VariantC],
+];
+const params = new URLSearchParams(location.search);
+let i = Math.max(0, VARIANTS.findIndex(v => v[0] === (params.get('variant') || 'A').toUpperCase()));
+function show() {
+  const [key, name, render] = VARIANTS[i];
+  document.getElementById('app').innerHTML = render();
+  document.getElementById('label').textContent = `${key} (${name})`;
+  const url = new URL(location); url.searchParams.set('variant', key); history.replaceState(null, '', url);
+  if (key === 'A') document.getElementById('ed')?.focus();   // A opens with the editor focused
+}
+const go = d => { i = (i + d + VARIANTS.length) % VARIANTS.length; show(); };
+document.getElementById('prev').onclick = () => go(-1);
+document.getElementById('next').onclick = () => go(1);
+document.addEventListener('keydown', e => {
+  const t = e.target; if (t.isContentEditable || /INPUT|TEXTAREA/.test(t.tagName)) return;
+  if (e.key === 'ArrowLeft') go(-1); if (e.key === 'ArrowRight') go(1);
+});
+show();
+</script>
+</body>
+</html>
