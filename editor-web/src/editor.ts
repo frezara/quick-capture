@@ -1,4 +1,5 @@
 import { DocumentSession } from "./document-session";
+import { cascadeTicks, markerColumn, Tick } from "./tick-cascade";
 import { strip, serialise, sourceIDs, mapIdentities, recoverIdentities, hasDuplicateIdentity, Identities, Mark } from "./source-marker";
 import { EditorState, Text, RangeSetBuilder, Compartment, StateEffect, StateField } from "@codemirror/state";
 import {
@@ -1598,8 +1599,20 @@ function setReadMode(v: EditorView, on: boolean) {
 function toggleTaskAtMarker(view: EditorView, markerPos: number): void {
     const current = view.state.doc.sliceString(markerPos, markerPos + 3);
     if (!/\[[\sxX]\]/.test(current)) return;
-    const next = /\[[xX]\]/.test(current) ? "[ ]" : "[x]";
-    view.dispatch({ changes: { from: markerPos, to: markerPos + 3, insert: next } });
+    const line = view.state.doc.lineAt(markerPos).number - 1;
+    view.dispatch({ changes: tickChanges(view.state, [{ line, checked: !/\[[xX]\]/.test(current) }]) });
+}
+
+/// Checkbox edits for `requested` plus the ticked-parent cascade: ticking an
+/// item ticks its descendants, unticking one unticks its ticked ancestors.
+function tickChanges(state: EditorState, requested: Tick[]) {
+    const doc = state.doc;
+    const lines: string[] = [];
+    for (let n = 1; n <= doc.lines; n++) lines.push(doc.line(n).text);
+    return cascadeTicks(lines, requested).map(({ line, checked }) => {
+        const from = doc.line(line + 1).from + markerColumn(lines[line])!;
+        return { from, to: from + 3, insert: checked ? "[x]" : "[ ]" };
+    });
 }
 
 /// Pulls every completed (`- [x]`) line in each `##` section to the end of
@@ -2058,7 +2071,8 @@ function toggleTaskOnCurrentLine(view: EditorView): boolean {
 /// Batch toggle for a multi-line (or multi-range) selection. Direction rule:
 /// any unchecked task in the selection → check ALL of them; only when every
 /// task is already checked does the gesture uncheck — a batch never produces
-/// a mixed result. Bare bullets gain a `[ ] ` box (same as single-line ⌘L);
+/// a mixed result. The ticked-parent cascade can reach past the selection
+/// (descendants of a ticked item, ancestors of an unticked one). Bare bullets gain a `[ ] ` box (same as single-line ⌘L);
 /// prose lines are skipped — batch mode must not convert paragraphs to tasks
 /// wholesale. One dispatch, so ⌘Z reverts the whole batch and the selection
 /// survives via CodeMirror's change mapping.
@@ -2075,15 +2089,12 @@ function toggleTasksInSelection(view: EditorView): boolean {
         }
     }
 
-    const markers: { pos: number; checked: boolean }[] = [];
+    const markers: { line: number; checked: boolean }[] = [];
     const bullets: number[] = [];
-    for (const line of lines.values()) {
+    for (const [n, line] of lines) {
         const taskMatch = line.text.match(/^(\s*[-*+]\s+)(\[[\sxX]\])/);
         if (taskMatch) {
-            markers.push({
-                pos: line.from + taskMatch[1].length,
-                checked: /[xX]/.test(taskMatch[2]),
-            });
+            markers.push({ line: n - 1, checked: /[xX]/.test(taskMatch[2]) });
             continue;
         }
         const bulletMatch = line.text.match(/^(\s*[-*+]\s+)/);
@@ -2093,9 +2104,7 @@ function toggleTasksInSelection(view: EditorView): boolean {
 
     const checkAll = markers.some((m) => !m.checked);
     const changes = [
-        ...markers
-            .filter((m) => m.checked !== checkAll)
-            .map((m) => ({ from: m.pos, to: m.pos + 3, insert: checkAll ? "[x]" : "[ ]" })),
+        ...tickChanges(view.state, markers.map((m) => ({ line: m.line, checked: checkAll }))),
         ...bullets.map((pos) => ({ from: pos, insert: "[ ] " })),
     ];
     if (changes.length) view.dispatch({ changes });
