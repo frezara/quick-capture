@@ -137,3 +137,19 @@ final class ThemeContrastTests: XCTestCase {
         }
     }
 }
+
+/// The Highlighter type depends on the bundled variable font; a missing or
+/// unregistered file silently falls back to the system font.
+final class RecursiveFontTests: XCTestCase {
+    func testBundledRecursiveLoads() {
+        let font = Recursive.nsFont(size: 13, weight: 400, mono: false)
+        XCTAssertEqual(font.familyName, "Recursive")
+    }
+
+    func testMonoAxisGivesFullWidthCells() {
+        let sans = Recursive.nsFont(size: 13, weight: 400, mono: false)
+        let mono = Recursive.nsFont(size: 13, weight: 400, mono: true)
+        let width = { (f: NSFont) in ("il" as NSString).size(withAttributes: [.font: f]).width }
+        XCTAssertGreaterThan(width(mono), width(sans), "MONO 1 should give i and l full-width cells")
+    }
+}

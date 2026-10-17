@@ -1,7 +1,10 @@
+import AppKit
+import CoreText
 import SwiftUI
 
-// Clear & Charcoal — shared tokens from design-system-overview.md.
-// Accent means interaction; section hues mean identity; tertiary ink is placeholder-only.
+// Highlighter — tokens from design/highlighter/THEME.md.
+// Carbon (accent) means interaction; highlight means "now"; section hues mean
+// identity; tertiary ink is placeholder-only.
 
 extension Color {
     /// Color(0xRRGGBB). Positional/`alpha:` form from the handoff — distinct from
@@ -19,8 +22,10 @@ extension Color {
 enum Metrics {
     static let radiusPanel:  CGFloat = 16   // frosted floating panels (capture, picker)
     static let radiusWindow: CGFloat = 12   // opaque windows (editor, settings)
+    static let radiusWell:   CGFloat = 10   // preview wells (the #cal event card)
     static let radiusField:  CGFloat = 8
     static let radiusChip:   CGFloat = 6
+    static let radiusKey:    CGFloat = 4
     static let s1: CGFloat = 6    // tight
     static let s2: CGFloat = 10
     static let s3: CGFloat = 16   // panel padding
@@ -29,70 +34,83 @@ enum Metrics {
 
 /// All colour tokens for one appearance.
 struct Theme {
-    let bg, bgHaze, surface, surfaceField, surfaceRail: Color
-    let border, borderStrong, highlight: Color
+    let bg, bgHaze, surface, surfaceField, surfaceRail, sunken: Color
+    let border, borderStrong, hairline, highlight: Color
     let ink, inkSecondary, inkTertiary: Color
     let accent, accentInk, accentSoft, accentRing, onAccent: Color
-    let panel, control, chip, chipHover, rowHover, group: Color
-    let priHigh, priMed, priLow, warningFill: Color    // priority orbs
+    let panel, control, chip, chipHover, rowHover, group, keycap: Color
+    let now, nowLine, inkOnNow: Color                   // the highlighter; nowLine is deeper so 2pt reads on white
+    let priHigh, priMed, priLow, warningFill: Color    // status / priority orbs
 }
 
 extension Theme {
     static let light = Theme(
-        bg: Color(0xF0F3F1),
-        bgHaze: Color(0xF0F3F1),
-        surface: Color(0xFAFCFB),
-        surfaceField: Color(0xE8EEEB),
-        surfaceRail: Color(0xF0F3F1),
-        border: Color(0xD5DEDB),
-        borderStrong: Color(0xD5DEDB),
-        highlight: Color(0xFAFCFB),
-        ink: Color(0x202D29),
-        inkSecondary: Color(0x596B64),
-        inkTertiary: Color(0x596B64, alpha: 0.60),
-        accent: Color(0x1672DF),
-        accentInk: Color(0x165EB8),
-        accentSoft: Color(0x1672DF, alpha: 0.07),
-        accentRing: Color(0x1672DF, alpha: 0.14),
+        bg: Color(0xEDEFF4),
+        bgHaze: Color(0xEDEFF4),
+        surface: Color(0xF8F9FB),
+        surfaceField: Color(0xEEF0F5),
+        surfaceRail: Color(0xEDEFF4),
+        sunken: Color(0xF2F4F8),
+        border: Color(0xD6DAE5),
+        borderStrong: Color(0xD6DAE5),
+        hairline: Color(0xE2E5EE),
+        highlight: Color(0xF8F9FB),
+        ink: Color(0x1C2233),
+        inkSecondary: Color(0x545C72),
+        inkTertiary: Color(0x80879C),
+        accent: Color(0x2B3FA0),
+        accentInk: Color(0x2B3FA0),
+        accentSoft: Color(0x2B3FA0, alpha: 0.08),
+        accentRing: Color(0x2B3FA0, alpha: 0.28),
         onAccent: Color(0xFFFFFF),
-        panel: Color(0xFAFCFB, alpha: 0.66),
-        control: Color(0xFAFCFB),
-        chip: Color(0xE8EEEB),
-        chipHover: Color(0xD5DEDB),
-        rowHover: Color(0xE8EEEB),
-        group: Color(0xFAFCFB),
-        priHigh: Color(0xBA503C),
-        priMed: Color(0x956018),
-        priLow: Color(0x3D6C4B),
-        warningFill: Color(0xFCF2DF)
+        panel: Color(0xF8F9FB, alpha: 0.80),
+        control: Color(0xF8F9FB),
+        chip: Color(0xE2E5EE),
+        chipHover: Color(0xD6DAE5),
+        rowHover: Color(0xEEF0F5),
+        group: Color(0xF8F9FB),
+        keycap: Color(0xE2E5EE),
+        now: Color(0xFFE45C),
+        nowLine: Color(0xE8C21E),
+        inkOnNow: Color(0x1C2233),
+        priHigh: Color(0xB03A2A),
+        priMed: Color(0x8A5F12),
+        priLow: Color(0x2F6B3E),
+        warningFill: Color(0xFDF3D7)
     )
     static let dark = Theme(
-        bg: Color(0x1E2522),
-        bgHaze: Color(0x1E2522),
-        surface: Color(0x242C2A),
-        surfaceField: Color(0x303B37),
-        surfaceRail: Color(0x1E2522),
-        border: Color(0x46534D),
-        borderStrong: Color(0x46534D),
-        highlight: Color(0x242C2A),
-        ink: Color(0xF1F4F2),
-        inkSecondary: Color(0xB6C5BD),
-        inkTertiary: Color(0xB6C5BD, alpha: 0.55),
-        accent: Color(0x69A8FF),
-        accentInk: Color(0x91BFFF),
-        accentSoft: Color(0x69A8FF, alpha: 0.09),
-        accentRing: Color(0x69A8FF, alpha: 0.20),
-        onAccent: Color(0x122335),
-        panel: Color(0x242C2A, alpha: 0.58),
-        control: Color(0x242C2A),
-        chip: Color(0x303B37),
-        chipHover: Color(0x46534D),
-        rowHover: Color(0x303B37),
-        group: Color(0x242C2A),
-        priHigh: Color(0xF09C86),
-        priMed: Color(0xE5B95B),
-        priLow: Color(0xA4D2B0),
-        warningFill: Color(0x373025)
+        bg: Color(0x151A28),
+        bgHaze: Color(0x151A28),
+        surface: Color(0x1B2132),
+        surfaceField: Color(0x242B40),
+        surfaceRail: Color(0x151A28),
+        sunken: Color(0x171C2D),
+        border: Color(0x343D58),
+        borderStrong: Color(0x343D58),
+        hairline: Color(0x283049),
+        highlight: Color(0x1B2132),
+        ink: Color(0xE9ECF5),
+        inkSecondary: Color(0xA9B0C6),
+        inkTertiary: Color(0x7C849C),
+        accent: Color(0x9AAAFF),
+        accentInk: Color(0x9AAAFF),
+        accentSoft: Color(0x9AAAFF, alpha: 0.14),
+        accentRing: Color(0x9AAAFF, alpha: 0.40),
+        onAccent: Color(0x10162A),
+        panel: Color(0x1B2132, alpha: 0.74),
+        control: Color(0x1B2132),
+        chip: Color(0x2C3450),
+        chipHover: Color(0x343D58),
+        rowHover: Color(0x242B40),
+        group: Color(0x1B2132),
+        keycap: Color(0x2C3450),
+        now: Color(0xF0D44A),
+        nowLine: Color(0xF0D44A),
+        inkOnNow: Color(0x1C2233),
+        priHigh: Color(0xF4A393),
+        priMed: Color(0xEBC77A),
+        priLow: Color(0xA2D6AC),
+        warningFill: Color(0x3A321C)
     )
 }
 
@@ -140,34 +158,109 @@ struct ThemedRoot<Content: View>: View {
 
 // MARK: - Typography
 
-/// UI chrome is the system font (SF Pro); monospace (SF Mono) is reserved for
-/// user content — editor text, file paths, keycaps. IBM Plex is retired.
+/// One family, Recursive (bundled variable font, SIL OFL), in its linear style
+/// throughout. `mono` sets its MONO axis for times, paths, key notation and the
+/// monospaced capture option.
 enum Typeface {
     static func mono(_ s: CGFloat, _ w: Font.Weight = .regular) -> Font {
-        .system(size: s, weight: w, design: .monospaced)
+        Font(Recursive.nsFont(size: s, weight: Recursive.axisWeight(w), mono: true) as CTFont)
     }
     static func ui(_ s: CGFloat, _ w: Font.Weight = .regular) -> Font {
-        .system(size: s, weight: w)
+        Font(Recursive.nsFont(size: s, weight: Recursive.axisWeight(w), mono: false) as CTFont)
     }
 }
 
-/// Per-element scale from the native-v2 mockup.
+/// The bundled Recursive variable font. SwiftUI can't set custom variation
+/// axes, so fonts are built in CoreText with explicit `wght`/`CASL`/`MONO`
+/// values and wrapped. Registration is lazy and process-scoped: the app
+/// delegate stays inert under XCTest, and snapshot tests still need the font.
+enum Recursive {
+    private static let base: NSFontDescriptor? = {
+        guard let url = Bundle.main.url(forResource: "Recursive-VF", withExtension: "ttf") else { return nil }
+        CTFontManagerRegisterFontURLs([url] as CFArray, .process, true, nil)
+        let descriptors = CTFontManagerCreateFontDescriptorsFromURL(url as CFURL) as? [CTFontDescriptor]
+        return descriptors?.first.map { $0 as NSFontDescriptor }
+    }()
+
+    private static func tag(_ s: String) -> NSNumber {
+        NSNumber(value: s.unicodeScalars.reduce(UInt32(0)) { ($0 << 8) | $1.value })
+    }
+
+    private struct Key: Hashable { let size: CGFloat, weight: CGFloat, mono: Bool }
+    /// Views ask for the same few faces on every render (the calendar alone,
+    /// hundreds of times), and building a variable-font instance isn't free.
+    private static let cacheLock = NSLock()
+    nonisolated(unsafe) private static var cache: [Key: NSFont] = [:]
+
+    static func nsFont(size: CGFloat, weight: CGFloat, mono: Bool) -> NSFont {
+        let key = Key(size: size, weight: weight, mono: mono)
+        cacheLock.lock(); defer { cacheLock.unlock() }
+        if let font = cache[key] { return font }
+        let font = makeFont(size: size, weight: weight, mono: mono)
+        cache[key] = font
+        return font
+    }
+
+    /// Falls back to the system font if the bundled file is missing, so a
+    /// broken resource degrades the look rather than the app.
+    private static func makeFont(size: CGFloat, weight: CGFloat, mono: Bool) -> NSFont {
+        guard let base else {
+            return mono ? .monospacedSystemFont(ofSize: size, weight: .regular) : .systemFont(ofSize: size)
+        }
+        let variation: [NSNumber: CGFloat] = [tag("wght"): weight, tag("CASL"): 0, tag("MONO"): mono ? 1 : 0]
+        let descriptor = base.addingAttributes([
+            NSFontDescriptor.AttributeName(rawValue: kCTFontVariationAttribute as String): variation
+        ])
+        return NSFont(descriptor: descriptor, size: size) ?? .systemFont(ofSize: size)
+    }
+
+    static func axisWeight(_ w: Font.Weight) -> CGFloat {
+        switch w {
+        case .ultraLight: return 300
+        case .thin:       return 300
+        case .light:      return 300
+        case .medium:     return 500
+        case .semibold:   return 600
+        case .bold:       return 700
+        case .heavy:      return 800
+        case .black:      return 900
+        default:          return 400
+        }
+    }
+}
+
+/// The Highlighter scale (THEME.md), plus the older per-element names that the
+/// views not yet redesigned still use.
 enum TypeScale {
+    static let display   = Font(Recursive.nsFont(size: 40, weight: 750, mono: false) as CTFont)
+    static let title     = Font(Recursive.nsFont(size: 30, weight: 750, mono: false) as CTFont)
+    static let heading   = Typeface.ui(20, .bold)
+    static let input     = Typeface.ui(18)
+    static let bodyLarge = Typeface.ui(14.5)
+    static let uiBody    = Typeface.ui(13)
+    static let label     = Typeface.ui(13, .bold)
+    static let meta      = Typeface.ui(12)
+    static let railLabel = Typeface.ui(10.5, .medium)
+    static let monoMeta  = Typeface.mono(12.5)
+    static let key       = Typeface.mono(11, .medium)
+
     static let h1        = Typeface.ui(22, .semibold)    // editor title
     static let h1Glyph   = Typeface.ui(15, .bold)        // "#" inside the app-mark
-    static let h2        = Typeface.ui(11, .semibold)    // UPPERCASE section captions
+    static let h2        = Typeface.ui(11, .semibold)    // section captions
     static let body      = Typeface.mono(13)             // editor list items
     static let code      = Typeface.mono(12)             // inline code, file paths
-    static let captureLg = Typeface.ui(16)               // standalone capture input
+    static let captureLg = Typeface.ui(18)               // standalone capture input
     static let captureMd = Typeface.ui(14)               // capture input inside editor
     static let tag       = Typeface.ui(13)               // tag field
-    static let chip      = Typeface.ui(12)               // suggestion chip
+    static let chip      = Typeface.ui(12.5)             // suggestion row, hint labels
     static let status    = Typeface.ui(11, .semibold)    // status bar + mode pill
-    static let caption   = Typeface.ui(11, .semibold)    // UPPERCASE UI captions
+    static let caption   = Typeface.ui(11, .semibold)    // UI captions
 }
 
 /// .tracking(...) values in points.
 enum Tracking {
+    static let display: CGFloat = -0.6
+    static let title: CGFloat   = -0.5
     static let h1: CGFloat      = -0.3
     static let status: CGFloat  =  0.5
     static let caption: CGFloat =  0.8
@@ -224,17 +317,17 @@ struct AccentButtonStyle: ButtonStyle {
     }
 }
 
-/// Key notation chip (SF Mono, per the typography rule).
+/// Key notation chip (Recursive mono, per the typography rule).
 struct Keycap: View {
     let text: String
     let t: Theme
     var body: some View {
         Text(text)
-            .font(Typeface.mono(11, .medium))
-            .foregroundStyle(t.inkSecondary)
+            .font(TypeScale.key)
+            .foregroundStyle(t.ink)
             .padding(.horizontal, 5)
-            .padding(.vertical, 2)
-            .background(RoundedRectangle(cornerRadius: 4, style: .continuous).fill(t.chip))
+            .padding(.vertical, 1)
+            .background(RoundedRectangle(cornerRadius: Metrics.radiusKey, style: .continuous).fill(t.keycap))
             .fixedSize()
     }
 }

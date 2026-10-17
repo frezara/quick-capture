@@ -168,6 +168,12 @@ struct CaptureView: View {
             tagHighlight = 0
             tagSelectionExplicit = false
         }
+        .onChange(of: appState.captureTagPrefill) { _, tag in
+            guard let tag else { return }
+            tagText = tag
+            appState.captureTagPrefill = nil
+            focused = .todo
+        }
         .onReceive(NotificationCenter.default.publisher(for: .capturePanelDidHide)) { _ in
             guard !appState.captureRecoveryBlocked else { return }
             recoveryDrafts = CaptureRecovery.drafts()
@@ -291,18 +297,21 @@ struct CaptureView: View {
         }
     }
 
+    /// Plain text on the panel, no well: the tag field is the only boxed
+    /// control, and the caret is focus enough. An empty submit shakes the
+    /// field and flashes the placeholder in the error colour.
     private var todoField: some View {
-        let focusedNow = focused == .todo
-        return ZStack(alignment: .topLeading) {
+        ZStack(alignment: .topLeading) {
             if todoText.isEmpty {
                 Text("What needs doing?")
-                    .font(.system(size: 16, design: appState.captureFontDesign.design))
-                    .foregroundStyle(theme.inkTertiary)
+                    .font(appState.captureFontDesign.font(size: 18))
+                    .foregroundStyle(isShaking ? theme.priHigh : theme.inkTertiary)
+                    .animation(.easeOut(duration: 0.2), value: isShaking)
                     .allowsHitTesting(false)
             }
             TodoTextEditor(
                 text: $todoText,
-                font: appState.captureFontDesign.nsFont(size: 16),
+                font: appState.captureFontDesign.nsFont(size: 18),
                 textColor: NSColor(theme.ink),
                 maxLines: 6,
                 isFocused: Binding(
@@ -314,29 +323,9 @@ struct CaptureView: View {
                 onEmptyDelete: { detachMostRecent() }
             )
         }
-        .padding(.horizontal, 15)
-        .padding(.vertical, 13)
-        .background(
-            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .fill(theme.surfaceField)
-        )
-        // Focus → accent border; submit-on-empty → a red border flash.
-        .overlay(
-            RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .strokeBorder(isShaking ? theme.priHigh.opacity(0.75)
-                                        : (focusedNow ? theme.accent : .clear),
-                              lineWidth: 1)
-                .animation(.easeOut(duration: 0.2), value: isShaking)
-        )
-        // 3px accent focus halo sitting just outside the field edge
-        // (the mockup's `box-shadow: 0 0 0 3px accentRing`).
-        .background(
-            RoundedRectangle(cornerRadius: Metrics.radiusField + 1, style: .continuous)
-                .strokeBorder(theme.accentRing, lineWidth: 3)
-                .padding(-2)
-                .opacity(focusedNow && !isShaking ? 1 : 0)
-                .animation(.easeOut(duration: 0.15), value: focusedNow)
-        )
+        // Vertical padding centres the first line on the tag field beside it.
+        .padding(.leading, Metrics.s1)
+        .padding(.vertical, 9)
         .frame(maxWidth: .infinity)
         // Shakes when the user tries to submit with no text — signals
         // that the todo field is required.
@@ -350,12 +339,15 @@ struct CaptureView: View {
     private var tagField: some View {
         HStack(spacing: Metrics.s1) {
             Text("#")
-                .font(TypeScale.tag)
+                .font(Typeface.ui(13, .semibold))
                 .foregroundStyle(tagActive ? tagFieldSolid : theme.inkTertiary)
             TextField("", text: $tagText, prompt: Text("tag").foregroundStyle(theme.inkTertiary))
                 .textFieldStyle(.plain)
                 .font(TypeScale.tag)
-                .foregroundStyle(tagActive ? tagFieldInk : theme.ink)
+                // Unfocused, AppKit draws the prompt in the field's own colour,
+                // so an empty field must already be placeholder ink.
+                .foregroundStyle(tagText.isEmpty ? theme.inkTertiary
+                                 : (tagFieldHue != nil ? tagFieldInk : theme.ink))
                 .focused($focused, equals: .tag)
                 // Enter commits ordinary suggestions and saves. Cal first
                 // accepts the tag to reveal its preview; the next Enter saves.
@@ -373,26 +365,37 @@ struct CaptureView: View {
                 }
                 .onKeyPress(.upArrow) {
                     guard tagDropdownVisible else { return .ignored }
+                    tagHighlight = Self.arrowedTagIndex(from: tagHighlightClamped, shown: tagHighlightShown,
+                                                        count: filteredTags.count, down: false)
                     tagSelectionExplicit = true
-                    tagHighlight = max(0, tagHighlightClamped - 1)
                     return .handled
                 }
                 .onKeyPress(.downArrow) {
                     guard tagDropdownVisible else { return .ignored }
+                    tagHighlight = Self.arrowedTagIndex(from: tagHighlightClamped, shown: tagHighlightShown,
+                                                        count: filteredTags.count, down: true)
                     tagSelectionExplicit = true
-                    tagHighlight = min(filteredTags.count - 1, tagHighlightClamped + 1)
                     return .handled
                 }
         }
         .padding(.horizontal, 15)
         .padding(.vertical, 13)
+        // Routed to a section (or `cal`): that hue's tint and a hue hairline.
+        // Otherwise the plain well, with the focus halo while you type.
         .background(
             RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .fill(tagActive ? tagFieldFill : theme.surfaceField)
+                .fill(tagFieldHue != nil ? tagFieldFill : theme.surfaceField)
         )
         .overlay(
             RoundedRectangle(cornerRadius: Metrics.radiusField, style: .continuous)
-                .strokeBorder(tagActive ? tagFieldSolid.opacity(0.38) : .clear, lineWidth: 1)
+                .strokeBorder(tagFieldHue != nil ? tagFieldSolid.opacity(0.38) : .clear, lineWidth: 1)
+        )
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusField + 1, style: .continuous)
+                .strokeBorder(theme.accentRing, lineWidth: 3)
+                .padding(-2)
+                .opacity(focused == .tag && tagFieldHue == nil ? 1 : 0)
+                .animation(.easeOut(duration: 0.15), value: focused == .tag)
         )
         // Fixed width — wide enough for common tags like "quick-capture" so the
         // field never resizes as you type (longer tags scroll within it). The
@@ -405,7 +408,7 @@ struct CaptureView: View {
         .background(
             TagDropdownAnchor(
                 tags: filteredTags,
-                highlight: tagHighlightClamped,
+                highlight: tagHighlightShown ? tagHighlightClamped : -1,
                 visible: tagDropdownVisible,
                 isDark: colorScheme == .dark,
                 hues: appState.tagHues,
@@ -474,19 +477,24 @@ struct CaptureView: View {
         appState.tagHues.captureFieldEntry(forMatched: matchedTag)
     }
 
-    /// Text colour: the hue, else the accent's text variant (as before).
-    private var tagFieldInk: Color {
-        tagHue?.label(dark: colorScheme == .dark) ?? theme.accentInk
+    /// What the tag field wears: the section's hue, or the calendar's for a
+    /// `cal` match (a command, so it has no section hue of its own).
+    private var tagFieldHue: TagPalette.Entry? {
+        if let matchedTag, TagHueAssignment.isCommand(matchedTag) { return TagPalette.calendar }
+        return tagHue
     }
 
-    /// The `#` glyph and the border, which used the solid accent rather than
-    /// its text variant — unchanged when there's no hue.
+    private var tagFieldInk: Color {
+        tagFieldHue?.label(dark: colorScheme == .dark) ?? theme.accentInk
+    }
+
+    /// The `#` glyph and the hairline: the hue, else the accent while active.
     private var tagFieldSolid: Color {
-        tagHue?.label(dark: colorScheme == .dark) ?? theme.accent
+        tagFieldHue?.label(dark: colorScheme == .dark) ?? theme.accent
     }
 
     private var tagFieldFill: Color {
-        tagHue?.tint(dark: colorScheme == .dark) ?? theme.accentSoft
+        tagFieldHue?.tint(dark: colorScheme == .dark) ?? theme.accentSoft
     }
 
     /// First known tag whose name starts with the current input. Drives the
@@ -521,6 +529,22 @@ struct CaptureView: View {
         return true
     }
 
+    /// Whether the dropdown shows a highlighted row at all. With nothing typed,
+    /// Enter means "no tag" (#122), so no row may look selected until an arrow
+    /// or Tab moves into the list — otherwise the pinned `cal` sat highlighted
+    /// at the top, Enter ignored it, and Down moved *off* it.
+    private var tagHighlightShown: Bool {
+        tagSelectionExplicit || !tagText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Where ↑/↓ land. Entering an unhighlighted list picks an end (↓ the first
+    /// row, ↑ the last) rather than stepping past it. Pure, for unit testing.
+    static func arrowedTagIndex(from current: Int, shown: Bool, count: Int, down: Bool) -> Int {
+        guard count > 0 else { return 0 }
+        guard shown else { return down ? 0 : count - 1 }
+        return down ? min(count - 1, current + 1) : max(0, current - 1)
+    }
+
     /// The highlighted row, clamped — the filtered list shrinks as you type.
     private var tagHighlightClamped: Int {
         min(tagHighlight, max(0, filteredTags.count - 1))
@@ -542,8 +566,11 @@ struct CaptureView: View {
     /// the old first-prefix-match fill. Return commits whatever's highlighted.
     private func handleTab(shift: Bool) -> KeyPress.Result {
         if tagDropdownVisible {
-            tagSelectionExplicit = true
-            if filteredTags.count > 1 {
+            defer { tagSelectionExplicit = true }
+            if !tagHighlightShown && filteredTags.count > 1 {
+                // First Tab into an unhighlighted list lands on its top row.
+                tagHighlight = 0
+            } else if filteredTags.count > 1 {
                 tagHighlight = Self.cycledTagIndex(
                     from: tagHighlightClamped, count: filteredTags.count, forward: !shift)
             } else {
@@ -692,6 +719,8 @@ struct CaptureView: View {
     /// counterpart to the editor's bottom status bar.
     private var hintBar: some View {
         HStack(spacing: Metrics.s3) {
+            enterDestination
+            Spacer(minLength: 0)
             ForEach(ShortcutRegistry.captureHints, id: \.action) { hint in
                 Button {
                     onHintAction(hint.action)
@@ -702,7 +731,42 @@ struct CaptureView: View {
                     }
                 }.buttonStyle(.plain)
             }
-            Spacer(minLength: 0)
+        }
+    }
+
+    /// What Enter does right now. The footer reads this too, so what it says
+    /// is always what Enter will do.
+    private var pendingSubmission: SubmissionAction {
+        Self.submissionAction(typed: tagText,
+            suggestion: tagDropdownVisible ? filteredTags[tagHighlightClamped] : nil,
+            explicitlySelected: tagSelectionExplicit)
+    }
+
+    /// Where Enter will file the capture, so the routing is visible before you
+    /// commit: the calendar, an existing section (in its hue), a section that
+    /// Enter will create, or the untagged catch-all.
+    private var enterDestination: some View {
+        let resolved: String? = if case .save(let tag) = pendingSubmission { tag } else { nil }
+        let tag = (resolved ?? "").trimmingCharacters(in: .whitespacesAndNewlines)
+        let hue = appState.tagHues.entry(for: tag)?.label(dark: colorScheme == .dark)
+        let message: Text = if pendingSubmission == .previewCalendar {
+            Text("makes it a calendar event")
+        } else if isCalendarMode || TagHueAssignment.isCommand(tag) {
+            Text("adds it to your calendar")
+        } else if tag.isEmpty {
+            Text("adds it under Quick capture")
+        } else if let hue {
+            Text("adds it under ") + Text(tag).foregroundStyle(hue).fontWeight(.semibold)
+        } else {
+            Text("starts a new section, ") + Text(tag).foregroundStyle(theme.ink).fontWeight(.semibold)
+        }
+        return HStack(spacing: Metrics.s1) {
+            keycap("Enter")
+            message
+                .font(TypeScale.meta)
+                .foregroundStyle(theme.inkSecondary)
+                .lineLimit(1)
+                .truncationMode(.middle)
         }
     }
 
@@ -716,47 +780,62 @@ struct CaptureView: View {
         return nil
     }
 
+    /// The event card: what Enter will put in the calendar — the parsed title
+    /// and when it runs — in the calendar's teal, on a preview well.
     private var calendarPreview: some View {
-        HStack(spacing: Metrics.s2) {
+        let hue = TagPalette.calendar.label(dark: colorScheme == .dark)
+        return HStack(alignment: .top, spacing: Metrics.s2) {
             Image(systemName: "calendar")
-                .font(.system(size: 12, weight: .semibold))
-                .foregroundStyle(theme.accent)
-            if let event = parsedCalendarEvent {
-                Text(formatCalendarPreview(event))
-                    .font(TypeScale.code)
-                    .foregroundStyle(theme.accentInk)
-            } else {
-                Text(todoText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
-                     ? "Type the event, e.g. \"call Seb tomorrow at 2pm\""
-                     : "No date found — add a time like \"tomorrow at 2pm\"")
-                    .font(.system(size: 12))
-                    .foregroundStyle(theme.inkSecondary)
+                .font(.system(size: 15, weight: .medium))
+                .foregroundStyle(hue)
+                .frame(width: 22)
+            VStack(alignment: .leading, spacing: 2) {
+                if let event = parsedCalendarEvent {
+                    HStack(alignment: .firstTextBaseline) {
+                        Text(event.title)
+                            .font(Typeface.ui(14, .semibold))
+                            .foregroundStyle(theme.ink)
+                            .lineLimit(1)
+                        Spacer(minLength: Metrics.s2)
+                        Text("Event")
+                            .font(Typeface.ui(12, .semibold))
+                            .foregroundStyle(hue)
+                    }
+                    Text(Self.calendarPreviewWhen(event))
+                        .font(Typeface.ui(13))
+                        .foregroundStyle(theme.inkSecondary)
+                } else {
+                    Text(todoText.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+                         ? "Type the event, for example \"call Seb tomorrow at 2pm\""
+                         : "No date found. Add a time like \"tomorrow at 2pm\".")
+                        .font(Typeface.ui(13))
+                        .foregroundStyle(theme.inkSecondary)
+                }
             }
             Spacer(minLength: 0)
         }
+        .padding(.horizontal, 14)
+        .padding(.vertical, 12)
+        .background(
+            RoundedRectangle(cornerRadius: Metrics.radiusWell, style: .continuous)
+                .fill(theme.surfaceField)
+        )
     }
 
-    /// Human-readable preview: "Today at 14:00 · 30 min" / "Tomorrow at 09:00 · 1 hr".
-    private func formatCalendarPreview(_ event: CalendarEvent) -> String {
-        let cal = Calendar.current
-        let datePart: String
-        if cal.isDateInToday(event.start) {
-            datePart = "Today"
-        } else if cal.isDateInTomorrow(event.start) {
-            datePart = "Tomorrow"
-        } else if cal.isDate(event.start, equalTo: Date(), toGranularity: .weekOfYear) {
-            datePart = posixFormatted(event.start, "EEEE")
-        } else {
-            datePart = posixFormatted(event.start, "EEE, MMM d")
-        }
-        let timePart = posixFormatted(event.start, "HH:mm")
-        return "\(datePart) at \(timePart) · \(formatDuration(event.duration))"
+    /// "Saturday 17 October, 14:00 to 14:30". Always the full date: a relative
+    /// "tomorrow" is what you typed, so the card confirms the absolute day.
+    static func calendarPreviewWhen(_ event: CalendarEvent) -> String {
+        let end = event.start.addingTimeInterval(event.duration)
+        let day = posixFormatters["EEEE d MMMM"]!.string(from: event.start)
+        let from = posixFormatters["HH:mm"]!.string(from: event.start)
+        let to = posixFormatters["HH:mm"]!.string(from: end)
+        return "\(day), \(from) to \(to)"
     }
 
     /// One formatter per pattern: picker rows and the `#cal` preview format on
     /// every render, and a `DateFormatter` is expensive to build.
     private static let posixFormatters: [String: DateFormatter] = Dictionary(
-        uniqueKeysWithValues: ["EEEE", "EEE, MMM d", "HH:mm", "h:mm a"].map { ($0, makePOSIXFormatter($0)) })
+        uniqueKeysWithValues: ["EEEE", "EEE, MMM d", "EEEE d MMMM", "HH:mm", "h:mm a"].map { ($0, makePOSIXFormatter($0)) })
 
     private static func makePOSIXFormatter(_ format: String) -> DateFormatter {
         let f = DateFormatter()
@@ -767,15 +846,6 @@ struct CaptureView: View {
 
     private func posixFormatted(_ date: Date, _ format: String) -> String {
         (Self.posixFormatters[format] ?? Self.makePOSIXFormatter(format)).string(from: date)
-    }
-
-    private func formatDuration(_ seconds: TimeInterval) -> String {
-        let mins = max(1, Int(seconds.rounded() / 60))
-        if mins < 60 { return "\(mins) min" }
-        let hours = mins / 60
-        let remainder = mins % 60
-        if remainder == 0 { return hours == 1 ? "1 hr" : "\(hours) hr" }
-        return "\(hours) hr \(remainder) min"
     }
 
     // MARK: - Attachment thumbnails
@@ -1085,11 +1155,8 @@ struct CaptureView: View {
         // Reads the resolved tag, not `tagText` — and reads it rather than
         // writing it first, because assigning @State and reading it back in the
         // same scope yields the stale value.
-        let action = Self.submissionAction(typed: tagText,
-            suggestion: tagDropdownVisible ? filteredTags[tagHighlightClamped] : nil,
-            explicitlySelected: tagSelectionExplicit)
         let tag: String?
-        switch action {
+        switch pendingSubmission {
         case .previewCalendar:
             acceptTag("cal")
             return
@@ -1136,19 +1203,23 @@ struct CaptureView: View {
 // MARK: - Reusable subviews
 
 extension CaptureFontDesign {
+    /// The two Recursive options use the bundled font; rounded and serif stay
+    /// on the system's designs.
     func nsFont(size: CGFloat) -> NSFont {
         let design: NSFontDescriptor.SystemDesign
         switch self {
-        case .system:     design = .default
+        case .system:     return Recursive.nsFont(size: size, weight: 400, mono: false)
+        case .monospaced: return Recursive.nsFont(size: size, weight: 400, mono: true)
         case .rounded:    design = .rounded
         case .serif:      design = .serif
-        case .monospaced: design = .monospaced
         }
         let base = NSFont.systemFont(ofSize: size).fontDescriptor
         return base.withDesign(design)
             .flatMap { NSFont(descriptor: $0, size: size) }
             ?? .systemFont(ofSize: size)
     }
+
+    func font(size: CGFloat) -> Font { Font(nsFont(size: size) as CTFont) }
 }
 
 /// Multi-line input that grows to `maxLines` then scrolls. Drops down to
