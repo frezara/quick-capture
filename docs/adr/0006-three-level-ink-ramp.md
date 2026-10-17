@@ -1,6 +1,7 @@
 # ADR-0006: The ink ramp has three levels
 
-Status: Accepted
+Status: Accepted; amended by ADR-0011 (the three levels are now solid Highlighter
+colours, not opacities)
 
 ## Context
 
