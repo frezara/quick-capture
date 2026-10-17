@@ -21,8 +21,7 @@ crossfades between them.
   it is **the active inbox**. Its first line is always `# Inbox`. Refile writes
   to *other* inboxes (see **Target inbox**) but never changes which file is the
   capture file. The editor shows other files only when you go to them: an
-  item's own inbox or **daily note**, opened from **Agenda** or another
-  workspace view.
+  item's own inbox or **daily note**, opened from **Agenda**.
 
 - **Inbox** — an `# Inbox`-headed markdown file that items live under. **No
   longer unique**: the capture file is the active inbox the editor opens; refile

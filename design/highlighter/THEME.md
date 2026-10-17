@@ -167,7 +167,7 @@ font's natural height, so expect ±1pt.
 ## Workspace rail (implemented)
 
 64pt icon-only rail on `rail`, no window buttons. Capture (accent) at the
-top, a hairline, then Calendar, Projects, Todos, Notes, Saved links; Editor at
+top, a hairline, then Agenda and Calendar; Editor at
 the bottom. Each icon's tooltip and VoiceOver label give its name and
 shortcut. Current page: `accentSoft` well, `accent` icon.
 
@@ -206,7 +206,7 @@ text field is being edited.
 
 ## Workspace views and the editor (implemented)
 
-- **Agenda, Todos, Notes, Saved links:** a list with a 300pt preview on `sunken`; day headings 13 bold,
+- **Agenda:** a list with a 300pt preview on `sunken`; day headings 13 bold,
   empty days in `ink3`; reminders use a bell, events a hue dot, todos a square
   box; selection is `accentSoft` with a 2pt accent ring.
 - **Editor:** the same tokens and Recursive (mono for note text, sans for

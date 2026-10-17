@@ -23,7 +23,6 @@ final class WorkspaceTests: XCTestCase {
         let text = "# Inbox\n## Home\n- [ ] Plan #project/Garden #note\n- [x] Finished\n```\n- [ ] Example only\n```\n- [ ] Read https://example.com/a#note\n"
         let items = WorkspaceItem.parse(text, file: file, metadata: [:])
         XCTAssertEqual(items.count, 3)
-        XCTAssertEqual(items[0].projects, ["garden"])
         XCTAssertEqual(items[0].kind, "note")
         XCTAssertTrue(items[1].completed)
         XCTAssertEqual(items[2].kind, "capture")
@@ -112,24 +111,7 @@ final class WorkspaceProjectionTests: XCTestCase {
     }
     private func projection(_ items: [WorkspaceItem], destination: WorkspaceDestination = .calendar,
                             date: String = "2026-10-15T12:00:00Z", mode: WorkspaceCalendarMode = .month) -> WorkspaceProjection {
-        WorkspaceProjection(items: items, destination: destination, project: nil, date: at(date), mode: mode, calendar: calendar)
-    }
-
-    func testTodosGroupBySectionInFileOrderAndKeepTicksMadeThisVisit() {
-        func todo(_ id: String, _ section: String, line: Int, priority: Int = 3, done: Bool = false, depth: Int = 0) -> WorkspaceItem {
-            WorkspaceItem(id: id, text: id, section: section, file: URL(fileURLWithPath: "/tmp/test"), completed: done,
-                          priority: priority, tags: [], kind: "capture", starts: nil, ends: nil, url: nil, line: line, depth: depth)
-        }
-        let items = [todo("boiler", "Home", line: 3), todo("hinge", "Home", line: 4, priority: 0),
-                     todo("child", "Home", line: 5, depth: 2), todo("drill", "Home", line: 6, done: true),
-                     todo("bulbs", "Garden", line: 9)]
-        let p = WorkspaceProjection(items: items, destination: .todos, project: nil, date: at("2026-10-15T12:00:00Z"),
-                                    mode: .month, kept: ["drill"], calendar: calendar)
-        XCTAssertEqual(p.groups.map(\.name), ["Home", "Garden"])
-        XCTAssertEqual(p.groups[0].items.map(\.id), ["hinge", "boiler", "drill"])
-        let filtered = WorkspaceProjection(items: items, destination: .todos, project: nil, date: at("2026-10-15T12:00:00Z"),
-                                           mode: .month, filter: "BULB", calendar: calendar)
-        XCTAssertEqual(filtered.visible.map(\.id), ["bulbs"])
+        WorkspaceProjection(items: items, destination: destination, date: at(date), mode: mode, calendar: calendar)
     }
 
     func testCapturedStampIsRead() {
@@ -162,13 +144,12 @@ final class WorkspaceProjectionTests: XCTestCase {
         XCTAssertNil(byDay[at("2026-10-18T00:00:00Z")])
     }
 
-    func testCalendarShowsOnlyOpenDatedItemsAndTodosOnlyOpenTasks() {
+    func testCalendarShowsOnlyOpenDatedItems() {
         let dated = item("dated", start: "2026-10-15T09:00:00Z")
         let done = item("done", start: "2026-10-15T10:00:00Z", completed: true)
         let task = item("task", kind: "capture")
         let finished = item("finished", completed: true, kind: "capture")
         XCTAssertEqual(projection([dated, done, task, finished]).visible.map(\.id), ["dated"])
-        XCTAssertEqual(projection([dated, done, task, finished], destination: .todos).visible.map(\.id), ["task"])
     }
 }
 

@@ -148,15 +148,11 @@ struct AgendaView: View {
 
 /// One row of the list. Plain values, so moving the selection redraws two
 /// rows rather than the whole list.
-struct AgendaRowView: View, Equatable {
+private struct AgendaRowView: View, Equatable {
     let row: AgendaRow
     let hue: TagPalette.Entry?
     let selected: Bool
     let now: Date
-    /// Todos drops the time column and, being grouped by section already,
-    /// the section name.
-    var showsTime = true
-    var showsSection = true
     @Environment(\.colorScheme) private var scheme
     private var t: Theme { scheme == .dark ? .dark : .light }
     private var dark: Bool { scheme == .dark }
@@ -167,9 +163,7 @@ struct AgendaRowView: View, Equatable {
 
     var body: some View {
         HStack(spacing: 8) {
-            if showsTime {
-                Text(time).font(Typeface.mono(12)).foregroundStyle(t.inkSecondary).frame(width: 52, alignment: .leading)
-            }
+            Text(time).font(Typeface.mono(12)).foregroundStyle(t.inkSecondary).frame(width: 52, alignment: .leading)
             mark.frame(width: 16)
             HStack(spacing: 8) {
                 Text(row.item.title)
@@ -244,10 +238,8 @@ struct AgendaRowView: View, Equatable {
                     Text("\(row.item.childTasksDone)/\(row.item.childTasks)")
                         .font(Typeface.mono(12)).foregroundStyle(t.inkSecondary)
                 }
-                if showsSection {
-                    Text(row.item.section).font(TypeScale.meta)
-                        .foregroundStyle(hue?.label(dark: dark) ?? t.inkTertiary)
-                }
+                Text(row.item.section).font(TypeScale.meta)
+                    .foregroundStyle(hue?.label(dark: dark) ?? t.inkTertiary)
             }
         }
     }
@@ -273,15 +265,12 @@ struct AgendaRowView: View, Equatable {
     }
 }
 
-/// The selected row in full: its children, images and where it lives. Shared
-/// by Agenda and Todos.
-struct ItemPreview: View {
+/// The selected row in full: its children, images and where it lives.
+private struct ItemPreview: View {
     let row: AgendaRow?
     let hue: TagPalette.Entry?
     let onOpen: (AgendaRow) -> Void
     let onTick: (AgendaRow) -> Void
-    /// Todos offers "plan for today" here; Agenda doesn't.
-    var onPlan: ((AgendaRow) -> Void)? = nil
     @Environment(\.colorScheme) private var scheme
     private var t: Theme { scheme == .dark ? .dark : .light }
 
@@ -297,12 +286,6 @@ struct ItemPreview: View {
                     }
                 }
                 .buttonStyle(GhostButtonStyle(t: t))
-                if let onPlan {
-                    Button { onPlan(row) } label: {
-                        HStack(spacing: 6) { Text("Plan for today"); Keycap(text: "P", t: t) }.frame(maxWidth: .infinity)
-                    }
-                    .buttonStyle(GhostButtonStyle(t: t))
-                }
             } else {
                 Text("Nothing selected").font(TypeScale.heading).foregroundStyle(t.ink)
                 Text("Events, reminders and open todos appear here as you move through the list.")

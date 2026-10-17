@@ -221,8 +221,8 @@ final class ShortcutRegistryTests: XCTestCase {
 
     /// Workspace views are numbered in rail order.
     func testWorkspaceViewsAreNumberedInRailOrder() {
-        let views: [ShortcutAction] = [.showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks]
-        XCTAssertEqual(views.map(\.chord.displayGlyphs), ["⌥⌘1", "⌥⌘2", "⌥⌘3", "⌥⌘4", "⌥⌘5", "⌥⌘6"])
+        let views: [ShortcutAction] = [.showAgenda, .showCalendar]
+        XCTAssertEqual(views.map(\.chord.displayGlyphs), ["⌥⌘1", "⌥⌘2"])
     }
 }
 

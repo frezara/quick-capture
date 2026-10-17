@@ -7,12 +7,6 @@ struct WorkspaceView: View {
     let onEditor: () -> Void
     var onAgendaOpen: (AgendaRow) -> Void = { _ in }
     var onAgendaTick: (AgendaRow) -> Void = { _ in }
-    var onItemOpen: (WorkspaceItem) -> Void = { _ in }
-    var onItemTick: (WorkspaceItem) -> Void = { _ in }
-    var onItemPlan: (WorkspaceItem) -> Void = { _ in }
-    var onItemCopy: (WorkspaceItem) -> Void = { _ in }
-    var onLinkOpen: (WorkspaceItem) -> Void = { _ in }
-    var onFileOpen: (URL) -> Void = { _ in }
     @Environment(\.colorScheme) private var scheme
     private var t: Theme { scheme == .dark ? .dark : .light }
 
@@ -23,20 +17,8 @@ struct WorkspaceView: View {
             if model.destination == .agenda {
                 AgendaView(model: model, onOpen: onAgendaOpen, onTick: onAgendaTick)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.destination == .todos {
-                TodosView(model: model, onOpen: onItemOpen, onTick: onItemTick, onPlan: onItemPlan)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.destination == .notes {
-                NotesView(model: model, onOpen: onItemOpen, onCopy: onItemCopy)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.destination == .links {
-                LinksView(model: model, onOpen: onLinkOpen, onCopy: onItemCopy, onEditor: onItemOpen)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
-            } else if model.destination == .calendar {
-                NativeCalendarView(model: model, onCapture: onCapture, onEditor: onEditor)
-                    .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ProjectsView(store: model.projectStore, model: model, onOpen: onFileOpen)
+                NativeCalendarView(model: model, onCapture: onCapture, onEditor: onEditor)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }
@@ -53,7 +35,7 @@ struct WorkspaceView: View {
             railButton(title: "Capture", symbol: "plus.circle", glyphs: "⌥⌘P", selected: false,
                        tint: t.accent, action: onCapture)
             t.border.frame(width: 28, height: 1).padding(.vertical, 4)
-            ForEach([WorkspaceDestination.agenda, .todos, .calendar, .projects, .notes, .links]) { destination in
+            ForEach(WorkspaceDestination.allCases) { destination in
                 railButton(title: destination.title, symbol: destination.symbol,
                            glyphs: destination.action.chord.displayGlyphs,
                            selected: model.destination == destination) { model.navigate(destination) }
@@ -89,13 +71,13 @@ struct WorkspaceView: View {
 }
 
 #if DEBUG
-#Preview("Workspace · todos") {
-    WorkspaceView(model: .preview(destination: .todos), onCapture: {}, onEditor: {})
+#Preview("Workspace · agenda") {
+    WorkspaceView(model: .preview(destination: .agenda), onCapture: {}, onEditor: {})
         .frame(width: 1000, height: 640)
 }
 
-#Preview("Workspace · todos · dark") {
-    WorkspaceView(model: .preview(destination: .todos), onCapture: {}, onEditor: {})
+#Preview("Workspace · agenda · dark") {
+    WorkspaceView(model: .preview(destination: .agenda), onCapture: {}, onEditor: {})
         .frame(width: 1000, height: 640)
         .preferredColorScheme(.dark)
 }
