@@ -60,49 +60,58 @@ Vim.mapCommand("[[", "motion", "moveToPrevMarkdownSection", {}, {});
 type Palette = typeof lightPalette;
 
 const lightPalette = {
-    surface: "#FAFCFB",
-    surfaceField: "#E8EEEB",
-    surfaceRail: "#F0F3F1",
-    highlight: "#FAFCFB",
-    text: "#202D29",
-    textOpaque: "#202D29",
-    soft: "#596B64",
-    muted: "rgba(89, 107, 100, 0.60)",
-    accent: "#1672DF",
-    accentInk: "#165EB8",
-    accentSoft: "rgba(22, 114, 223, 0.07)",
+    // Highlighter (design/highlighter/THEME.md) — the same tokens as Theme.light
+    // in DesignSystem.swift.
+    surface: "#F8F9FB",
+    surfaceField: "#EEF0F5",
+    surfaceRail: "#EDEFF4",
+    highlight: "#F8F9FB",
+    text: "#1C2233",
+    textOpaque: "#1C2233",
+    soft: "#545C72",
+    muted: "#80879C",
+    accent: "#2B3FA0",
+    accentInk: "#2B3FA0",
+    accentSoft: "rgba(43, 63, 160, 0.08)",
     onAccent: "#FFFFFF",
-    codeBg: "#E8EEEB",
-    selection: "rgba(22, 114, 223, 0.07)",
-    borderSoft: "#D5DEDB",
-    borderStrong: "#D5DEDB",
-    priHigh: "#BA503C",
-    priMed: "#956018",
-    priLow: "#3D6C4B",
-    warningFill: "#FCF2DF",
+    codeBg: "#EEF0F5",
+    selection: "rgba(43, 63, 160, 0.14)",
+    borderSoft: "#E2E5EE",
+    borderStrong: "#D6DAE5",
+    priHigh: "#B03A2A",
+    priMed: "#8A5F12",
+    priLow: "#2F6B3E",
+    warningFill: "#FDF3D7",
+    // The highlighter: the cursor line's band and the INSERT badge.
+    now: "#FFE45C",
+    inkOnNow: "#1C2233",
+    activeLine: "rgba(255, 228, 92, 0.28)",
 };
 
 const darkPalette: Palette = {
-    surface: "#242C2A",
-    surfaceField: "#303B37",
-    surfaceRail: "#1E2522",
-    highlight: "#242C2A",
-    text: "#F1F4F2",
-    textOpaque: "#F1F4F2",
-    soft: "#B6C5BD",
-    muted: "rgba(182, 197, 189, 0.55)",
-    accent: "#69A8FF",
-    accentInk: "#91BFFF",
-    accentSoft: "rgba(105, 168, 255, 0.09)",
-    onAccent: "#122335",
-    codeBg: "#303B37",
-    selection: "rgba(105, 168, 255, 0.09)",
-    borderSoft: "#46534D",
-    borderStrong: "#46534D",
-    priHigh: "#F09C86",
-    priMed: "#E5B95B",
-    priLow: "#A4D2B0",
-    warningFill: "#373025",
+    surface: "#1B2132",
+    surfaceField: "#242B40",
+    surfaceRail: "#151A28",
+    highlight: "#1B2132",
+    text: "#E9ECF5",
+    textOpaque: "#E9ECF5",
+    soft: "#A9B0C6",
+    muted: "#7C849C",
+    accent: "#9AAAFF",
+    accentInk: "#9AAAFF",
+    accentSoft: "rgba(154, 170, 255, 0.10)",
+    onAccent: "#10162A",
+    codeBg: "#242B40",
+    selection: "rgba(154, 170, 255, 0.20)",
+    borderSoft: "#283049",
+    borderStrong: "#343D58",
+    priHigh: "#F4A393",
+    priMed: "#EBC77A",
+    priLow: "#A2D6AC",
+    warningFill: "#3A321C",
+    now: "#F0D44A",
+    inkOnNow: "#1C2233",
+    activeLine: "rgba(240, 212, 74, 0.10)",
 };
 
 // Section hues for `##` headings (#102). The editor no longer derives these:
@@ -172,27 +181,29 @@ const prefersDark = window.matchMedia("(prefers-color-scheme: dark)");
 // appearance listener reassigns it and reconfigures the theme compartment.
 let palette: Palette = prefersDark.matches ? darkPalette : lightPalette;
 
-const monoFamily = 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace';
-const sansFamily = '-apple-system, BlinkMacSystemFont, system-ui, "Helvetica Neue", sans-serif';
+// Recursive is bundled (dist/fonts, @font-face in editor.html). One variable
+// face does both jobs: the MONO axis is set by font-variation-settings, which
+// inherits — sans on the editor root, mono on .cm-content and the file path,
+// back to sans for headings inside the content.
+const monoFamily = '"Recursive", ui-monospace, "SF Mono", Menlo, monospace';
+const sansFamily = '"Recursive", -apple-system, BlinkMacSystemFont, system-ui, sans-serif';
+const monoAxis = "'MONO' 1, 'CASL' 0";
+const sansAxis = "'MONO' 0, 'CASL' 0";
 
 function makeHighlight() {
     return HighlightStyle.define([
-    // Headings are CHROME, not content — sans, per the native-v2 spec. H1 is
-    // the window title; H2s are small tracked-uppercase section captions
-    // (uppercasing itself is done by the .cm-heading-2 line class so the raw
-    // text keeps its case when revealed for editing).
-    { tag: tags.heading1, fontFamily: sansFamily, fontSize: "22px", fontWeight: "600", letterSpacing: "-0.3px", color: palette.text, lineHeight: "1.4" },
+    // Headings are CHROME, not content — Recursive's sans setting. H1 is the
+    // document title; H2s are section captions in sentence case.
+    { tag: tags.heading1, fontFamily: sansFamily, fontVariationSettings: sansAxis, fontSize: "24px", fontWeight: "750", letterSpacing: "-0.4px", color: palette.text, lineHeight: "1.4" },
     // Colour is the section's, mixed toward the primary ink (#103) — falls back
     // to the neutral caption grey for a section with no hue.
     //
-    // Monospace at the body's size and line-height, NOT the 11px sans it used
-    // to be. The mouse I-beam and the caret are sized from the line box, so a
-    // smaller face on the heading made both shrink as they crossed it. The
-    // caption still reads as chrome — uppercase, tracked, semibold, hued, on
-    // its band — without breaking the document's metrics.
-    { tag: tags.heading2, fontFamily: monoFamily, fontSize: "13px", fontWeight: "600", letterSpacing: "0.8px", color: `var(--qc-section-ink, ${palette.soft})`, lineHeight: "1.6" },
-    { tag: tags.heading3, fontFamily: sansFamily, fontSize: "1.1em", fontWeight: "600", color: palette.text },
-    { tag: tags.heading4, fontFamily: sansFamily, fontSize: "1em", fontWeight: "600", color: palette.text },
+    // The body's size and line-height, NOT the 11px it used to be. The mouse
+    // I-beam and the caret are sized from the line box, so a smaller face on
+    // the heading made both shrink as they crossed it.
+    { tag: tags.heading2, fontFamily: sansFamily, fontVariationSettings: sansAxis, fontSize: "13.5px", fontWeight: "700", color: `var(--qc-section-ink, ${palette.soft})`, lineHeight: "1.6" },
+    { tag: tags.heading3, fontFamily: sansFamily, fontVariationSettings: sansAxis, fontSize: "1.1em", fontWeight: "650", color: palette.text },
+    { tag: tags.heading4, fontFamily: sansFamily, fontVariationSettings: sansAxis, fontSize: "1em", fontWeight: "650", color: palette.text },
     { tag: tags.heading5, fontWeight: "700", color: palette.text },
     { tag: tags.heading6, fontWeight: "700", color: palette.soft },
 
@@ -753,6 +764,7 @@ const livePreview = ViewPlugin.fromClass(class {
 function makeTheme() {
     return EditorView.theme({
     "&": {
+        fontVariationSettings: sansAxis,
         backgroundColor: palette.surface,
         color: palette.text,
         height: "100%",
@@ -794,8 +806,9 @@ function makeTheme() {
     ".qc-save-error": { position: "absolute", top: "56px", left: "180px", right: "22px", zIndex: "100", background: palette.warningFill, color: palette.text, border: `1px solid ${palette.priMed}`, borderRadius: "8px", padding: "16px", font: `13px ${sansFamily}` },
     "@media(max-width: 850px)": { ".qc-navigation": { width: "130px" }, ".qc-inspector": { width: "190px", padding: "16px 10px" }, ".cm-scroller": { marginLeft: "130px", marginRight: "190px", width: "calc(100% - 320px)" } },
     ".cm-content": {
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, Monaco, Consolas, monospace',
-        fontSize: "13px",
+        fontFamily: monoFamily,
+        fontVariationSettings: monoAxis,
+        fontSize: "13.5px",
         lineHeight: "1.6",
         // Full-width content (no left rail, no centered column) per the mockup;
         // generous side padding, extra bottom clearance for the status bar + fab.
@@ -876,7 +889,8 @@ function makeTheme() {
     // Filename is a path — the one mono element in the status bar.
     ".cm-status-file": {
         color: palette.soft,
-        fontFamily: 'ui-monospace, "SF Mono", Menlo, monospace',
+        fontFamily: monoFamily,
+        fontVariationSettings: monoAxis,
     },
     ".cm-status-right": { marginLeft: "auto", display: "flex", gap: "16px" },
     // Empty-state overlay — shown when the document has zero todo lines.
@@ -923,9 +937,10 @@ function makeTheme() {
         backgroundColor: palette.accentSoft,
         color: palette.accentInk,
     },
+    // Insert is the highlighter: you're marking up the page.
     ".cm-mode-badge--insert": {
-        backgroundColor: palette.accent,
-        color: palette.onAccent,
+        backgroundColor: palette.now,
+        color: palette.inkOnNow,
     },
     ".cm-mode-badge--visual": {
         backgroundColor: palette.surfaceField,
@@ -1144,8 +1159,9 @@ function makeTheme() {
     "&.cm-focused .cm-selectionBackground, ::selection": {
         backgroundColor: palette.selection,
     },
+    // The highlighter stroke behind the cursor's line.
     ".cm-activeLine": {
-        backgroundColor: "transparent",
+        backgroundColor: palette.activeLine,
     },
     ".cm-focused": {
         outline: "none",
@@ -1252,10 +1268,10 @@ function makeTheme() {
         // and draws our own border + checkmark.
         appearance: "none",
         WebkitAppearance: "none",
-        width: "15px",
-        height: "15px",
+        width: "14px",
+        height: "14px",
         margin: "0 10px 0 0",
-        border: `1px solid ${palette.borderStrong}`,
+        border: `1.5px solid var(--qc-section-hue, ${palette.muted})`,
         borderRadius: "4px",
         verticalAlign: "-3px",
         cursor: "pointer",
@@ -1269,8 +1285,8 @@ function makeTheme() {
         // Inside a section the checked fill is the section's hue (#103);
         // anywhere else — the untagged catch-all, a loose item above the first
         // heading — it stays the accent.
-        backgroundColor: `var(--qc-section-hue, ${palette.accent})`,
-        borderColor: `var(--qc-section-hue, ${palette.accent})`,
+        backgroundColor: `var(--qc-section-hue, ${palette.muted})`,
+        borderColor: `var(--qc-section-hue, ${palette.muted})`,
         backgroundImage: "url('data:image/svg+xml;utf8,<svg xmlns=\"http://www.w3.org/2000/svg\" viewBox=\"0 0 16 16\" fill=\"none\"><path d=\"M4 8.5l2.5 2.5L12 5.5\" stroke=\"white\" stroke-width=\"2\" stroke-linecap=\"round\" stroke-linejoin=\"round\"/></svg>')",
         backgroundSize: "14px",
         backgroundPosition: "center",
@@ -1280,20 +1296,15 @@ function makeTheme() {
     // cursor navigation (Down arrow lands in the margin gap and skips lines),
     // so we use padding — which CodeMirror's cursor logic handles correctly —
     // and keep the values small.
-    // H2 = tracked-uppercase section caption in its tag hue, over a tinted
-    // band and above a hue rule (the values arrive as --qc-section-* on the
-    // line, set by buildLivePreview). The uppercasing is visual only — raw
-    // text keeps its case. No dot: the caption, band and rule already carry
-    // the hue three times over, and a bullet in front of a heading reads as a
-    // list item.
+    // H2 = section caption in its tag hue above a hue rule (the values arrive
+    // as --qc-section-* on the line, set by buildLivePreview). No dot: the
+    // caption and rule already carry the hue, and a bullet in front of a
+    // heading reads as a list item.
     ".cm-heading-2": {
         paddingTop: "10px",
         paddingBottom: "3px",
-        // Inset the caption within its band. Padding, not margin: margins on a
-        // line decoration break vertical cursor navigation (see above), and
-        // this is also why the band itself stays full-width rather than being
-        // pulled in with a negative margin.
-        paddingLeft: "12px",
+        // Flush with the items: there is no band to inset the caption into.
+        paddingLeft: "0",
         // Band and rule are the section's hue (#103), falling back to no tint
         // and the plain hairline when it hasn't got one. The band spans the
         // line box — i.e. the content width inside .cm-content's padding — so
@@ -1301,8 +1312,7 @@ function makeTheme() {
         // decoration break cursor navigation; see the note above.)
         background: "transparent",
         borderRadius: "0",
-        borderBottom: `0.5px solid ${palette.borderSoft}`,
-        textTransform: "uppercase",
+        borderBottom: `1px solid var(--qc-section-rule, ${palette.borderSoft})`,
     },
     // Breathing room between a section's heading block and the items it heads.
     // On the following line rather than the heading's own padding-bottom: the
@@ -1314,8 +1324,10 @@ function makeTheme() {
     },
     // The H1 app-mark: accent-gradient rounded square with a white hash,
     // standing in for the hidden `# ` mark.
+    // The old accent "#" chip. Highlighter titles stand on their own, so the
+    // hidden `# ` mark takes no room.
     ".cm-h1-mark": {
-        display: "inline-flex",
+        display: "none",
         alignItems: "center",
         justifyContent: "center",
         width: "26px",
@@ -1807,13 +1819,14 @@ function ensureWorkspace(v: EditorView) {
     const header = document.createElement("header");
     header.className = "qc-workspace-header";
     const title = document.createElement("strong");
-    title.textContent = "Quick Capture";
+    title.className = "qc-workspace-title";
+    title.textContent = filename;
     header.append(title, makeButton("Capture", "capture", () => sendToSwift({ type: "capture" })));
     const nav = document.createElement("nav");
     nav.className = "qc-navigation";
     nav.setAttribute("aria-label", "Inbox sections");
     const label = document.createElement("h2");
-    label.textContent = "Your inbox";
+    label.textContent = "Sections";
     const sections = document.createElement("div");
     sections.className = "qc-sections";
     const actions = document.createElement("div");
@@ -2587,6 +2600,7 @@ function mount(content: string) {
             vimComp.of(vimEnabled ? vim() : []),
             history(),
             drawSelection(),
+            highlightActiveLine(),
             bracketMatching(),
             indentOnInput(),
             EditorView.lineWrapping,
@@ -2730,6 +2744,8 @@ window.qcEditor = {
     },
     setFilename: (name: string) => {
         filename = name || "inbox.md";
+        const title = document.querySelector(".qc-workspace-title");
+        if (title) title.textContent = filename;
         if (view) updateBadge(view);
     },
     // Toggle vim live by reconfiguring its compartment (placed first in the
