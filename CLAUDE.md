@@ -220,8 +220,9 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   its caption, band, rule, indent guides and the checkboxes inside it, plus
   the capture tag field when the typed tag matches. (No dot before the
   heading — the caption itself is hued, so it was the third statement of the
-  same fact.) System blue stays
-  interaction; neutrals stay the ground. Two consequences worth knowing before
+  same fact.) The accent (carbon
+  indigo) stays interaction; neutrals stay the ground; highlighter yellow means
+  "now" (ADR-0011, `design/highlighter/THEME.md`). Two consequences worth knowing before
   touching either side:
   - **The hue is allocated, not derived.** A section takes the next unused hue
     the first time it is seen and keeps it (`TagHueAssignment`, persisted by

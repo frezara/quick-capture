@@ -1,5 +1,9 @@
 # Clear & Charcoal — unified Mac app design system
 
+> **Superseded for Quick Capture on 17 October 2026** by the Highlighter
+> system: `design/highlighter/THEME.md` and ADR-0011. Kept as the record of
+> Clear & Charcoal and for Hyper Active, which has not moved.
+
 Design System artifact (tokens, brand book, component previews): https://claude.ai/artifact/7aQj8AcwbqPawmJD1kgwNp
 
 ## Where it came from

@@ -1,6 +1,7 @@
 # ADR-0005: Colour has three jobs — identity, interaction, ground
 
-Status: Accepted
+Status: Accepted; amended by ADR-0011 (the accent is now carbon indigo, and the
+highlighter is a fourth job, "now")
 
 ## Context
 

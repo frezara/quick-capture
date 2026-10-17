@@ -36,7 +36,7 @@ crossfades between them.
   (#101) the hue is the section's *identity* across the whole app: its caption,
   band, rule, indent guides and the checkboxes inside it, plus the capture
   box's tag field, which is the same tag. Nothing else borrows a tag hue —
-  system blue is **interaction**, neutral is the ground. A section takes the
+  the accent is **interaction**, neutral is the ground (ADR-0005, ADR-0011). A section takes the
   next unused hue the first time it is seen and keeps it, so the hue survives
   reordering and relaunches. Decided in #101, implemented in #102–#104.
 
@@ -255,7 +255,8 @@ image URL remains a link and is not an attachment to fetch.
   is mutually-exclusive modes (ADR-0004).
 - Don't say "footer" for the capture-mode bottom bar — it's the **hint bar**
   (always-on, not the old collapse-on-blur footer).
-- Don't call a **tag hue** an "accent". The **accent** is the single system
-  blue and it means interaction; a tag hue means identity. They are different
+- Don't call a **tag hue** an "accent". The **accent** is the single carbon
+  indigo and it means interaction; a tag hue means identity. Nor is the
+  **highlighter** yellow an accent: it means "now" (ADR-0011). They are different
   jobs, and the whole point of the Sectioned direction is that they stay
   different.

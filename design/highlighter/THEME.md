@@ -5,17 +5,17 @@ Mockups: https://claude.ai/artifact/UXY1n9PSTqAjarCRuHWqFz (theme board and
 "B, round 2" row). This file is the source of truth for `DesignSystem.swift`;
 the mockups illustrate it.
 
-Status: **approved 2026-10-17** (theme, dark palette, calendar teal, frosted capture panel). Replaces Clear & Charcoal, so ADR-0005 (colour
-semantics) and ADR-0006 (three-level ink ramp) need superseding ADRs and
-`design-system-overview.md` needs rewriting once this is approved.
+Status: **approved 2026-10-17** (theme, dark palette, calendar teal, frosted capture panel). Replaces Clear & Charcoal; recorded in ADR-0011,
+which amends ADR-0005 (colour semantics) and ADR-0006 (ink ramp).
 
 ## Rules
 
 1. **Carbon is interaction.** Buttons, selection, focus, the current page,
    links. Nothing else is carbon.
-2. **Highlighter is "now".** Today's date, the now-line, the current time.
-   Never decoration, never in the capture box, never behind more than a few
-   words. Text on highlighter is always `ink` (light) / `inkOnHighlight` (dark).
+2. **Highlighter is "now".** Today's date, the now-line, the current time,
+   and in the editor the line you're on (a faint wash) and vim's INSERT mode.
+   Never decoration, never in the capture box, never at full strength behind
+   more than a few words. Text on highlighter is always `ink` (light) / `inkOnHighlight` (dark).
 3. **Section hues are identity.** A section's hue marks its name wherever the
    section appears (tag dropdown dot, tag field tint, section labels, events).
    Allocation is unchanged (`TagHueAssignment`); only the palette values change.
@@ -203,6 +203,19 @@ shortcut. Current page: `accentSoft` well, `accent` icon.
 
 The table is `CalendarLayout.command`; `MainPanel` routes keys to it unless a
 text field is being edited.
+
+## Today, Agenda and the editor (implemented)
+
+- **Today:** the calendar's toolbar language; a 290pt schedule panel on
+  `sunken`, the editor on the right. The panel with focus shows an accent dot
+  beside its label and the selected event an accent ring.
+- **Agenda:** a list with a 300pt preview on `sunken`; day headings 13 bold,
+  empty days in `ink3`; reminders use a bell, events a hue dot, todos a square
+  box; selection is `accentSoft` with a 2pt accent ring.
+- **Editor:** the same tokens and Recursive (mono for note text, sans for
+  headings and chrome). Section captions in sentence case in their hue over a
+  hue-tinted hairline; 4pt-radius checkboxes in the section hue; the cursor's
+  line on a faint highlighter wash.
 
 ## States still to design
 
