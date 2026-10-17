@@ -507,9 +507,10 @@ extension WorkspaceModel {
         let today = Calendar.current.startOfDay(for: Date())
         func hours(_ h: Double, from day: Date = today) -> Date { day.addingTimeInterval(h * 3600) }
         func item(_ id: String, _ text: String, section: String, priority: Int = 3, kind: String = "capture",
-                  starts: Date? = nil, ends: Date? = nil, reminder: Date? = nil) -> WorkspaceItem {
+                  starts: Date? = nil, ends: Date? = nil, reminder: Date? = nil, url: String? = nil) -> WorkspaceItem {
             WorkspaceItem(id: id, text: text, section: section, file: file, completed: false, priority: priority,
-                          tags: [], kind: kind, starts: starts, ends: ends, url: nil, line: Int(id) ?? 0, reminder: reminder)
+                          tags: [], kind: kind, starts: starts, ends: ends, url: url.flatMap(URL.init(string:)),
+                          line: Int(id) ?? 0, reminder: reminder, captured: hours(-30 + Double(id)! ))
         }
         model.agendaSources = [AgendaSource(name: "Inbox", file: file)]
         model.items = [
@@ -521,6 +522,10 @@ extension WorkspaceModel {
             item("6", "Seb's birthday", section: "Calendar", kind: "event", starts: hours(24), ends: hours(48)),
             item("7", "Call the council", section: "Calendar", kind: "event", starts: hours(24 * 3 + 14), ends: hours(24 * 3 + 14.5)),
             item("8", "Bins out", section: "Home", reminder: hours(19)),
+            item("9", "Brunch with Sam\n  Sam can lend us the bike rack next week, so the [Cotswolds](https://www.nationaltrail.co.uk) trip is on.",
+                 section: "Notes", kind: "note"),
+            item("10", "Cotswold Way https://www.nationaltrail.co.uk/cotswold", section: "Garden", kind: "bookmark",
+                 url: "https://www.nationaltrail.co.uk/cotswold"),
         ]
         return model
     }

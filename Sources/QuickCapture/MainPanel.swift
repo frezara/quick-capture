@@ -537,7 +537,9 @@ final class MainPanel: NSPanel {
                 onAgendaTick: { [weak self] row in self?.tickItem(row.item) },
                 onItemOpen: { [weak self] item in self?.openItemInEditor(item) },
                 onItemTick: { [weak self] item in self?.tickItem(item) },
-                onItemPlan: { [weak self] item in self?.planItemForToday(item) }))
+                onItemPlan: { [weak self] item in self?.planItemForToday(item) },
+                onItemCopy: { [weak self] item in self?.copyItem(item) },
+                onLinkOpen: { [weak self] item in self?.openLink(item) }))
             host.frame = container.bounds
             host.autoresizingMask = [.width, .height]
             container.addSubview(host)
@@ -672,16 +674,42 @@ final class MainPanel: NSPanel {
             return true
         default: break
         }
-        guard !typing, flags.isEmpty else { return false }
+        guard !typing else { return false }
+        if flags == .command, event.charactersIgnoringModifiers == "c", model.destination == .notes,
+           let item = model.selectedItem {
+            copyItem(item)
+            return true
+        }
+        guard flags.isEmpty else { return false }
         if event.charactersIgnoringModifiers == "/" { model.filterFocused = true; return true }
         guard let item = model.selectedItem else { return false }
         switch (event.keyCode, event.charactersIgnoringModifiers, model.destination) {
+        case (36, _, .links), (76, _, .links): openLink(item)
         case (36, _, _), (76, _, _): openItemInEditor(item)
         case (_, "x", .todos): tickItem(item)
         case (_, "p", .todos): planItemForToday(item)
+        case (_, "c", .links): copyItem(item)
+        case (_, "e", .links): openItemInEditor(item)
         default: return false
         }
         return true
+    }
+
+    /// Tests copy into their own pasteboard, never the user's clipboard.
+    var pasteboard = NSPasteboard.general
+
+    /// A link copies its URL; a note its text without the checkbox.
+    private func copyItem(_ item: WorkspaceItem) {
+        let text = workspaceModel.destination == .links ? (item.url?.absoluteString ?? item.title)
+            : FileWriter.dedent(item.text)
+        pasteboard.clearContents()
+        pasteboard.setString(text, forType: .string)
+    }
+
+    /// Only web links open; anything else would hand a file path to Finder.
+    private func openLink(_ item: WorkspaceItem) {
+        guard let url = item.url, ["http", "https"].contains(url.scheme?.lowercased() ?? "") else { NSSound.beep(); return }
+        NSWorkspace.shared.open(url)
     }
 
     private func leaveFilter() {
