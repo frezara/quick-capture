@@ -110,10 +110,12 @@ struct ProjectDocument {
 struct ProjectSummary: Equatable {
     let line: String
     let nextAction: String?
+    var open = 0
     init(text: String?) {
         guard let text else { line = "Inbox unavailable"; nextAction = nil; return }
         let document = ProjectDocument(text: text)
-        line = "\(document.status) · \(document.tasks.filter { $0.status != .done }.count) open"
+        open = document.tasks.filter { $0.status != .done }.count
+        line = "\(document.status) · \(open) open"
         nextAction = document.tasks.first { $0.status == .next || $0.status == .doing }?.title
     }
 }

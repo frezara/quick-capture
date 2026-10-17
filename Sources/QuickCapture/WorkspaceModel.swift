@@ -282,6 +282,19 @@ final class WorkspaceModel {
     /// True while the filter field has focus.
     var filterFocused = false
     private(set) var agendaSources: [AgendaSource] = []
+    /// Projects: the selected project and tab, here so keys can drive them.
+    var projectSelection: String?
+    /// The project registry; tests use one in a temp folder.
+    @ObservationIgnored var projectStore = ProjectStore.shared
+    var projectTab = ProjectTab.overview
+
+    /// ↑ ↓ through `ids` (the project list, in order).
+    func stepProject(_ offset: Int, ids: [String]) {
+        guard !ids.isEmpty else { return }
+        let current = ids.firstIndex { $0 == projectSelection } ?? (offset > 0 ? -1 : ids.count)
+        projectSelection = ids[min(ids.count - 1, max(0, current + offset))]
+    }
+
     /// Where daily notes live; tests point it at a temp folder.
     var dailyFolder: URL?
     private var effectiveDailyFolder: URL { dailyFolder ?? DailyNote.folder(forCaptureFile: appState.captureFileURL) }
@@ -304,7 +317,7 @@ final class WorkspaceModel {
             agendaSources = AgendaSource.list(
                 dailyNote: FileManager.default.fileExists(atPath: today.path) ? today : nil,
                 captureFile: appState.captureFileURL,
-                projects: ProjectStore.shared.projects.map { (name: $0.name, file: $0.file) },
+                projects: projectStore.projects.map { (name: $0.name, file: $0.file) },
                 targets: appState.effectiveRefileTargets.map { (name: $0.displayName, file: $0.folderURL.appendingPathComponent("inbox.md")) })
             for source in agendaSources where !files.contains(source.file) { files.append(source.file) }
         }

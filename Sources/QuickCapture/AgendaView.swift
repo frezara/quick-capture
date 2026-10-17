@@ -426,12 +426,12 @@ struct KeyHints: View {
             ForEach(Array(pairs.enumerated()), id: \.offset) { _, pair in
                 HStack(spacing: 4) {
                     ForEach(pair.0, id: \.self) { Keycap(text: $0, t: t) }
-                    Text(pair.1)
+                    Text(pair.1).lineLimit(1).fixedSize()
                 }
             }
-            Spacer()
+            Spacer(minLength: 0)
         }
         .font(TypeScale.meta).foregroundStyle(t.inkSecondary)
-        .padding(.horizontal, 26).padding(.vertical, 8)
+        .padding(.horizontal, 22).padding(.vertical, 8)
     }
 }
