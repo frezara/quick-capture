@@ -245,3 +245,62 @@ final class TodosKeyRoutingTests: XCTestCase {
         XCTAssertEqual(model.visible.map(\.title), ["hinge !!!"])
     }
 }
+
+/// Notes and Saved links through real key events over a temp inbox; copies
+/// go to a private pasteboard.
+@MainActor
+final class NotesLinksKeyRoutingTests: XCTestCase {
+    private func press(_ panel: NSWindow, _ chars: String, _ code: UInt16,
+                       _ modifiers: NSEvent.ModifierFlags = []) throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: modifiers,
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code))
+            if modifiers.isEmpty || type == .keyUp || !panel.performKeyEquivalent(with: event) { panel.sendEvent(event) }
+        }
+    }
+
+    func testNotesNewestFirstAndCopy_LinksCopyAndEditor() async throws {
+        let folder = FileManager.default.temporaryDirectory.appendingPathComponent("NotesKeys-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: folder) }
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        let inbox = folder.appendingPathComponent("inbox.md")
+        try """
+        # Inbox
+
+        ## Notes
+        - [ ] Boiler service ➕ 2026-10-15 09:00
+          Pressure drops overnight.
+        - [ ] Brunch with Sam ➕ 2026-10-17 12:40
+
+        ## Links
+        - [ ] Cotswold Way https://www.nationaltrail.co.uk/cotswold #bookmark ➕ 2026-10-17 11:05
+        """.write(to: inbox, atomically: true, encoding: .utf8)
+        let board = NSPasteboard(name: .init("qc-tests-\(UUID().uuidString)"))
+        defer { board.releaseGlobally() }
+
+        let panel = MainPanel(appState: AppState(), onSubmit: { _, _, _ in true }, onDismiss: {})
+        panel.dailyFolderOverride = folder.appendingPathComponent("daily")
+        panel.pasteboard = board
+        defer { panel.orderOut(nil) }
+        panel.openWorkspace(.notes)
+        let model = panel.workspaceModel
+        let items = WorkspaceItem.parse(try String(contentsOf: inbox, encoding: .utf8), file: inbox, metadata: [:])
+        model.useFixedItems(items, sources: [])
+        try await Task.sleep(nanoseconds: 300_000_000)
+
+        XCTAssertEqual(model.visible.map(\.title).map { $0.components(separatedBy: " ➕").first! }, ["Brunch with Sam", "Boiler service"])
+        try press(panel, "\u{F701}", 125)                    // ↓
+        try press(panel, "c", 8, .command)                    // ⌘C
+        XCTAssertEqual(board.string(forType: .string), "Boiler service ➕ 2026-10-15 09:00\n  Pressure drops overnight.")
+
+        panel.openWorkspace(.links)
+        model.useFixedItems(items, sources: [])
+        try await Task.sleep(nanoseconds: 200_000_000)
+        XCTAssertEqual(model.visible.count, 1)
+        try press(panel, "c", 8)
+        XCTAssertEqual(board.string(forType: .string), "https://www.nationaltrail.co.uk/cotswold")
+        try press(panel, "e", 14)
+        XCTAssertTrue(panel.editorOpen, "E opens the link's item in the editor")
+    }
+}
