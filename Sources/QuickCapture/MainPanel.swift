@@ -48,7 +48,7 @@ final class MainPanel: NSPanel {
 
     private(set) var editorOpen = false
     private(set) var workspaceOpen = false
-    private lazy var workspaceModel = WorkspaceModel(appState: appState)
+    private(set) lazy var workspaceModel = WorkspaceModel(appState: appState)
     private var workspaceHost: NSHostingView<WorkspaceView>?
 
     /// True while the screenshot picker takeover surface is shown (a large
@@ -1003,10 +1003,30 @@ final class MainPanel: NSPanel {
         guard workspaceOpen, workspaceModel.destination == .calendar else { return false }
         let textView = firstResponder as? NSTextView
         let editingText = textView?.isEditable == true && textView?.isHiddenOrHasHiddenAncestor == false
-        guard let mode = CalendarLayout.mode(for: event.charactersIgnoringModifiers ?? "",
+        let model = workspaceModel
+        guard let command = CalendarLayout.command(key: event.charactersIgnoringModifiers ?? "",
+            keyCode: event.keyCode,
             hasModifiers: !event.modifierFlags.intersection([.command, .option, .control]).isEmpty,
-            editingText: editingText) else { return false }
-        workspaceModel.calendarMode = mode
+            editingText: editingText, mode: model.calendarMode,
+            hasSelectedEvent: model.selectedEventID != nil) else { return false }
+        switch command {
+        case .mode(let mode): model.calendarMode = mode
+        case .today: model.date = Date()
+        case .moveDays(let offset): model.moveDays(offset)
+        case .stepEvent(let offset): model.stepEvent(offset)
+        case .deselect: model.selectedEventID = nil
+        case .newEvent:
+            model.prepareNewEvent()
+            closeWorkspace()
+        case .open:
+            if model.calendarMode != .day {
+                model.calendarMode = .day
+            } else if let item = model.selectedEvent, item.file == model.captureFile {
+                openEditor()
+            } else {
+                return false
+            }
+        }
         return true
     }
 

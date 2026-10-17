@@ -51,6 +51,37 @@ enum CalendarLayout {
         return segments
     }
 
+    /// What a key does in the calendar. One table, so the keyboard model is
+    /// testable without a window: letters switch view or act, ← → move a day,
+    /// ↑ ↓ move a week in month view and step through the day's events
+    /// elsewhere, Enter opens, Esc first lets go of a selected event.
+    enum Command: Equatable {
+        case mode(WorkspaceCalendarMode)
+        case today, newEvent, open, deselect
+        case moveDays(Int)
+        case stepEvent(Int)
+    }
+
+    static func command(key: String, keyCode: UInt16, hasModifiers: Bool, editingText: Bool,
+                        mode current: WorkspaceCalendarMode, hasSelectedEvent: Bool) -> Command? {
+        guard !hasModifiers, !editingText else { return nil }
+        if let mode = mode(for: key, hasModifiers: false, editingText: false) { return .mode(mode) }
+        switch keyCode {
+        case 123: return .moveDays(-1)
+        case 124: return .moveDays(1)
+        case 126: return current == .month ? .moveDays(-7) : .stepEvent(-1)
+        case 125: return current == .month ? .moveDays(7) : .stepEvent(1)
+        case 36, 76: return .open
+        case 53: return hasSelectedEvent ? .deselect : nil
+        default: break
+        }
+        switch key.lowercased() {
+        case "t": return .today
+        case "n": return .newEvent
+        default: return nil
+        }
+    }
+
     static func mode(for key: String, hasModifiers: Bool, editingText: Bool) -> WorkspaceCalendarMode? {
         guard !hasModifiers, !editingText else { return nil }
         switch key.lowercased() {

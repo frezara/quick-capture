@@ -149,3 +149,88 @@ final class WorkspaceProjectionTests: XCTestCase {
         XCTAssertEqual(projection([dated, done, task, finished], destination: .todos).visible.map(\.id), ["task"])
     }
 }
+
+final class CalendarKeyboardTests: XCTestCase {
+    private func command(_ key: String = "", code: UInt16 = 0, mode: WorkspaceCalendarMode = .month,
+                         selected: Bool = false, modifiers: Bool = false, editing: Bool = false) -> CalendarLayout.Command? {
+        CalendarLayout.command(key: key, keyCode: code, hasModifiers: modifiers, editingText: editing,
+                               mode: mode, hasSelectedEvent: selected)
+    }
+
+    func testLettersSwitchViewAndAct() {
+        XCTAssertEqual(command("d"), .mode(.day))
+        XCTAssertEqual(command("W"), .mode(.week))
+        XCTAssertEqual(command("m"), .mode(.month))
+        XCTAssertEqual(command("t"), .today)
+        XCTAssertEqual(command("n"), .newEvent)
+    }
+
+    func testSidewaysArrowsMoveADayInEveryView() {
+        for mode in WorkspaceCalendarMode.allCases {
+            XCTAssertEqual(command(code: 123, mode: mode), .moveDays(-1))
+            XCTAssertEqual(command(code: 124, mode: mode), .moveDays(1))
+        }
+    }
+
+    func testVerticalArrowsMoveAWeekInMonthAndStepEventsElsewhere() {
+        XCTAssertEqual(command(code: 126, mode: .month), .moveDays(-7))
+        XCTAssertEqual(command(code: 125, mode: .month), .moveDays(7))
+        XCTAssertEqual(command(code: 126, mode: .week), .stepEvent(-1))
+        XCTAssertEqual(command(code: 125, mode: .day), .stepEvent(1))
+    }
+
+    func testEnterOpensAndEscOnlyClaimedWhileAnEventIsSelected() {
+        XCTAssertEqual(command(code: 36), .open)
+        XCTAssertEqual(command(code: 76), .open)
+        XCTAssertEqual(command(code: 53, selected: true), .deselect)
+        XCTAssertNil(command(code: 53, selected: false), "Esc falls through to closing the workspace")
+    }
+
+    func testTypingAndChordsAreLeftAlone() {
+        XCTAssertNil(command("t", editing: true))
+        XCTAssertNil(command(code: 124, editing: true))
+        XCTAssertNil(command("n", modifiers: true))
+    }
+
+    func testWeekRangeNamesTheMonthOnceOrTwice() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = .current
+        let day = { (m: Int, d: Int) in cal.date(from: DateComponents(year: 2026, month: m, day: d))! }
+        XCTAssertTrue(NativeCalendarView.rangeText(day(10, 12), day(10, 18), calendar: cal).hasPrefix("12 to "))
+        XCTAssertFalse(NativeCalendarView.rangeText(day(9, 28), day(10, 4), calendar: cal).hasPrefix("28 to "))
+    }
+
+    func testTimelineOpensTwoHoursBeforeNowOnlyWhenTodayIsShown() {
+        var cal = Calendar(identifier: .gregorian); cal.timeZone = .current
+        let now = cal.date(from: DateComponents(year: 2026, month: 10, day: 17, hour: 7, minute: 40))!
+        let today = cal.startOfDay(for: now)
+        let lastWeek = cal.date(byAdding: .day, value: -7, to: today)!
+        XCTAssertEqual(NativeCalendarView.firstVisibleHour(days: [today], now: now, calendar: cal), 5)
+        XCTAssertEqual(NativeCalendarView.firstVisibleHour(days: [lastWeek], now: now, calendar: cal), 8)
+    }
+}
+
+@MainActor
+final class CalendarSelectionTests: XCTestCase {
+    func testStepEventEntersAtTheEndsAndStopsThere() {
+        let model = WorkspaceModel.preview(destination: .calendar, calendarMode: .day)
+        model.date = Date()
+        let ids = model.eventsOnSelectedDay.map(\.id)
+        XCTAssertGreaterThanOrEqual(ids.count, 2)
+        model.stepEvent(1)
+        XCTAssertEqual(model.selectedEventID, ids.first)
+        model.stepEvent(-1)
+        XCTAssertEqual(model.selectedEventID, ids.first, "↑ on the first event stays put")
+        model.selectedEventID = nil
+        model.stepEvent(-1)
+        XCTAssertEqual(model.selectedEventID, ids.last)
+    }
+
+    func testMovingOffTheEventsDayLetsGoOfIt() {
+        let model = WorkspaceModel.preview(destination: .calendar, calendarMode: .day)
+        model.date = Date()
+        model.stepEvent(1)
+        XCTAssertNotNil(model.selectedEventID)
+        model.moveDays(5)
+        XCTAssertNil(model.selectedEventID)
+    }
+}

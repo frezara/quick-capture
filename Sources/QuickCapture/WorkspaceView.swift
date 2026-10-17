@@ -16,7 +16,7 @@ struct WorkspaceView: View {
                 ProjectsView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.destination == .calendar {
-                NativeCalendarView(model: model, onCapture: onCapture)
+                NativeCalendarView(model: model, onCapture: onCapture, onEditor: onEditor)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
                 VStack(alignment: .leading, spacing: Metrics.s3) {
@@ -38,54 +38,44 @@ struct WorkspaceView: View {
         .onAppear { model.refresh() }
     }
 
+    /// Icon-only rail. Each icon names itself and its shortcut on hover and to
+    /// VoiceOver; the current page takes the accent wash (accent = interaction).
     private var sidebar: some View {
-        VStack(alignment: .leading, spacing: 2) {
-            Text("Quick Capture")
-                .font(Typeface.ui(13, .semibold))
-                .foregroundStyle(t.ink)
-                .padding(.horizontal, Metrics.s2)
-                .padding(.bottom, Metrics.s3)
-            sidebarRow(title: "Capture", symbol: "plus.circle", glyphs: "⌥⌘P", selected: false, action: onCapture)
-                .help("Return to capture · ⌥⌘P")
-            t.border.frame(height: 0.5).padding(.vertical, Metrics.s2)
+        VStack(spacing: 6) {
+            railButton(title: "Capture", symbol: "plus.circle", glyphs: "⌥⌘P", selected: false,
+                       tint: t.accent, action: onCapture)
+            t.border.frame(width: 28, height: 1).padding(.vertical, 4)
             ForEach([WorkspaceDestination.calendar, .projects, .todos, .notes, .links]) { destination in
-                sidebarRow(title: destination.title, symbol: destination.symbol,
+                railButton(title: destination.title, symbol: destination.symbol,
                            glyphs: destination.action.chord.displayGlyphs,
                            selected: model.destination == destination) { model.navigate(destination) }
             }
             Spacer()
-            sidebarRow(title: "Editor", symbol: "doc.text", glyphs: "⌥⌘I", selected: false, action: onEditor)
-                .help("Edit your inbox · ⌥⌘I")
+            railButton(title: "Editor", symbol: "square.and.pencil", glyphs: "⌥⌘I", selected: false, action: onEditor)
         }
-        .padding(Metrics.s3).frame(width: 220).frame(maxHeight: .infinity)
+        .padding(.top, 22).padding(.bottom, 14)
+        .frame(width: 64).frame(maxHeight: .infinity)
         .background(t.surfaceRail)
     }
 
-    /// Selection is interaction, so it takes the accent wash (ADR-0005).
-    private func sidebarRow(title: String, symbol: String, glyphs: String, selected: Bool,
-                            action: @escaping () -> Void) -> some View {
+    private func railButton(title: String, symbol: String, glyphs: String, selected: Bool,
+                            tint: Color? = nil, action: @escaping () -> Void) -> some View {
         Button(action: action) {
-            HStack(spacing: Metrics.s2) {
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(selected ? t.accentInk : t.inkSecondary)
-                    .frame(width: 16)
-                Text(title)
-                    .font(Typeface.ui(12, selected ? .medium : .regular))
-                    .foregroundStyle(selected ? t.accentInk : t.ink)
-                    .lineLimit(1)
-                    .layoutPriority(1)
-                Spacer(minLength: 0)
-                Keycap(text: glyphs, t: t)
-            }
-            .padding(.horizontal, Metrics.s2)
-            .padding(.vertical, 7)
-            .background(
-                RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-                    .fill(selected ? t.accentSoft : .clear)
-            )
-            .contentShape(Rectangle())
-        }.buttonStyle(.plain)
+            Image(systemName: symbol)
+                .font(.system(size: 16, weight: .regular))
+                .foregroundStyle(selected ? t.accent : (tint ?? t.inkSecondary))
+                .frame(width: 40, height: 40)
+                .background(
+                    RoundedRectangle(cornerRadius: Metrics.radiusWell, style: .continuous)
+                        .fill(selected ? t.accentSoft : .clear)
+                )
+                .contentShape(Rectangle())
+        }
+        .buttonStyle(.plain)
+        .help("\(title)  \(glyphs)")
+        .accessibilityLabel(title)
+        .accessibilityHint("Shortcut \(glyphs)")
+        .accessibilityAddTraits(selected ? .isSelected : [])
     }
 
     private var library: some View {
