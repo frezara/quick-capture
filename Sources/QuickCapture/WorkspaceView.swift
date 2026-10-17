@@ -15,6 +15,7 @@ struct WorkspaceView: View {
     var onItemPlan: (WorkspaceItem) -> Void = { _ in }
     var onItemCopy: (WorkspaceItem) -> Void = { _ in }
     var onLinkOpen: (WorkspaceItem) -> Void = { _ in }
+    var onFileOpen: (URL) -> Void = { _ in }
     @Environment(\.colorScheme) private var scheme
     private var t: Theme { scheme == .dark ? .dark : .light }
 
@@ -42,7 +43,7 @@ struct WorkspaceView: View {
                 NativeCalendarView(model: model, onCapture: onCapture, onEditor: onEditor)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else {
-                ProjectsView()
+                ProjectsView(store: model.projectStore, model: model, onOpen: onFileOpen)
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             }
         }

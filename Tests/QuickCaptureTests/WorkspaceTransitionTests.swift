@@ -304,3 +304,46 @@ final class NotesLinksKeyRoutingTests: XCTestCase {
         XCTAssertTrue(panel.editorOpen, "E opens the link's item in the editor")
     }
 }
+
+/// Projects' keys through real key events over a temp project registry.
+@MainActor
+final class ProjectsKeyRoutingTests: XCTestCase {
+    private func press(_ panel: NSWindow, _ chars: String, _ code: UInt16) throws {
+        for type in [NSEvent.EventType.keyDown, .keyUp] {
+            let event = try XCTUnwrap(NSEvent.keyEvent(with: type, location: .zero, modifierFlags: [],
+                timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: panel.windowNumber, context: nil,
+                characters: chars, charactersIgnoringModifiers: chars, isARepeat: false, keyCode: code))
+            panel.sendEvent(event)
+        }
+    }
+
+    func testArrowsTabsAndOpen() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent("ProjectsKeys-\(UUID().uuidString)")
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let store = ProjectStore(root: root.appendingPathComponent("registry"))
+        let garden = try store.create(parent: root, name: "Garden")
+        let kitchen = try store.create(parent: root, name: "Kitchen")
+
+        let panel = MainPanel(appState: AppState(), onSubmit: { _, _, _ in true }, onDismiss: {})
+        panel.dailyFolderOverride = root.appendingPathComponent("daily")
+        let model = panel.workspaceModel
+        model.projectStore = store
+        defer { panel.orderOut(nil) }
+        panel.openWorkspace(.projects)
+        model.useFixedItems([], sources: [])
+        try await Task.sleep(nanoseconds: 400_000_000)
+
+        model.projectSelection = garden.id
+        try press(panel, "\u{F701}", 125)                     // ↓
+        XCTAssertEqual(model.projectSelection, kitchen.id)
+        try press(panel, "2", 19)
+        XCTAssertEqual(model.projectTab, .tasks)
+        try press(panel, "3", 20)
+        XCTAssertEqual(model.projectTab, .markdown)
+        try press(panel, "1", 18)
+        XCTAssertEqual(model.projectTab, .overview)
+        try press(panel, "\r", 36)
+        XCTAssertTrue(panel.editorOpen, "Enter opens the project's inbox.md in the editor")
+    }
+}

@@ -539,7 +539,8 @@ final class MainPanel: NSPanel {
                 onItemTick: { [weak self] item in self?.tickItem(item) },
                 onItemPlan: { [weak self] item in self?.planItemForToday(item) },
                 onItemCopy: { [weak self] item in self?.copyItem(item) },
-                onLinkOpen: { [weak self] item in self?.openLink(item) }))
+                onLinkOpen: { [weak self] item in self?.openLink(item) },
+                onFileOpen: { [weak self] url in self?.openFileInEditor(url) }))
             host.frame = container.bounds
             host.autoresizingMask = [.width, .height]
             container.addSubview(host)
@@ -594,9 +595,37 @@ final class MainPanel: NSPanel {
 
     /// Opens the item in the editor, in its own file, at its line.
     private func openItemInEditor(_ item: WorkspaceItem) {
-        editorFileOverride = item.file == appState.captureFileURL ? nil : item.file
-        pendingRevealLine = item.line
+        openFileInEditor(item.file, line: item.line)
+    }
+
+    private func openFileInEditor(_ url: URL, line: Int? = nil) {
+        editorFileOverride = url == appState.captureFileURL ? nil : url
+        pendingRevealLine = line
         openEditor()
+    }
+
+    /// Projects: ↑ ↓ choose a project, 1 2 3 its tab, ↵ opens its inbox.md in
+    /// the editor. Nothing is taken while a field or the Markdown tab has the
+    /// keyboard.
+    private func handleProjectsKey(_ event: NSEvent) -> Bool {
+        guard workspaceOpen, workspaceModel.destination == .projects,
+              (firstResponder as? NSTextView)?.isEditable != true,
+              event.modifierFlags.intersection([.command, .option, .control, .shift]).isEmpty else { return false }
+        let model = workspaceModel
+        let projects = model.projectStore.projects
+        switch event.keyCode {
+        case 126: model.stepProject(-1, ids: projects.map(\.id)); return true
+        case 125: model.stepProject(1, ids: projects.map(\.id)); return true
+        case 36, 76:
+            guard let project = projects.first(where: { $0.id == model.projectSelection }) else { return false }
+            openFileInEditor(project.file)
+            return true
+        default: break
+        }
+        guard let digit = event.charactersIgnoringModifiers.flatMap(Int.init), (1...ProjectTab.allCases.count).contains(digit)
+        else { return false }
+        model.projectTab = ProjectTab.allCases[digit - 1]
+        return true
     }
 
     /// Ticks or unticks the item in its file with the ticked-parent rule. The
@@ -1337,6 +1366,7 @@ final class MainPanel: NSPanel {
         if handleTodayKey(event) { return }
         if handleAgendaKey(event) { return }
         if handleLibraryKey(event) { return }
+        if handleProjectsKey(event) { return }
         if handleCalendarViewKey(event) { return }
         super.keyDown(with: event)
     }
@@ -1351,6 +1381,7 @@ final class MainPanel: NSPanel {
         if handleTodayKey(event) { return true }
         if handleAgendaKey(event) { return true }
         if handleLibraryKey(event) { return true }
+        if handleProjectsKey(event) { return true }
         if handleCalendarViewKey(event) { return true }
         // Also handle the summon chord locally while the workspace owns focus.
         // Carbon remains responsible for summoning from other applications.
