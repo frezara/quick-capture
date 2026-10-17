@@ -21,21 +21,22 @@ private struct SettingsForm: View {
         // this the window was pinned to 360pt and everything past Advanced was
         // unreachable (#116).
         ScrollView {
-            VStack(alignment: .leading, spacing: Metrics.s3) {
-                Text("Settings").font(TypeScale.h1).foregroundStyle(t.ink)
-                Text("A small tool, fitted to your workflow.").font(Typeface.ui(11)).foregroundStyle(t.inkSecondary)
+            VStack(alignment: .leading, spacing: Metrics.s4) {
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Settings").font(Typeface.ui(26, .bold)).tracking(-0.4).foregroundStyle(t.ink)
+                    Text("Changes save as you make them.").font(Typeface.ui(13)).foregroundStyle(t.inkSecondary)
+                }
                 generalCard
                 captureFileCard
                 captureBoxCard
-                editorCard
                 refileTargetsSection
                 OrganiserSettingsView()
                 DisclosureGroup("Legacy development spool") { HandoffSettingsView() }
             }
-            .padding(Metrics.s4)
+            .padding(.horizontal, 30).padding(.vertical, 28)
             .frame(width: 680)
         }
-        .background(t.surface)
+        .background(t.sunken)
         .tint(t.accent)
         // Login Items can be changed in System Settings while this is open.
         .onAppear { loginEnabled = SMAppService.mainApp.status == .enabled }
@@ -48,19 +49,17 @@ private struct SettingsForm: View {
     // system option — it was where the leftovers went (#116).
 
     private var generalCard: some View {
-        settingsCard("GENERAL") {
+        settingsCard("General") {
             settingsRow(
-                label: "Global hotkey",
-                note: "Click, press your combo, Esc cancels. Needs ⌃⌥⇧⌘.",
-                symbol: "command"
+                label: "Capture shortcut",
+                note: "Summons the capture box from anywhere. Click it, then press the new keys; Esc cancels."
             ) {
                 KeyRecorderView(hotKey: $appState.hotKey)
             }
             rowDivider
             settingsRow(
-                label: "Launch at Login",
-                note: "Open Quick Capture automatically when you log in.",
-                symbol: "power"
+                label: "Open at login",
+                note: nil
             ) {
                 settingsToggle(launchAtLoginBinding)
             }
@@ -68,8 +67,8 @@ private struct SettingsForm: View {
     }
 
     private var captureFileCard: some View {
-        settingsCard("CAPTURE FILE") {
-            settingsRow(label: "Path", note: nil, symbol: "doc.text") {
+        settingsCard("Capture file") {
+            settingsRow(label: "File", note: nil) {
                 HStack(spacing: Metrics.s2) {
                     TextField("", text: $appState.captureFilePath)
                         .textFieldStyle(.plain)
@@ -83,9 +82,8 @@ private struct SettingsForm: View {
             }
             rowDivider
             settingsRow(
-                label: "Append timestamp to each capture",
-                note: "Obsidian Tasks `\(FileWriter.createdMarker) YYYY-MM-DD HH:MM` marker.",
-                symbol: "clock"
+                label: "Add the time to each capture",
+                note: "Writes Obsidian Tasks’ `\(FileWriter.createdMarker) YYYY-MM-DD HH:MM` after the text."
             ) {
                 settingsToggle($appState.includeTimestamp)
             }
@@ -93,11 +91,11 @@ private struct SettingsForm: View {
     }
 
     private var captureBoxCard: some View {
-        settingsCard("CAPTURE BOX") {
+        settingsCard("Capture box and editor") {
             // The sample is the row's own second line, rendered in the chosen
             // face — it was a separate row with its own icon square, which read
             // as a second setting (#116).
-            settingsRow(label: "Input font", symbol: "textformat") {
+            settingsRow(label: "Input font") {
                 Text("What needs doing?")
                     .font(appState.captureFontDesign.font(size: 13))
                     .foregroundStyle(t.inkSecondary)
@@ -108,15 +106,10 @@ private struct SettingsForm: View {
                 .labelsHidden()
                 .frame(width: 180)
             }
-        }
-    }
-
-    private var editorCard: some View {
-        settingsCard("EDITOR") {
+            rowDivider
             settingsRow(
-                label: "Vim keybindings",
-                note: "When off, standard editing. ⌥⌘I still toggles the editor.",
-                symbol: "terminal"
+                label: "Vim keys in the editor",
+                note: "When off, the editor uses standard editing keys. ⌥⌘I still switches to it."
             ) {
                 settingsToggle($appState.vimEnabled)
             }
@@ -128,12 +121,11 @@ private struct SettingsForm: View {
     /// row needs an icon square it has no business having.
     private var refileTargetsSection: some View {
         VStack(alignment: .leading, spacing: Metrics.s2) {
-            settingsCard("REFILE TARGETS") {
+            settingsCard("Refile targets") {
                 if appState.refileTargets.isEmpty {
                     settingsRow(
                         label: "No targets yet",
-                        note: "⌥⌘U in the editor files the item under your cursor into a target's `inbox.md`.",
-                        symbol: "folder"
+                        note: "⌥⌘U in the editor files the item under your cursor into a target's `inbox.md`."
                     ) { EmptyView() }
                 } else {
                     // Identity is the folder path, not the position, so a label
@@ -144,14 +136,20 @@ private struct SettingsForm: View {
                     }
                 }
             }
-            Button("Add Folder…", action: addRefileTarget)
-                .buttonStyle(GhostButtonStyle(t: t))
-                .padding(.leading, 2)
+            HStack(spacing: 10) {
+                Button("Add folder…", action: addRefileTarget)
+                    .buttonStyle(GhostButtonStyle(t: t))
+                if appState.refileTargets.count > 1 {
+                    Text("Drag to reorder. ⌥⌘U lists them in this order.")
+                        .font(TypeScale.meta).foregroundStyle(t.inkSecondary)
+                }
+            }
+            .padding(.leading, 2)
         }
     }
 
     private var rowDivider: some View {
-        t.border.frame(height: 0.5).padding(.leading, 50)
+        t.hairline.frame(height: 1)
     }
 
     private func settingsToggle(_ isOn: Binding<Bool>) -> some View {
@@ -167,13 +165,14 @@ private struct SettingsForm: View {
         _ title: String,
         @ViewBuilder content: () -> Content
     ) -> some View {
-        VStack(alignment: .leading, spacing: Metrics.s1) {
+        VStack(alignment: .leading, spacing: 8) {
             Text(title)
-                .font(TypeScale.caption)
-                .tracking(Tracking.caption)
+                .font(Typeface.ui(13, .bold))
                 .foregroundStyle(t.inkSecondary)
+                .accessibilityAddTraits(.isHeader)
             VStack(spacing: 0) { content() }
-                .groupedSurface(t)
+                .background(t.surface, in: RoundedRectangle(cornerRadius: Metrics.radiusWell))
+                .overlay(RoundedRectangle(cornerRadius: Metrics.radiusWell).strokeBorder(t.border, lineWidth: 1))
         }
     }
 
@@ -184,13 +183,12 @@ private struct SettingsForm: View {
     private func settingsRow<Control: View>(
         label: String,
         note: String?,
-        symbol: String? = nil,
         @ViewBuilder control: () -> Control
     ) -> some View {
-        settingsRow(label: label, symbol: symbol) {
+        settingsRow(label: label) {
             if let note {
                 Text(.init(note))
-                    .font(TypeScale.caption)
+                    .font(TypeScale.meta)
                     .foregroundStyle(t.inkSecondary)
                     .fixedSize(horizontal: false, vertical: true)
             }
@@ -203,17 +201,13 @@ private struct SettingsForm: View {
     /// a note, or the live font sample.
     private func settingsRow<Secondary: View, Control: View>(
         label: String,
-        symbol: String? = nil,
         @ViewBuilder secondary: () -> Secondary,
         @ViewBuilder control: () -> Control
     ) -> some View {
         HStack(alignment: .center, spacing: Metrics.s2) {
-            if let symbol {
-                settingsIcon(symbol)
-            }
-            VStack(alignment: .leading, spacing: 3) {
+            VStack(alignment: .leading, spacing: 2) {
                 Text(label)
-                    .font(Typeface.ui(12, .medium))
+                    .font(Typeface.ui(13.5, .medium))
                     .foregroundStyle(t.ink)
                 secondary()
             }
@@ -221,18 +215,7 @@ private struct SettingsForm: View {
             control()
         }
         .padding(.horizontal, Metrics.s3)
-        .padding(.vertical, Metrics.s2)
-    }
-
-    private func settingsIcon(_ symbol: String) -> some View {
-        RoundedRectangle(cornerRadius: Metrics.radiusChip, style: .continuous)
-            .fill(t.accentSoft)
-            .frame(width: 25, height: 25)
-            .overlay(
-                Image(systemName: symbol)
-                    .font(.system(size: 12, weight: .semibold))
-                    .foregroundStyle(t.accentInk)
-            )
+        .padding(.vertical, 12)
     }
 
     // MARK: - Refile targets
@@ -240,13 +223,16 @@ private struct SettingsForm: View {
     private func refileTargetRow(_ binding: Binding<RefileTarget>) -> some View {
         let target = binding.wrappedValue
         return HStack(alignment: .center, spacing: Metrics.s2) {
-            settingsIcon("folder")
-            VStack(alignment: .leading, spacing: 3) {
+            Image(systemName: "line.3.horizontal")
+                .font(.system(size: 11, weight: .semibold))
+                .foregroundStyle(t.inkTertiary)
+                .help("Drag to reorder")
+            VStack(alignment: .leading, spacing: 2) {
                 Text(target.displayName)
-                    .font(Typeface.ui(12, .medium))
+                    .font(Typeface.ui(13.5, .medium))
                     .foregroundStyle(t.ink)
-                Text(target.path)
-                    .font(TypeScale.caption)
+                Text(target.path.replacingOccurrences(of: NSHomeDirectory(), with: "~"))
+                    .font(Typeface.mono(11.5))
                     .foregroundStyle(t.inkSecondary)
                     .truncationMode(.head)
                     .lineLimit(1)
@@ -268,37 +254,28 @@ private struct SettingsForm: View {
                         .fill(t.surfaceField)
                 )
 
-            // Reorder and remove read as chrome, not as actions competing with
-            // the accent — the accent means interaction elsewhere (ADR-0005).
-            HStack(spacing: 2) {
-                reorderButton("chevron.up", enabled: target.id != appState.refileTargets.first?.id) {
-                    appState.refileTargets = RefileTarget.moving(target.id, by: -1, in: appState.refileTargets)
-                }
-                reorderButton("chevron.down", enabled: target.id != appState.refileTargets.last?.id) {
-                    appState.refileTargets = RefileTarget.moving(target.id, by: 1, in: appState.refileTargets)
-                }
-            }
-            Button { appState.refileTargets.removeAll { $0.id == target.id } } label: {
-                Image(systemName: "xmark")
-                    .font(.system(size: 10, weight: .semibold))
-            }
-            .buttonStyle(.plain)
-            .foregroundStyle(t.inkSecondary)
-            .help("Remove this refile target")
+            Button("Remove") { appState.refileTargets.removeAll { $0.id == target.id } }
+                .buttonStyle(GhostButtonStyle(t: t))
+                .help("Remove this refile target")
         }
         .padding(.horizontal, Metrics.s3)
-        .padding(.vertical, Metrics.s2)
-    }
-
-    private func reorderButton(_ symbol: String, enabled: Bool, action: @escaping () -> Void) -> some View {
-        Button(action: action) {
-            Image(systemName: symbol)
-                .font(.system(size: 10, weight: .semibold))
-                .frame(width: 16, height: 14)
+        .padding(.vertical, 10)
+        .background(t.surface)
+        // Reorder by dragging a row onto another; a row's identity is its
+        // folder path. VoiceOver and keyboard users get the same moves as
+        // actions.
+        .draggable(target.id)
+        .dropDestination(for: String.self) { ids, _ in
+            guard let id = ids.first else { return false }
+            appState.refileTargets = RefileTarget.moving(id, to: target.id, in: appState.refileTargets)
+            return true
         }
-        .buttonStyle(.plain)
-        .foregroundStyle(enabled ? t.inkSecondary : t.inkSecondary.opacity(0.5))
-        .disabled(!enabled)
+        .accessibilityAction(named: "Move up") {
+            appState.refileTargets = RefileTarget.moving(target.id, by: -1, in: appState.refileTargets)
+        }
+        .accessibilityAction(named: "Move down") {
+            appState.refileTargets = RefileTarget.moving(target.id, by: 1, in: appState.refileTargets)
+        }
     }
 
     private func addRefileTarget() {
