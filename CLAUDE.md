@@ -5,7 +5,7 @@ Project hand-off doc for Claude Code. Read this first.
 ## What this is
 
 **Quick Capture** is a personal macOS menu bar app. A single floating
-`NSPanel` (`MainPanel`) hosts two surfaces and animates between them:
+`NSPanel` (`MainPanel`) hosts three surfaces and animates between them:
 
 1. **Capture mode** — global hotkey (default `⌥⌘P`) summons a small floating
    box. Type a thought, hit Enter, it's appended as `- [ ] <text>` to
@@ -19,11 +19,16 @@ Project hand-off doc for Claude Code. Read this first.
    file-watcher reload. The editor is headerless — its bottom status bar carries
    the filename, vim mode, and item count. `⌥⌘I` crossfades back to the capture
    box.
+3. **Workspace** — native SwiftUI views behind an icon rail, `⌥⌘1`–`⌥⌘7` in
+   rail order: **Today** (the day's schedule beside the editor on that day's
+   daily note), **Agenda** (seven days of events and reminders, then open todos
+   from every inbox), Todos, Calendar, Projects, Notes, Saved links.
 
-The two are **mutually-exclusive modes** — only one surface is ever on screen
-(see ADR-0004). One window, one file (always the capture file). The editor's web
-view stays warm across mode switches, so toggling is instant and preserves
-cursor/scroll. Typed-but-unsaved capture text is preserved when you ⌥⌘I into the
+They are **mutually-exclusive modes** — only one surface is ever on screen
+(see ADR-0004). One window. Editor mode opens the capture file; Today shows a
+daily note in the same editor, and Agenda can open an item's own file
+(`CONTEXT.md`). The editor's web view stays warm across mode switches, so
+toggling is instant and preserves cursor/scroll (remembered per file). Typed-but-unsaved capture text is preserved when you ⌥⌘I into the
 editor and back; it's only cleared on a full dismiss.
 
 LSUIElement app (no dock icon by default). Editor mode bumps the activation
@@ -57,10 +62,20 @@ Sources/QuickCapture/
   EventParser.swift                "#cal" NL → calendar event parser
   ICSWriter.swift                  Calendar event → temp .ics file
   TagColor.swift                   Tag-hue palette + TagHueAssignment (first-sight allocation)
+  WorkspaceModel.swift             Workspace destinations, item parsing, calendar/Agenda state
+  WorkspaceView.swift              Icon rail + the destination views
+  NativeCalendarView.swift         Calendar month/week/day; CalendarLayout.swift holds its key map
+  TodayView.swift                  Today: schedule panel + the slot the editor web view moves into
+  AgendaView.swift                 Agenda list, row and preview views
+  Agenda.swift                     AgendaSource (which inboxes) + AgendaProjection (the list)
+  DailyNote.swift                  daily/YYYY-MM-DD.md: scaffold, copy-forward rollover, ## Tasks insert
+  PlanForToday.swift               ⌥⌘U "Today": move an inbox subtree into today's note (refile order)
+  TickCascade.swift                Ticked-parent rule for ticks made outside the editor
   Assets.xcassets/                 Menu bar icon, app icon
 editor-web/
   package.json                     CodeMirror + esbuild deps
-  src/editor.ts                    The whole editor (~1000 lines): live preview, vim, priorities, sidebar
+  src/editor.ts                    The whole editor: live preview, vim, priorities, sidebar, daily-note mode
+  src/tick-cascade.ts              Ticked-parent rule for editor ticks (mirrored in TickCascade.swift)
   dist/                            Bundled HTML/JS shipped inside the .app (folder reference in project.yml)
 Tests/QuickCaptureTests/
   FileWriterTests.swift            Insertion + priority + archive behavior
@@ -70,6 +85,9 @@ Tests/QuickCaptureTests/
   RefileTargetTests.swift          Target persistence + effective-list filtering
   TagHueAssignmentTests.swift      First-sight hue allocation, stability, reuse past the palette
   ThemeContrastTests.swift         WCAG floor for hint text on the frosted panel + status bar
+  DailyNoteTests.swift             Daily notes, rollover, plan for today
+  AgendaTests.swift                Agenda projection + Swift tick cascade
+  WorkspaceTransitionTests.swift   Real key events through MainPanel (calendar, Today, Agenda)
   EventParserTests.swift
   ICSWriterTests.swift
 ```
@@ -144,7 +162,8 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   screenshot picker (both press-again toggles), ⌥⌘U refile — and the global
   summon ⌥⌘P. The summon shares the namespace visually but is a separate Carbon
   hotkey (`HotKeyConfig`), not a registry entry. (The pre-#92 ⌥⌘E/⌥⌘S/⌥⌘R are
-  unbound.)
+  unbound.) Workspace views are `⌥⌘1`–`⌥⌘7` in rail order; `⌥⌘;` switches
+  Today's focus between editor and schedule.
   `MainPanel.performKeyEquivalent` is a generic
   registry lookup; editor-local bindings are pushed into CodeMirror via
   `qcEditor.setKeymap` on boot. Adding a shortcut = one registry case + a
@@ -154,6 +173,17 @@ finds `editor.html` at runtime. **You must `npm run build` after editing
   so ⌥⌘I (not Escape) is the switch gesture; ⌘F opens CodeMirror's search
   panel (top-anchored, themed). ⌥⌘↓/⌥⌘↑ jump to the next/previous `##`
   section (vim: `]]` / `[[`, count- and operator-aware).
+- **Today and Agenda.** Today reparents the one warm `WKWebView` into a slot
+  in `TodayView` and back (`EditorContainerView.adopt`). Which file the editor
+  holds comes from `MainPanel.editorTargetURL`; `reconcileEditorFile` flushes,
+  saves the cursor/scroll of the old file, and loads the new one (creating
+  today's note, or showing an unsaved scaffold for other days). A daily note
+  puts the editor in daily mode (`qcEditor.setDailyNote`): no header, section
+  list or inspector, archive and organiser send off, Tasks/Log unhued. Today's
+  and Agenda's keys are gated on focus — **never** take plain keys while the web
+  view is first responder, it isn't an `NSTextView`. Tests must set
+  `MainPanel.dailyFolderOverride` (and `WorkspaceModel.useFixedItems` for
+  Agenda) so they never touch the real inbox or create real daily notes.
 - **Mode-aware dismiss.** `resignKey` only self-dismisses (click-away) in
   capture mode — the editor must survive losing focus so you can copy from
   other apps. `canBecomeMain` is true only in editor mode.
