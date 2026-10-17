@@ -3,10 +3,11 @@ import SwiftUI
 
 /// Native destinations share one panel. Saved filters are deferred.
 enum WorkspaceDestination: String, CaseIterable, Identifiable {
-    case todos, calendar, projects, notes, links
+    case today, todos, calendar, projects, notes, links
     var id: String { rawValue }
     var title: String {
         switch self {
+        case .today: return "Today"
         case .todos: return "Todos"
         case .calendar: return "Calendar"
         case .projects: return "Projects"
@@ -16,6 +17,7 @@ enum WorkspaceDestination: String, CaseIterable, Identifiable {
     }
     var symbol: String {
         switch self {
+        case .today: return "sun.max"
         case .todos: return "checklist"
         case .calendar: return "calendar"
         case .projects: return "folder"
@@ -25,6 +27,7 @@ enum WorkspaceDestination: String, CaseIterable, Identifiable {
     }
     var action: ShortcutAction {
         switch self {
+        case .today: return .showToday
         case .todos: return .showTodos
         case .calendar: return .showCalendar
         case .projects: return .showProjects
@@ -133,11 +136,11 @@ struct WorkspaceProjection {
             case .notes: return item.kind == "note"
             case .links: return item.kind == "bookmark" || item.url != nil
             case .projects: return project.map { item.projects.contains($0) } ?? !item.projects.isEmpty
-            case .calendar: return item.starts != nil && !item.completed
+            case .calendar, .today: return item.starts != nil && !item.completed
             }
         }.sorted { $0.priority == $1.priority ? $0.id < $1.id : $0.priority < $1.priority }
-        days = Self.days(around: date, mode: mode, calendar: calendar)
-        guard destination == .calendar else { eventsByDay = [:]; return }
+        days = Self.days(around: date, mode: destination == .today ? .day : mode, calendar: calendar)
+        guard destination == .calendar || destination == .today else { eventsByDay = [:]; return }
         let dated = visible.sorted { ($0.starts ?? .distantPast, $0.id) < ($1.starts ?? .distantPast, $1.id) }
         var byDay: [Date: [WorkspaceItem]] = [:]
         for day in days {
@@ -181,6 +184,12 @@ final class WorkspaceModel {
     }
     /// The event the arrows have landed on (or that was clicked), if any.
     var selectedEventID: String?
+    /// Today: true while the schedule panel, not the editor, has focus.
+    var scheduleFocused = false
+    /// The calendar day that was today when Today last checked, so crossing
+    /// midnight moves a Today that was showing today, and leaves a stepped-to
+    /// day alone.
+    @ObservationIgnored private var todayAnchor = Calendar.current.startOfDay(for: Date())
     var project: String? { didSet { recompute() } }
     var selectedID: String?
     private(set) var items: [WorkspaceItem] = [] { didSet { recompute() } }
@@ -279,6 +288,20 @@ final class WorkspaceModel {
 
     var selectedEvent: WorkspaceItem? {
         selectedEventID.flatMap { id in items.first { $0.id == id } }
+    }
+
+    var isShowingToday: Bool { Calendar.current.isDateInToday(date) }
+
+    /// Called whenever Today is shown or the panel regains focus. Returns true
+    /// when the day changed underneath it.
+    @discardableResult
+    func rollToTodayIfNeeded(now: Date = Date()) -> Bool {
+        let calendar = Calendar.current
+        let today = calendar.startOfDay(for: now)
+        defer { todayAnchor = today }
+        guard today != todayAnchor, selectedDay == todayAnchor else { return false }
+        date = now
+        return true
     }
 
     func moveDays(_ offset: Int) {

@@ -115,9 +115,16 @@ const darkPalette: Palette = {
 // Swift side exists, so headings render without their dot there.
 type TagHuePair = { light: string; dark: string };
 let tagHues: Record<string, TagHuePair> = {};
+/// True while the editor holds a daily note (Today). Daily notes stay local
+/// (ADR-0010) and keep their done items as the day's record, so archive and
+/// organiser sends are off.
+let dailyNote = false;
 
 function tagHue(name: string): string | null {
-    const pair = tagHues[name.trim().toLowerCase()];
+    const key = name.trim().toLowerCase();
+    // A daily note's own sections stay neutral, like Quick capture.
+    if (dailyNote && (key === "tasks" || key === "log")) return null;
+    const pair = tagHues[key];
     if (!pair) return null;
     return palette === darkPalette ? pair.dark : pair.light;
 }
@@ -753,6 +760,11 @@ function makeTheme() {
         paddingBottom: "33px",
         boxSizing: "border-box",
     },
+    // A daily note shown in Today: the panel around it is the native Today
+    // view, so the editor drops its own header, section list and inspector.
+    "&.qc-daily": { paddingTop: "0" },
+    "&.qc-daily .qc-workspace-header, &.qc-daily .qc-navigation, &.qc-daily .qc-inspector": { display: "none" },
+    "&.qc-daily .cm-scroller": { marginLeft: "0", marginRight: "0", width: "100%" },
     ".qc-workspace-header": { position: "absolute", top: "0", left: "0", right: "0", height: "50px", display: "flex", alignItems: "center", justifyContent: "space-between", padding: "0 16px", background: palette.surfaceRail, borderBottom: `1px solid ${palette.borderSoft}`, fontFamily: sansFamily, fontSize: "12px" },
     ".qc-workspace-header button, .qc-navigation button, .qc-inspector button": { fontFamily: sansFamily, fontSize: "12px", color: palette.soft, background: "transparent", border: "none", borderRadius: "6px", padding: "6px 10px", cursor: "pointer", textAlign: "left" },
     ".qc-workspace-header button:hover, .qc-navigation button:hover, .qc-inspector button:hover": { background: palette.surfaceField },
@@ -1345,6 +1357,10 @@ declare global {
             setContent: (content: string) => void;
             getContent: () => string;
             focus: () => void;
+            setDailyNote: (on: boolean) => void;
+            viewState: () => { anchor: number; head: number; scrollTop: number } | null;
+            restoreViewState: (s: { anchor: number; head: number; scrollTop: number }) => void;
+            cursorToSectionEnd: (name: string) => void;
             setFilename: (name: string) => void;
             setVimEnabled: (on: boolean) => void;
             flushSave: () => Promise<boolean>;
@@ -1492,6 +1508,7 @@ const appCommands: Record<string, (v: EditorView) => boolean> = {
 
 let archivePending = false;
 async function archiveCompleted() {
+    if (dailyNote) { if (view) showRefileToast(view, "Daily notes keep their done items."); return; }
     if (archivePending || !view || !canRunItemAction(view)) return;
     archivePending = true;
     try { if (await saveDocument() && view && canRunItemAction(view)) sendToSwift({ type: "archive" }); }
@@ -2109,6 +2126,7 @@ function toggleTaskCommand(view: EditorView): boolean {
 // `qcEditor.setFilename`; this is just the fallback before that lands.
 let filename = "inbox.md";
 
+
 /// Builds the bottom status bar once (mode pill · filename · item count · UTF-8)
 /// and returns it for updates.
 function ensureStatusBar(v: EditorView): HTMLDivElement {
@@ -2217,7 +2235,7 @@ function assignSourceID(v: EditorView, line: number, id: string) {
     v.dispatch({ effects: setIdentities.of(marks) });
 }
 async function sendOrganiser(v: EditorView, asNew: boolean) {
-    if (organiserSending) return;
+    if (organiserSending || dailyNote) return;
     organiserSending = true;
     try {
         let span = resolveSubtreeSpan(v.state, v.state.selection.main.head);
@@ -2639,6 +2657,7 @@ function mount(content: string) {
     });
 
     view = new EditorView({ state, parent });
+    view.dom.classList.toggle("qc-daily", dailyNote);
     attachVimModeListener(view);
     updateBadge(view);
     ensureSidebar(view);
@@ -2674,6 +2693,41 @@ window.qcEditor = {
     },
     getContent: () => view ? fileText(view.state) : "",
     focus: () => view?.focus(),
+    setDailyNote: (on: boolean) => {
+        dailyNote = on;
+        view?.dom.classList.toggle("qc-daily", on);
+    },
+    // Swift keeps one of these per file, so switching between the inbox and a
+    // daily note returns to where you were in each.
+    viewState: () => view ? {
+        anchor: view.state.selection.main.anchor,
+        head: view.state.selection.main.head,
+        scrollTop: view.scrollDOM.scrollTop,
+    } : null,
+    restoreViewState: (s: { anchor: number; head: number; scrollTop: number }) => {
+        if (!view || !s) return;
+        const max = view.state.doc.length;
+        view.dispatch({ selection: { anchor: Math.min(s.anchor, max), head: Math.min(s.head, max) } });
+        view.scrollDOM.scrollTop = s.scrollTop;
+    },
+    // Puts the cursor on the last non-blank line of `## <name>`, at its end.
+    cursorToSectionEnd: (name: string) => {
+        if (!view) return;
+        const doc = view.state.doc;
+        let heading = 0;
+        for (let n = 1; n <= doc.lines && !heading; n++) {
+            if (new RegExp(`^##\\s+${name}\\s*$`).test(doc.line(n).text)) heading = n;
+        }
+        if (!heading) return;
+        let last = heading;
+        for (let n = heading + 1; n <= doc.lines; n++) {
+            const text = doc.line(n).text;
+            if (/^#{1,2}\s/.test(text)) break;
+            if (text.trim() !== "") last = n;
+        }
+        const pos = doc.line(last).to;
+        view.dispatch({ selection: { anchor: pos }, scrollIntoView: true });
+    },
     setFilename: (name: string) => {
         filename = name || "inbox.md";
         if (view) updateBadge(view);

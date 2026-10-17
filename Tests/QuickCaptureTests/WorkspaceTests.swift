@@ -115,6 +115,13 @@ final class WorkspaceProjectionTests: XCTestCase {
         WorkspaceProjection(items: items, destination: destination, project: nil, date: at(date), mode: mode, calendar: calendar)
     }
 
+    func testTodayProjectsJustTheSelectedDayWhateverTheCalendarMode() {
+        let p = projection([item("a", start: "2026-10-15T09:00:00Z", end: "2026-10-15T10:00:00Z"),
+                            item("b", start: "2026-10-16T09:00:00Z")], destination: .today, mode: .month)
+        XCTAssertEqual(p.days, [at("2026-10-15T00:00:00Z")])
+        XCTAssertEqual(p.eventsByDay[at("2026-10-15T00:00:00Z")]?.map(\.id), ["a"])
+    }
+
     func testMonthGridStartsOnTheMondayBeforeTheFirstAndCoversWholeWeeks() {
         let days = projection([]).days
         XCTAssertEqual(days.first, at("2026-09-28T00:00:00Z"))
@@ -232,5 +239,32 @@ final class CalendarSelectionTests: XCTestCase {
         XCTAssertNotNil(model.selectedEventID)
         model.moveDays(5)
         XCTAssertNil(model.selectedEventID)
+    }
+}
+
+@MainActor
+final class TodayMidnightTests: XCTestCase {
+    private func day(_ offset: Int) -> Date {
+        Calendar.current.date(byAdding: .day, value: offset, to: Date())!
+    }
+
+    func testTodayFollowsTheDateAcrossMidnight() {
+        let model = WorkspaceModel.preview(destination: .today)
+        model.date = Date()
+        XCTAssertTrue(model.rollToTodayIfNeeded(now: day(1)))
+        XCTAssertTrue(Calendar.current.isDate(model.date, inSameDayAs: day(1)))
+    }
+
+    func testASteppedToDayStaysPut() {
+        let model = WorkspaceModel.preview(destination: .today)
+        model.date = day(-3)
+        XCTAssertFalse(model.rollToTodayIfNeeded(now: day(1)))
+        XCTAssertTrue(Calendar.current.isDate(model.date, inSameDayAs: day(-3)))
+    }
+
+    func testNoChangeWithinTheSameDay() {
+        let model = WorkspaceModel.preview(destination: .today)
+        model.date = Date()
+        XCTAssertFalse(model.rollToTodayIfNeeded(now: Date()))
     }
 }

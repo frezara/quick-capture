@@ -5,6 +5,9 @@ struct WorkspaceView: View {
     @Bindable var model: WorkspaceModel
     let onCapture: () -> Void
     let onEditor: () -> Void
+    var onEditorSlot: (NSView?) -> Void = { _ in }
+    var onFocusSchedule: () -> Void = {}
+    var onTodayDayChange: () -> Void = {}
     @Environment(\.colorScheme) private var scheme
     private var t: Theme { scheme == .dark ? .dark : .light }
 
@@ -12,7 +15,11 @@ struct WorkspaceView: View {
         HStack(spacing: 0) {
             sidebar
             t.border.frame(width: 0.5)
-            if model.destination == .projects {
+            if model.destination == .today {
+                TodayView(model: model, onEditorSlot: onEditorSlot,
+                          onFocusSchedule: onFocusSchedule, onDayChange: onTodayDayChange)
+                    .frame(maxWidth: .infinity, maxHeight: .infinity)
+            } else if model.destination == .projects {
                 ProjectsView()
                     .frame(maxWidth: .infinity, maxHeight: .infinity)
             } else if model.destination == .calendar {
@@ -45,7 +52,7 @@ struct WorkspaceView: View {
             railButton(title: "Capture", symbol: "plus.circle", glyphs: "⌥⌘P", selected: false,
                        tint: t.accent, action: onCapture)
             t.border.frame(width: 28, height: 1).padding(.vertical, 4)
-            ForEach([WorkspaceDestination.calendar, .projects, .todos, .notes, .links]) { destination in
+            ForEach([WorkspaceDestination.today, .todos, .calendar, .projects, .notes, .links]) { destination in
                 railButton(title: destination.title, symbol: destination.symbol,
                            glyphs: destination.action.chord.displayGlyphs,
                            selected: model.destination == destination) { model.navigate(destination) }
