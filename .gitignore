@@ -88,3 +88,6 @@ organiser/secrets/
 organiser/backups/
 .pytest_cache/
 organiser/node_modules/
+
+# Claude Code: personal permission settings stay local
+.claude/settings.local.json
