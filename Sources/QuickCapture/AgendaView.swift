@@ -87,7 +87,7 @@ struct AgendaView: View {
     @ViewBuilder private func dayHeading(_ day: AgendaDay) -> some View {
         let isToday = Calendar.current.isDateInToday(day.date)
         HStack(spacing: 8) {
-            Text(TodayView.dayTitle(day.date))
+            Text(Self.dayTitle(day.date))
                 .font(Typeface.ui(13, day.rows.isEmpty ? .medium : .bold))
                 .foregroundStyle(day.rows.isEmpty ? t.inkTertiary : t.ink)
             if isToday {
@@ -123,6 +123,13 @@ struct AgendaView: View {
         KeyHints(pairs: [(["↑", "↓"], "move"), (["⌥↑", "⌥↓"], "day or group"), (["[", "]"], "week"),
                          (["↵"], "open"), (["X"], "tick")])
     }
+
+    private static let titleFormat: DateFormatter = {
+        let f = DateFormatter(); f.locale = Locale(identifier: "en_GB"); f.dateFormat = "EEEE d MMMM"; return f
+    }()
+
+    /// "Saturday 17 October".
+    static func dayTitle(_ date: Date) -> String { titleFormat.string(from: date) }
 
     private static let dayMonth: DateFormatter = {
         let f = DateFormatter(); f.locale = Locale(identifier: "en_GB"); f.dateFormat = "d MMMM"; return f
@@ -405,10 +412,10 @@ struct ItemPreview: View {
         switch row.kind {
         case .event(let allDay, _, _):
             guard let starts = row.item.starts else { return nil }
-            return (TodayView.dayTitle(starts), allDay ? "All day" : NativeCalendarView.timeRange(row.item))
+            return (AgendaView.dayTitle(starts), allDay ? "All day" : NativeCalendarView.timeRange(row.item))
         case .reminder:
             guard let reminder = row.item.reminder else { return nil }
-            return (TodayView.dayTitle(reminder), "Reminder at \(NativeCalendarView.time(reminder))")
+            return (AgendaView.dayTitle(reminder), "Reminder at \(NativeCalendarView.time(reminder))")
         case .todo:
             return nil
         }

@@ -201,11 +201,11 @@ final class ShortcutRegistryTests: XCTestCase {
         XCTAssertEqual(KeyChord(key: "ArrowUp", modifiers: [.command, .option]).displayGlyphs, "⌥⌘↑")
     }
 
-    func testCaptureHintsLeadWithToday() {
+    func testCaptureHintsLeadWithAgenda() {
         XCTAssertEqual(ShortcutRegistry.captureHints.map(\.action),
-                       [.showToday, .toggleEditor, .attachScreenshot])
+                       [.showAgenda, .toggleEditor, .attachScreenshot])
         XCTAssertEqual(ShortcutRegistry.captureHints.map(\.label),
-                       ["Today", "Editor", "Screenshots"])
+                       ["Agenda", "Editor", "Screenshots"])
     }
 
     /// Why the bar sources chords from the registry: rename/remove an action or
@@ -221,8 +221,8 @@ final class ShortcutRegistryTests: XCTestCase {
 
     /// Workspace views are numbered in rail order.
     func testWorkspaceViewsAreNumberedInRailOrder() {
-        let views: [ShortcutAction] = [.showToday, .showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks]
-        XCTAssertEqual(views.map(\.chord.displayGlyphs), ["⌥⌘1", "⌥⌘2", "⌥⌘3", "⌥⌘4", "⌥⌘5", "⌥⌘6", "⌥⌘7"])
+        let views: [ShortcutAction] = [.showAgenda, .showTodos, .showCalendar, .showProjects, .showNotes, .showLinks]
+        XCTAssertEqual(views.map(\.chord.displayGlyphs), ["⌥⌘1", "⌥⌘2", "⌥⌘3", "⌥⌘4", "⌥⌘5", "⌥⌘6"])
     }
 }
 

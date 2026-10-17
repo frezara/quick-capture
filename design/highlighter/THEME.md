@@ -204,12 +204,9 @@ shortcut. Current page: `accentSoft` well, `accent` icon.
 The table is `CalendarLayout.command`; `MainPanel` routes keys to it unless a
 text field is being edited.
 
-## Today, Agenda and the editor (implemented)
+## Workspace views and the editor (implemented)
 
-- **Today:** the calendar's toolbar language; a 290pt schedule panel on
-  `sunken`, the editor on the right. The panel with focus shows an accent dot
-  beside its label and the selected event an accent ring.
-- **Agenda:** a list with a 300pt preview on `sunken`; day headings 13 bold,
+- **Agenda, Todos, Notes, Saved links:** a list with a 300pt preview on `sunken`; day headings 13 bold,
   empty days in `ink3`; reminders use a bell, events a hue dot, todos a square
   box; selection is `accentSoft` with a 2pt accent ring.
 - **Editor:** the same tokens and Recursive (mono for note text, sans for

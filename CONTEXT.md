@@ -20,8 +20,9 @@ crossfades between them.
   appended to. There is always exactly one, and editor mode (`⌥⌘I`) opens it —
   it is **the active inbox**. Its first line is always `# Inbox`. Refile writes
   to *other* inboxes (see **Target inbox**) but never changes which file is the
-  capture file. The editor shows other files only when you go to them: a
-  **daily note** in **Today**, or an item's own inbox opened from **Agenda**.
+  capture file. The editor shows other files only when you go to them: an
+  item's own inbox or **daily note**, opened from **Agenda** or another
+  workspace view.
 
 - **Inbox** — an `# Inbox`-headed markdown file that items live under. **No
   longer unique**: the capture file is the active inbox the editor opens; refile
@@ -139,8 +140,8 @@ crossfades between them.
   they are not delivered to the organiser.
 
 - **Rollover** — carrying unfinished items into a new day's **daily note**. It
-  happens once, when today's note is created — the first time **Today** or
-  **Agenda** is opened that day — by **copying** every unticked
+  happens once, when today's note is created — the first time **Agenda** is
+  opened, or an item is planned for today, that day — by **copying** every unticked
   top-level item (with everything nested under it) from any section of the most
   recent earlier daily note into `## Tasks`. A ticked item is closed along with
   everything under it; plain bullets and prose never roll over. The earlier note
@@ -152,12 +153,8 @@ crossfades between them.
   does not tick the parent. A ticked parent closes its whole subtree, even in a
   file edited elsewhere where some children are still unticked.
 
-- **Today** — the workspace view for the current day: the day's schedule on the
-  left and the editor on its **daily note** on the right. The first view in the
-  rail and the one the workspace opens on.
-
-- **Agenda** — a workspace view, inspired by org-mode's agenda, separate from
-  **Today** and second in the rail. One list in two parts: the **agenda span**
+- **Agenda** — a workspace view, inspired by org-mode's agenda, first in the
+  rail. One list in two parts: the **agenda span**
   (seven days from a start day, today by default) with each day's events and
   reminders, then the **open todos** gathered from every inbox. Dates come only
   from organiser events and reminders; todos carry no date of their own. Items
